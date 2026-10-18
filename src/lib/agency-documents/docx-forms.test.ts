@@ -150,9 +150,11 @@ test("cells that only look empty — merged continuations, symbols, images, fiel
   assert.deepEqual(tableTargets, ["Officer Name"]);
   assert.equal(fields.filter((field) => field.kind === "legacy_field").length, 1);
   // Filling every detected target works without overlap errors and keeps the checkbox symbol.
-  const filled = fillDocx(source, fields.map((field) => ({ target: field, value: "V" })));
+  // The box symbol is a checkbox labelled by the cell to its left.
+  assert.deepEqual(fields.filter((field) => field.kind === "checkbox").map((field) => field.label), ["Duty weapon"]);
+  const filled = fillDocx(source, fields.map((field) => ({ target: field, value: field.kind === "checkbox" ? "Yes" : "V" })));
   assert.deepEqual(filled.issues, []);
-  assert.ok(entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!).includes("<w:sym"));
+  assert.ok(entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!).includes(`<w:sym w:font="Wingdings" w:char="F0FE"/>`));
 });
 
 test("a legacy checkbox before a text field does not steal the text field's label", () => {
@@ -239,7 +241,7 @@ test("several placeholders in one text run are all filled (Word often saves a ty
 test("placeholders next to a checkbox control or a legacy form field are still found", () => {
   const checkbox = `<w:sdt><w:sdtPr><w14:checkbox xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"/></w:sdtPr><w:sdtContent><w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:sdtContent></w:sdt>`;
   const bytes = buildDocx(`<w:p>${r("Qualified ")}${checkbox}${r(" {{Officer Name}}")}</w:p>` + p(r("Badge: "), legacyField("BadgeNumber"), r("   Unit: ______")));
-  assert.deepEqual(analyzeDocx(bytes).map((field) => `${field.kind}:${field.label}`).sort(), ["label_blank:Unit", "legacy_field:BadgeNumber", "token:Officer Name"]);
+  assert.deepEqual(analyzeDocx(bytes).map((field) => `${field.kind}:${field.label}`).sort(), ["checkbox:Qualified", "label_blank:Unit", "legacy_field:BadgeNumber", "token:Officer Name"]);
   const filled = fillAll(bytes, { "Officer Name": "Jordan Rivera", BadgeNumber: "287", Unit: "Patrol" });
   assert.deepEqual(filled.issues, []);
   const text = docxText(filled.bytes);
@@ -281,7 +283,9 @@ test("checkboxes separate the text around them, so blank labels do not absorb ch
   const box = `<w:sdt><w:sdtPr><w14:checkbox xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"/></w:sdtPr><w:sdtContent><w:r><w:sym w:font="Wingdings" w:char="F0A8"/></w:r></w:sdtContent></w:sdt>`;
   const legacyBox = `<w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:name w:val="Check1"/><w:checkBox><w:sizeAuto/><w:default w:val="0"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText xml:space="preserve"> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
   const bytes = buildDocx(`<w:p>${r("Yes ")}${box}${r(" No ")}${box}${r(" Date ____")}</w:p>` + `<w:p>${r("Passed ")}${legacyBox}${r(" Failed ")}${legacyBox}${r(" Instructor ____")}</w:p>`);
-  assert.deepEqual(analyzeDocx(bytes).map((field) => field.label), ["Date", "Instructor"]);
+  assert.deepEqual(analyzeDocx(bytes).filter((field) => field.kind !== "checkbox").map((field) => field.label), ["Date", "Instructor"]);
+  // The boxes themselves are labelled by the word before each one.
+  assert.deepEqual(analyzeDocx(bytes).filter((field) => field.kind === "checkbox").map((field) => field.label), ["Yes", "No", "Passed", "Failed"]);
 });
 
 test("a legacy form field whose result runs into the next paragraph stays protected", () => {
@@ -300,4 +304,45 @@ test("locators saved by an earlier version of Word detection are refused, not fi
   assert.equal(result.issues[0]?.kind, "target_changed");
   assert.match(result.issues[0]!.message, /Set the template up again/);
   assert.equal(docxText(result.bytes), "Officer: {{Officer Name}}");
+});
+
+test("Word checkboxes — content controls, legacy FORMCHECKBOX fields and ☐ characters — are detected, asked for and ticked", async () => {
+  const { planAutomaticSetup } = await import("./proposal-review");
+  const { isCheckboxField } = await import("./document-generation");
+  const w14 = `xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"`;
+  const control = `<w:sdt><w:sdtPr><w14:checkbox ${w14}><w14:checked w14:val="0"/><w14:checkedState w14:val="2612" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr><w:sdtContent><w:r><w:t>☐</w:t></w:r></w:sdtContent></w:sdt>`;
+  const bytes = buildDocx(`<w:p>${control}${r(" Passed ")}${checkboxField("Check1")}${r(" Failed")}</w:p>` + p(r("☐ Remedial ☐ Other: ______")));
+  const fields = analyzeDocx(bytes);
+  assert.deepEqual(fields.map((field) => `${field.kind}:${field.label}`), ["checkbox:Passed", "checkbox:Failed", "checkbox:Remedial", "checkbox:Other", "label_blank:Other"]);
+  // Setup turns every box into a question for the person generating; none is skipped or auto-filled.
+  const proposals = analyzeTemplateDocx(bytes).proposals.filter((proposal) => proposal.docxTarget?.kind === "checkbox");
+  assert.equal(proposals.length, 4);
+  assert.ok(proposals.every((proposal) => !proposal.skipByDefault && !proposal.suggestedSemanticKey));
+  const rows = planAutomaticSetup(proposals).rows;
+  assert.equal(rows.length, 4);
+  assert.ok(rows.every((row) => row.field_type === "manual" && isCheckboxField({ formatting: row.formatting })));
+
+  const value: Record<string, string> = { Passed: "Yes", Failed: "No", Remedial: "x", Other: "" };
+  const filled = fillDocx(bytes, [...fields.filter((field) => field.kind === "checkbox").map((field) => ({ target: field, value: value[field.label]! })), { target: fields.find((field) => field.kind === "label_blank")!, value: "Night course" }]);
+  assert.deepEqual(filled.issues, []);
+  const xml = entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!);
+  assert.match(xml, /<w14:checked w14:val="1"\/>/);
+  assert.match(xml, /<w:checked w:val="0"\/><\/w:checkBox>/);
+  assert.equal(docxText(filled.bytes), "☒ Passed  Failed\n☒ Remedial ☐ Other: Night course");
+
+  const invalid = fillDocx(bytes, [{ target: fields[0]!, value: "Maybe", fieldId: "f1" }]);
+  assert.equal(invalid.issues[0]?.kind, "invalid_checkbox_value");
+});
+
+test("a value written into an empty cell keeps the label's font and size but not its bold or underline", () => {
+  const bytes = buildDocx(table(row(cell(p(r("Officer Name", `<w:b/><w:u w:val="single"/><w:sz w:val="20"/>`))), cell("")), row(cell(p(r("Rank", "<w:b/>"))), cell(""))));
+  const filled = fillAll(bytes, { "Officer Name": "Jordan Rivera", Rank: "Sergeant" });
+  assert.deepEqual(filled.issues, []);
+  const html = docxPreviewHtml(filled.bytes);
+  assert.match(html, /<td><p>Jordan Rivera<\/p><\/td>/);
+  assert.match(html, /<td><p>Sergeant<\/p><\/td>/);
+  assert.match(html, /<u><strong>Officer Name<\/strong><\/u>/);
+  const xml = entryText(readZip(filled.bytes).find((entry) => entry.name === "word/document.xml")!);
+  assert.match(xml, /<w:r><w:rPr><w:sz w:val="20"\/><\/w:rPr><w:t xml:space="preserve">Jordan Rivera<\/w:t><\/w:r>/);
+  assert.match(xml, /<w:r><w:t xml:space="preserve">Sergeant<\/w:t><\/w:r>/);
 });

@@ -1,5 +1,5 @@
 import type { QualificationRecord, StructuredBinding } from "./structured-binding";
-import { resolveStructuredBinding } from "./structured-binding";
+import { resolveStructuredBinding, StructuredOverflowError } from "./structured-binding";
 import type { StructuredBindingTargetCellRow } from "./structured-binding-repository";
 
 export type DocumentStructuredBinding = StructuredBinding & { id: string; sectionKey: string; targetCells: StructuredBindingTargetCellRow[] };
@@ -8,7 +8,9 @@ export function resolveDocumentStructuredBindings(bindings: DocumentStructuredBi
   const fields: StructuredDocumentResolution["fields"] = [], warnings: string[] = []; let requiresReview = false;
   for (const binding of bindings) {
     const filters = binding.filters?.reportYearMode === "document" && reportYear ? { ...binding.filters, reportYear } : binding.filters;
-    const resolved = resolveStructuredBinding(qualifications, { ...binding, filters }, binding.targetCells);
+    let resolved;
+    try { resolved = resolveStructuredBinding(qualifications, { ...binding, filters }, binding.targetCells); }
+    catch (error) { throw error instanceof StructuredOverflowError ? new StructuredOverflowError(`${binding.sectionKey}: ${error.message}`) : error; }
     fields.push(...resolved.values.map((value, index) => ({ pageNumber: binding.targetCells[index]?.page ?? 1, value: value.value, geometry: value.geometry, formatting: { align: "center" as const, autoFit: true as const, fontSize: 10 } })));
     warnings.push(...resolved.warnings.map(warning => `${binding.sectionKey}: ${warning}`)); requiresReview ||= resolved.requiresReview;
   }

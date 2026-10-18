@@ -11,10 +11,22 @@ export function canCreateTemplateField(proposal: AnalysisProposal) {
  * Only exact deterministic matches may be accepted in bulk. Legacy proposals
  * (no matcher verdict) must still be high-confidence and review-free.
  */
-export function eligibleForBulkAccept(proposal: AnalysisProposal) {
+export function eligibleForBulkAccept(proposal: AnalysisProposal, sharedKeys: ReadonlySet<string> = new Set()) {
   if (proposal.kind === "structured_section" || proposal.skipByDefault) return false;
+  // One TracePoint value proposed for several form fields is reviewed one by one (see flagSharedSources).
+  if (proposal.suggestedSemanticKey && sharedKeys.has(proposal.suggestedSemanticKey)) return false;
   if (proposal.matchStatus && proposal.matchStatus !== "exact") return false;
   return proposal.classification === "high" && proposal.suggestedType === "tracepoint_data" && Boolean(proposal.suggestedSemanticKey) && proposal.reviewRequired === false;
+}
+
+/** TracePoint fields that more than one scalar proposal would fill. */
+export function sharedSourceKeys(proposals: readonly AnalysisProposal[]) {
+  const counts = new Map<string, number>();
+  for (const proposal of proposals) {
+    if (proposal.kind === "structured_section" || proposal.suggestedType !== "tracepoint_data" || !proposal.suggestedSemanticKey) continue;
+    counts.set(proposal.suggestedSemanticKey, (counts.get(proposal.suggestedSemanticKey) ?? 0) + 1);
+  }
+  return new Set([...counts].filter(([, count]) => count > 1).map(([key]) => key));
 }
 
 export function reviewProgress(statuses: readonly ProposalStatus[]) {
@@ -114,9 +126,29 @@ export function planAutomaticSetup(proposals: readonly AnalysisProposal[]): Setu
       skipped.push(proposal);
     }
   }
+  flagSharedSources(rows);
   const confirmed = rows.filter((row) => row.field_type === "tracepoint_data" && row.formatting.matchStatus === "confirmed").length;
   const needsReview = rows.filter((row) => row.formatting.matchStatus === "suggested").length;
   return { rows, skipped, structured, summary: { confirmed, needsReview, manual: rows.filter((row) => row.field_type === "manual").length, skipped: skipped.length, structured: structured.length } };
+}
+
+/**
+ * One TracePoint value filling several distinct form fields is usually a list
+ * (every row printed with the same serial number) or a mismatch, so automatic
+ * setup never confirms it: each such field is flagged for a person to confirm.
+ */
+export function flagSharedSources(rows: TemplateFieldRow[]) {
+  const byKey = new Map<string, TemplateFieldRow[]>();
+  for (const row of rows) if (row.field_type === "tracepoint_data" && row.canonical_key) byKey.set(row.canonical_key, [...(byKey.get(row.canonical_key) ?? []), row]);
+  for (const [key, shared] of byKey) {
+    if (shared.length < 2) continue;
+    const name = getDocumentField(key)?.label ?? key;
+    for (const row of shared) {
+      if (row.formatting.matchStatus !== "confirmed" || row.formatting.confirmedByPerson === true) continue;
+      row.formatting = { ...row.formatting, matchStatus: "suggested", matchReason: `${name} is used for ${shared.length} different fields on this form. If they are rows of a list, set up a repeating section instead; otherwise confirm each one.` };
+    }
+  }
+  return rows;
 }
 
 /** Reasons a template cannot be published yet. Empty means it can be published. */

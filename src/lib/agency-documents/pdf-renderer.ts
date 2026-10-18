@@ -1,4 +1,4 @@
-import { PDFCheckBox, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, degrees, rgb, type PDFFont, type PDFForm, type PDFPage } from "pdf-lib";
+import { PDFArray, PDFCheckBox, PDFDict, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, degrees, rgb, type PDFField, type PDFFont, type PDFForm, type PDFPage, type PDFWidgetAnnotation } from "pdf-lib";
 import type { FieldFormatting, ResolutionStatus } from "./field-values";
 import { normalizedToPdfRect, readingSize, textOrigin, type PdfRect, type Rotation } from "./page-geometry";
 import { loadPdf, pageInfo, PdfInspectionError, type PdfPageInfo } from "./pdf-form-inspector";
@@ -27,7 +27,7 @@ export type RenderField = {
   status?: ResolutionStatus;
 };
 
-export type RenderIssueKind = "overflow" | "too_long" | "not_an_option" | "unsupported_characters" | "form_field_missing" | "invalid_geometry" | "invalid_checkbox_value" | "page_missing";
+export type RenderIssueKind = "overflow" | "too_long" | "not_an_option" | "unsupported_characters" | "form_field_missing" | "invalid_geometry" | "invalid_checkbox_value" | "page_missing" | "covered_by_form_field";
 export type RenderIssue = { fieldId?: string; label?: string; page: number; kind: RenderIssueKind; message: string };
 
 export type RenderOptions = {
@@ -224,6 +224,63 @@ function removeDanglingAnnotations(pages: PDFPage[]) {
   }
 }
 
+/** Annotation dictionaries on a page, with their references. */
+function pageAnnotations(page: PDFPage) {
+  const annots = page.node.Annots();
+  if (!annots) return [];
+  return Array.from({ length: annots.size() }, (_, index) => {
+    const entry = annots.get(index);
+    return { index, entry, dict: entry instanceof PDFRef ? page.doc.context.lookupMaybe(entry, PDFDict) : entry instanceof PDFDict ? entry : undefined };
+  });
+}
+
+/** True when flattening can draw this widget: pdf-lib needs a referenced normal appearance (per state for checkboxes and radios). */
+function hasDrawableAppearance(field: PDFField, widget: PDFWidgetAnnotation) {
+  const normal = widget.dict.lookupMaybe(PDFName.of("AP"), PDFDict)?.get(PDFName.of("N"));
+  if (normal instanceof PDFRef) return true;
+  if (normal instanceof PDFDict && (field instanceof PDFCheckBox || field instanceof PDFRadioGroup)) return (normal.get(field.acroField.getValue()) ?? normal.get(PDFName.of("Off"))) instanceof PDFRef;
+  return false;
+}
+
+/**
+ * Widgets with nothing to draw — typically an unsigned digital-signature box, which has no appearance until
+ * signed — make pdf-lib's flatten throw. Flattening removes every field anyway, so such widgets are removed
+ * first; the box and label printed on the page stay. Returns the names of fields removed entirely.
+ */
+function removeUndrawableWidgets(form: PDFForm, pages: PDFPage[]) {
+  const removed: string[] = [];
+  for (const field of form.getFields()) {
+    const widgets = field.acroField.getWidgets();
+    // flatten also needs the widget's page: its /P entry or the page that lists it.
+    const onPage = (widget: PDFWidgetAnnotation) => pages.some((page) => page.ref === widget.P() || pageAnnotations(page).some((annot) => annot.dict === widget.dict));
+    const undrawable = widgets.filter((widget) => !hasDrawableAppearance(field, widget) || !onPage(widget));
+    if (!undrawable.length) continue;
+    for (const page of pages) {
+      const annots = page.node.Annots();
+      for (const annot of pageAnnotations(page).reverse()) if (undrawable.some((widget) => widget.dict === annot.dict)) annots!.remove(annot.index);
+    }
+    const kids = field.acroField.Kids();
+    if (undrawable.length === widgets.length) { form.acroForm.removeField(field.acroField); removed.push(field.getName()); continue; }
+    if (kids) for (let index = kids.size() - 1; index >= 0; index -= 1) if (undrawable.some((widget) => widget.dict === kids.lookup(index))) kids.remove(index);
+  }
+  return removed;
+}
+
+/** Widget rectangles on a page. Interactive widgets are drawn above page content, so an overlay under one is hidden. */
+function widgetRects(page: PDFPage) {
+  return pageAnnotations(page).flatMap(({ dict }) => {
+    if (!dict || dict.lookupMaybe(PDFName.of("Subtype"), PDFName) !== PDFName.of("Widget")) return [];
+    const rect = dict.lookupMaybe(PDFName.of("Rect"), PDFArray)?.asRectangle();
+    return rect ? [rect] : [];
+  });
+}
+
+function overlaps(a: PdfRect, b: { x: number; y: number; width: number; height: number }) {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return width > 0.5 && height > 0.5;
+}
+
 export async function renderDocument(source: Uint8Array, fields: readonly RenderField[], options: RenderOptions = {}): Promise<RenderResult> {
   const pdf = await loadPdf(source);
   if (pdf.isEncrypted) throw new PdfInspectionError("This PDF is password-protected or restricted. Save an unrestricted copy and upload it again.");
@@ -232,13 +289,16 @@ export async function renderDocument(source: Uint8Array, fields: readonly Render
   const pages = pdf.getPages();
   const infos = pages.map(pageInfo);
   const issues: RenderIssue[] = [];
+  const flatten = options.flatten !== false;
   let form: PDFForm | null = null;
   const nativeFields = fields.filter((field) => field.formatting?.acroFieldName);
-  if (nativeFields.length) {
+  // A fillable PDF is flattened even when only drawn fields are used: its widgets would otherwise sit above (and hide) the drawn text.
+  if (nativeFields.length || (flatten && pdf.catalog.has(PDFName.of("AcroForm")))) {
     form = pdf.getForm();
     // XFA content would be shown instead of the AcroForm values in some viewers.
     form.deleteXFA();
   }
+  const overlays: RenderField[] = [];
   for (const field of fields) {
     const label = field.label ?? "Field";
     if (field.value && !encodable(field.formatting?.bold ? bold : regular, field.value)) {
@@ -250,14 +310,28 @@ export async function renderDocument(source: Uint8Array, fields: readonly Render
     const page = pages[field.pageNumber - 1];
     if (!page) { issues.push({ fieldId: field.fieldId, label, page: field.pageNumber, kind: "page_missing", message: `"${label}" is placed on page ${field.pageNumber}, which this PDF does not have.` }); continue; }
     if (!isValidFieldGeometry(field.geometry)) { issues.push({ fieldId: field.fieldId, label, page: field.pageNumber, kind: "invalid_geometry", message: `"${label}" has an invalid position.` }); continue; }
-    drawOverlay(page, infos[field.pageNumber - 1], field, { regular, bold }, issues);
+    overlays.push(field);
   }
   if (form) {
     form.updateFieldAppearances(regular);
-    if (options.flatten !== false) {
+    if (flatten) {
+      const removed = removeUndrawableWidgets(form, pages);
+      for (const field of nativeFields) if (field.value && removed.includes(field.formatting!.acroFieldName!)) issues.push({ fieldId: field.fieldId, label: field.label, page: field.pageNumber, kind: "form_field_missing", message: `"${field.label ?? field.formatting!.acroFieldName}" is a form element that cannot show a value.` });
       form.flatten({ updateFieldAppearances: false });
       removeDanglingAnnotations(pages);
     }
+  }
+  // Drawn fields go on after flattening, so the form's own (often opaque white) field boxes are underneath them.
+  for (const field of overlays) {
+    const page = pages[field.pageNumber - 1]!;
+    if (!flatten) {
+      const rect = normalizedToPdfRect(field.geometry, infos[field.pageNumber - 1]!.box, infos[field.pageNumber - 1]!.rotation);
+      if (widgetRects(page).some((widget) => overlaps(rect, widget))) {
+        issues.push({ fieldId: field.fieldId, label: field.label, page: field.pageNumber, kind: "covered_by_form_field", message: `"${field.label ?? "Field"}" is drawn where the PDF has a fillable field, which would hide it. Link it to that form field instead.` });
+        continue;
+      }
+    }
+    drawOverlay(page, infos[field.pageNumber - 1]!, field, { regular, bold }, issues);
   }
   if (options.mode === "proof") for (const field of fields) drawProof(pages, infos, field, regular);
   return { bytes: await pdf.save(), issues };

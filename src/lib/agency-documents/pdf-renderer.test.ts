@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFString, StandardFonts } from "pdf-lib";
 import { analyzeTemplatePdf } from "./template-analyzer";
 import { layoutText, renderAgencyDocument, renderDocument, wrapText, type RenderField } from "./pdf-renderer";
 import { pdfRectToNormalized, type Rotation } from "./page-geometry";
@@ -186,4 +186,45 @@ test("a native field shown in a wide box and a narrow box is fitted to the narro
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const size = Number(filled.acroField.getDefaultAppearance()?.match(/([\d.]+)\s+Tf/)?.[1]);
   for (const line of (filled.getText() ?? "").split("\n")) assert.ok(font.widthOfTextAtSize(line, size) <= 66, `"${line}" at ${size}pt is wider than the narrow box`);
+});
+
+const page = { x: 0, y: 0, width: 612, height: 792 };
+async function formWithSupervisorBox(extra?: (pdf: PDFDocument) => void) {
+  const bytes = await buildAcroFormPdf([{ fields: [{ name: "OfficerName", x: 40, y: 700, width: 220, height: 18 }, { name: "SupervisorName", x: 40, y: 640, width: 220, height: 18 }] }]);
+  if (!extra) return bytes;
+  const pdf = await PDFDocument.load(bytes);
+  extra(pdf);
+  return pdf.save();
+}
+const supervisorBox = pdfRectToNormalized({ x: 40, y: 640, width: 220, height: 18 }, page, 0)!;
+
+test("text drawn over an unmapped fillable field is visible, not hidden under the field's white box", { skip: noRaster }, async () => {
+  const source = await formWithSupervisorBox();
+  const drawn: RenderField = { fieldId: "s", label: "Supervisor (drawn)", pageNumber: 1, value: "Test Supervisor Delta", geometry: supervisorBox };
+  const native: RenderField = { fieldId: "o", label: "Officer", pageNumber: 1, value: "Test Officer Alpha", geometry: pdfRectToNormalized({ x: 40, y: 700, width: 220, height: 18 }, page, 0)!, formatting: { acroFieldName: "OfficerName" } };
+  for (const fields of [[native, drawn], [drawn]]) {
+    const result = await renderDocument(source, fields);
+    assert.deepEqual(result.issues, []);
+    assert.ok(inkRatio(renderGray(result.bytes, 1, 100), supervisorBox) > 0.02, `drawn text is not visible (${fields.length} fields)`);
+    assert.equal((await PDFDocument.load(result.bytes)).getForm().getFields().length, 0, "the form is flattened");
+  }
+  // Without flattening the widget stays on top, so drawing there is refused instead of producing hidden text.
+  const unflattened = await renderDocument(source, [drawn], { flatten: false });
+  assert.equal(unflattened.issues[0]?.kind, "covered_by_form_field");
+});
+
+test("an unsigned digital-signature field with no appearance does not break flattening", async () => {
+  const source = await formWithSupervisorBox((pdf) => {
+    const target = pdf.getPage(0);
+    const widget = pdf.context.register(pdf.context.obj({ Type: "Annot", Subtype: "Widget", FT: "Sig", T: PDFString.of("DigitalSignature"), Rect: [320, 140, 570, 162], F: 4, P: target.ref }));
+    target.node.addAnnot(widget);
+    pdf.getForm().acroForm.addField(widget);
+  });
+  assert.ok((await PDFDocument.load(source)).getForm().getFields().some((field) => field.getName() === "DigitalSignature"));
+  const result = await renderDocument(source, [{ fieldId: "o", label: "Officer", pageNumber: 1, value: "Test Officer Alpha", geometry: { x: 0.1, y: 0.1, width: 0.3, height: 0.03 }, formatting: { acroFieldName: "OfficerName" } }]);
+  assert.deepEqual(result.issues, []);
+  const output = await PDFDocument.load(result.bytes);
+  assert.equal(output.getForm().getFields().length, 0);
+  const proof = await renderDocument(source, [], { mode: "proof" });
+  assert.deepEqual(proof.issues, []);
 });

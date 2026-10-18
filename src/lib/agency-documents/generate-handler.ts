@@ -1,10 +1,11 @@
-import { generateDocument, generateDocxDocument, templateFormat, toFieldSpec, type StoredTemplateField } from "./document-generation";
+import { generateDocument, generateDocxDocument, isCheckboxField, templateFormat, toFieldSpec, type StoredTemplateField } from "./document-generation";
 import { DOCX_MIME, DocxFormError } from "./docx-forms";
 import { requiredSelections } from "./field-values";
 import { GenerationContextError, loadGenerationSources, loadPreparer, type GenerationDatabase, type GenerationSelection } from "./generation-context";
 import { DocumentQualificationHistoryRepository } from "./document-qualification-history";
 import { PdfInspectionError } from "./pdf-form-inspector";
 import { resolveDocumentStructuredBindings, type DocumentStructuredBinding } from "./structured-document-resolution";
+import { StructuredOverflowError } from "./structured-binding";
 import { publishBlockers } from "./proposal-review";
 import { structuredPublishBlockers } from "./field-persistence";
 
@@ -33,6 +34,8 @@ type Mode = "review" | "preview" | "proof" | "final";
 type Body = {
   templateId?: unknown; mode?: unknown; context?: GenerationSelection; reportYear?: unknown;
   entered?: Record<string, unknown>; leaveBlank?: unknown;
+  /** The person generating confirmed that records a repeating section cannot hold will be left out. */
+  acknowledgeStructuredWarnings?: unknown;
   /** Legacy request shape (pre-review screen). */
   preview?: unknown; values?: Record<string, unknown>;
 };
@@ -97,14 +100,25 @@ export async function handleGenerate(request: Request, deps: GenerateDeps): Prom
   if (needsPersonForBindings && !selection.personId) structuredBlockers.push("Select an officer to fill the qualification-history sections.");
   if (needsReportYear && !reportYear) structuredBlockers.push("Enter the report year for this document.");
   if (needsPersonForBindings && selection.personId) {
+    let qualifications;
     try {
-      const qualifications = await new DocumentQualificationHistoryRepository(admin as never, departmentId).getQualificationHistoryForDocumentContext({ personId: selection.personId });
-      structured = resolveDocumentStructuredBindings(bindings, qualifications, reportYear ?? undefined);
+      qualifications = await new DocumentQualificationHistoryRepository(admin as never, departmentId).getQualificationHistoryForDocumentContext({ personId: selection.personId });
     } catch {
       return json({ error: "Qualification history could not be loaded for the selected officer." }, 409);
     }
+    try {
+      structured = resolveDocumentStructuredBindings(bindings, qualifications, reportYear ?? undefined);
+    } catch (error) {
+      if (!(error instanceof StructuredOverflowError)) throw error;
+      return json({ error: `This officer has more qualification records than a repeating section can hold, and the section is set to stop rather than leave records out. Ask a template manager to add rows or change the section's overflow setting. (${error.message})` }, 409);
+    }
   }
   if (structured.requiresReview) structuredBlockers.push(...structured.warnings);
+  // "Truncate with warning" leaves records out of the document. That is allowed only after the person generating
+  // confirms it, and the warning is then recorded with the saved document.
+  const acknowledged = body.acknowledgeStructuredWarnings === true;
+  const unacknowledgedTruncation = !structured.requiresReview && structured.warnings.length > 0 && !acknowledged;
+  if (unacknowledgedTruncation) structuredBlockers.push("Some qualification records will not fit and will be left out of this document (see the warning). Confirm that before generating, or ask a template manager to add rows.");
 
   const sourcePath = deps.attachmentPath(version.data.source_storage_path, departmentId);
   if (!sourcePath) return json({ error: "The template's PDF is unavailable." }, 404);
@@ -132,12 +146,14 @@ export async function handleGenerate(request: Request, deps: GenerateDeps): Prom
     selections: { ...selections, person: selections.person || needsPersonForBindings, reportYear: needsReportYear },
     fields: outcome.resolution.fields.map((resolution) => {
       const field = fields.find((item) => item.id === resolution.fieldId)!;
-      return { ...resolution, fieldType: field.fieldType, required: field.required === true, page: field.pageNumber, options: Array.isArray(field.formatting?.options) ? field.formatting?.options : undefined, inputKind: field.formatting?.acroFieldKind === "checkbox" ? "checkbox" : field.formatting?.multiline ? "multiline" : "text" };
+      return { ...resolution, fieldType: field.fieldType, required: field.required === true, page: field.pageNumber, options: Array.isArray(field.formatting?.options) ? field.formatting?.options : undefined, inputKind: isCheckboxField(field) ? "checkbox" : field.formatting?.multiline ? "multiline" : "text" };
     }),
     missing: outcome.resolution.missing.map((item) => ({ fieldId: item.fieldId, label: item.label, detail: item.detail })),
     issues: outcome.issues,
     structuredBlockers,
     structuredWarnings: structured.warnings,
+    /** True when generating would leave records out and the person may confirm that (truncate_with_warning). */
+    structuredTruncation: !structured.requiresReview && structured.warnings.length > 0,
   };
   if (mode === "review") return json(summary);
 
@@ -166,9 +182,10 @@ export async function handleGenerate(request: Request, deps: GenerateDeps): Prom
   const saved = await admin.from("generated_documents").insert({
     id: generatedId, department_id: departmentId, template_id: template.data.id, template_version_id: version.data.id, generated_by_user_id: userId, storage_path: upload.path,
     // Field provenance only — typed values themselves are kept in the PDF, not duplicated into the audit context.
-    context: { references, report_year: reportYear ?? undefined, structured_binding_ids: structured.bindingIds, field_sources: summary.fields.map((field) => ({ field_id: field.fieldId, status: field.status, key: field.canonicalKey })) },
+    // Records left out by a repeating section are part of what this document is, so the confirmed warning is kept with it.
+    context: { references, report_year: reportYear ?? undefined, structured_binding_ids: structured.bindingIds, ...(structured.warnings.length ? { structured_warnings: structured.warnings, structured_warnings_acknowledged_by_user_id: userId } : {}), field_sources: summary.fields.map((field) => ({ field_id: field.fieldId, status: field.status, key: field.canonicalKey })) },
   });
   if (saved.error) return json({ error: "The completed document could not be recorded." }, 500);
-  await admin.from("audit_events").insert({ department_id: departmentId, actor_user_id: userId, action: "document_generated", entity_type: "generated_document", entity_id: generatedId, summary: `Generated ${template.data.name}.`, new_value: { template_id: templateId, template_version: template.data.current_version, typed_fields: outcome.resolution.typed.length } });
+  await admin.from("audit_events").insert({ department_id: departmentId, actor_user_id: userId, action: "document_generated", entity_type: "generated_document", entity_id: generatedId, summary: `Generated ${template.data.name}.`, new_value: { template_id: templateId, template_version: template.data.current_version, typed_fields: outcome.resolution.typed.length, ...(structured.warnings.length ? { structured_warnings: structured.warnings } : {}) } });
   return new Response(pdfBody, { headers: { "Content-Type": contentType, "Content-Disposition": `attachment; filename="${fileName}"`, "Cache-Control": "no-store", "X-TracePoint-Document-Id": generatedId } });
 }

@@ -115,3 +115,29 @@ test("damaged or non-PDF input fails with a readable error", async () => {
   await assert.rejects(analyzeTemplatePdf(new Uint8Array()), /empty/);
   await assert.rejects(analyzeTemplatePdf(new TextEncoder().encode("%PDF-1.7\n garbage garbage")), /could not be read|damaged/);
 });
+
+test("hierarchically named firearm rows (Inventory.RowN.SerialNumber) are a repeating section, not one value in every row", async () => {
+  const fields = [{ name: "OfficerName", tooltip: "Officer Name", x: 40, y: 700, width: 200, height: 18 }];
+  for (let row = 1; row <= 5; row += 1) {
+    const y = 600 - row * 24;
+    fields.push({ name: `Inventory.Row${row}.Make`, tooltip: "Make", x: 40, y, width: 120, height: 18 });
+    fields.push({ name: `Inventory.Row${row}.Model`, tooltip: "Model", x: 180, y, width: 120, height: 18 });
+    fields.push({ name: `Inventory.Row${row}.SerialNumber`, tooltip: "Serial Number", x: 320, y, width: 120, height: 18 });
+  }
+  const { proposals } = await analyzeTemplatePdf(await buildAcroFormPdf([{ fields }]));
+  const sections = proposals.filter((proposal) => proposal.kind === "structured_section");
+  assert.equal(sections.length, 1);
+  assert.match(sections[0]!.detectedLabel, /1, 2, 3, 4, 5/);
+  assert.equal(proposals.some((proposal) => proposal.acroField?.name.startsWith("Inventory.")), false, "table cells must not become scalar fields");
+  assert.ok(proposals.some((proposal) => proposal.acroField?.name === "OfficerName"));
+});
+
+test("hierarchical names without a row segment, or with a page number, are not treated as rows", async () => {
+  const { proposals } = await analyzeTemplatePdf(await buildAcroFormPdf([{ fields: [
+    { name: "form1.Page1.Make", tooltip: "Make", x: 40, y: 600, width: 120, height: 18 },
+    { name: "form1.Page1.Model", tooltip: "Model", x: 180, y: 600, width: 120, height: 18 },
+    { name: "form1.Page2.Make", tooltip: "Make", x: 40, y: 560, width: 120, height: 18 },
+    { name: "form1.Page2.Model", tooltip: "Model", x: 180, y: 560, width: 120, height: 18 },
+  ] }]));
+  assert.equal(proposals.filter((proposal) => proposal.kind === "structured_section").length, 0);
+});

@@ -191,3 +191,36 @@ test("an official document is never issued while a repeating section is neither 
   tables.document_template_analysis_proposals[0]!.status = "rejected";
   assert.equal((await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context }), deps())).status, 200);
 });
+
+test("a repeating section that cannot hold every record never drops records silently", async () => {
+  const setup = async (overflowBehavior: string) => {
+    const w = await world();
+    for (const [index, date] of ["2025-01-10", "2025-06-10", "2025-09-10"].entries()) w.tables.qualification_results.push({ id: `0000000${index}-0000-4000-8000-000000000000`, department_id: DEPT, officer_user_id: OFFICER, qualification_date: date, score: 280, passed: true, qualification_course_id: null, instructor_user_id: null, historical_course_name: "Day Handgun Course", historical_instructor_name: "Taylor Brooks" });
+    const targetCells = [0, 1].map((row) => ({ page: 1, order: row + 1, row: row + 1, column: 1, geometry: { x: 0.6, y: 0.9 + row * 0.03, width: 0.2, height: 0.025 } }));
+    w.tables.document_template_structured_bindings.push({ id: "binding-1", department_id: DEPT, template_version_id: VERSION, section_key: "dates-fired", source_type: "qualification_history", fill_mode: "sequential_cells", ordering: "date_desc", max_rows: 2, overflow_behavior: overflowBehavior, filters: { reportYearMode: "none" }, column_mappings: [{ target: "date", dateFormat: "MM/DD/YYYY" }], target_cells: targetCells });
+    return w;
+  };
+  // truncate_with_warning: final generation is refused until the person confirms, then the warning is saved with the document.
+  const truncating = await setup("truncate_with_warning");
+  const review = await (await handleGenerate(post({ templateId: TEMPLATE, mode: "review", context }), truncating.deps())).json();
+  assert.equal(review.ready, false);
+  assert.equal(review.structuredTruncation, true);
+  assert.match(review.structuredWarnings[0], /4 matching records, room for 2; 2 will not be printed/);
+  const refused = await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context }), truncating.deps());
+  assert.equal(refused.status, 409);
+  assert.equal(truncating.tables.generated_documents.length, 0);
+  const confirmed = await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context, acknowledgeStructuredWarnings: true }), truncating.deps());
+  assert.equal(confirmed.status, 200, JSON.stringify(await confirmed.clone().json().catch(() => ({}))));
+  const saved = truncating.tables.generated_documents[0]!.context as { structured_warnings?: string[] };
+  assert.match(saved.structured_warnings?.[0] ?? "", /dates-fired: .*2 will not be printed/);
+  assert.match(JSON.stringify(truncating.tables.audit_events.at(-1)!.new_value), /will not be printed/);
+
+  // error: a clear explanation, not "could not be loaded".
+  const strict = await setup("error");
+  const stopped = await handleGenerate(post({ templateId: TEMPLATE, mode: "final", context, acknowledgeStructuredWarnings: true }), strict.deps());
+  assert.equal(stopped.status, 409);
+  const message = (await stopped.json()).error as string;
+  assert.match(message, /more qualification records than a repeating section can hold/);
+  assert.doesNotMatch(message, /could not be loaded/);
+  assert.equal(strict.tables.generated_documents.length, 0);
+});

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDocumentField } from "@/lib/agency-documents/field-registry";
 import { fieldLocator } from "@/lib/agency-documents/field-persistence";
-import { canCreateTemplateField, eligibleForBulkAccept, mergeProposalUpdate, proposalToFieldRow, ProposalConversionError, type ReviewedProposal } from "@/lib/agency-documents/proposal-review";
+import { canCreateTemplateField, eligibleForBulkAccept, mergeProposalUpdate, proposalToFieldRow, ProposalConversionError, sharedSourceKeys, type ReviewedProposal } from "@/lib/agency-documents/proposal-review";
 import type { AnalysisProposal } from "@/lib/agency-documents/template-analyzer";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
@@ -44,7 +44,8 @@ export async function PATCH(request: Request, route: Context) {
   const all = await admin.from("document_template_analysis_proposals").select("id,proposal,status").eq("department_id", departmentId).eq("template_id", templateId).in("status", ["proposed", "modified"]);
   if (all.error) return NextResponse.json({ error: "Suggestions could not be loaded." }, { status: 500 });
   const rows = (all.data ?? []) as ProposalRow[];
-  let selected = rows.filter((row) => (body.action === "accept-high" ? eligibleForBulkAccept(row.proposal) : (body.proposalIds ?? []).includes(row.id)));
+  const sharedKeys = sharedSourceKeys(rows.map((row) => row.proposal));
+  let selected = rows.filter((row) => (body.action === "accept-high" ? eligibleForBulkAccept(row.proposal, sharedKeys) : (body.proposalIds ?? []).includes(row.id)));
   // Repeating sections are dismissed one at a time, deliberately; "ignore all" leaves them for a decision.
   if (body.action === "reject-all") selected = rows.filter((row) => row.proposal?.kind !== "structured_section");
 

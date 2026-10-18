@@ -11,22 +11,25 @@ import { entryText, readZip, writeZip, ZipFormatError, type ZipEntry } from "./d
  * - table cells:         a label cell followed by an empty cell, or a header row over an empty row
  * - content controls:    Word "Plain Text" / "Rich Text" / date controls (title or tag is the label)
  * - legacy text fields:  FORMTEXT fields (label from the field name or the text before it)
+ * - checkboxes:          checkbox content controls, legacy FORMCHECKBOX fields, Wingdings box symbols and
+ *                        ☐ characters (label from the control's title or name, else the words beside the box)
  *
  * Every place gets a locator {part, kind, ordinal, label}. The template file is
  * immutable per version, so the same locator always finds the same spot; the
  * label is re-checked on fill and a mismatch is reported instead of guessed.
  */
 
-export type DocxTargetKind = "token" | "label_blank" | "table_cell" | "content_control" | "legacy_field";
+export type DocxTargetKind = "token" | "label_blank" | "table_cell" | "content_control" | "legacy_field" | "checkbox";
 /**
  * Version of the detection rules that assign kinds and ordinals. Locators saved under another version may
  * point at a different place in the document, so they are refused until the template is set up again.
+ * 4: checkboxes are detected (and ☐ characters separate blank labels).
  */
-export const DOCX_LOCATOR_SCHEME = 3;
+export const DOCX_LOCATOR_SCHEME = 4;
 export type DocxTarget = { part: string; kind: DocxTargetKind; ordinal: number; label: string; scheme?: number };
 export type DocxField = DocxTarget & { context: string; /** First row of a multi-row list — may not be about a single record. */ repeating?: boolean; /** Nearest heading above the field (e.g. "SUPERVISOR INFORMATION"), used to spot fields about someone else. */ section?: string };
 export type DocxFill = { target: DocxTarget; value: string; fieldId?: string; label?: string };
-export type DocxIssue = { fieldId?: string; label?: string; kind: "target_missing" | "target_changed"; message: string };
+export type DocxIssue = { fieldId?: string; label?: string; kind: "target_missing" | "target_changed" | "invalid_checkbox_value"; message: string };
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 export { DOCX_MIME };
@@ -163,7 +166,22 @@ function plainText(xml: string, start: number, end: number) {
 }
 
 function cleanLabel(raw: string) {
-  return raw.replace(/[\t\n]+/g, " ").replace(/\s+/g, " ").replace(/^[\s:.\-–—|•]+|[\s:.\-–—|•]+$/g, "").replace(/\s*\(\s*\)\s*$/, "").trim();
+  return raw.replace(/[\t\n]+/g, " ").replace(/\s+/g, " ").replace(/^[\s:.\-–—|•☐☑☒□]+|[\s:.\-–—|•☐☑☒□]+$/g, "").replace(/\s*\(\s*\)\s*$/, "").trim();
+}
+
+/** Where the words beside a place on the form stop: a tab, a wide gap, a separator, a blank line or another checkbox. */
+const LABEL_BREAK = /\t|\s{3,}|;|\||_{3,}|[☐☑☒□]/;
+/** Checkbox characters typed into the text. ☐ and □ are empty boxes; ☑ and ☒ are ticked. */
+const BOX_GLYPHS = new Set(["☐", "☑", "☒", "□"]);
+/** Wingdings box symbols (inserted with Insert > Symbol): empty boxes and ticked boxes. */
+const BOX_SYMBOLS = new Set(["F0A8", "F06F", "F071", "F0FE", "F0FD", "F078"]);
+/** Yes/no values accepted for a checkbox, the same as for PDF checkboxes. */
+const CHECKED = new Set(["x", "yes", "y", "true", "checked", "on", "1", "✓"]);
+const UNCHECKED = new Set(["", "no", "n", "false", "off", "0"]);
+
+function checkboxState(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return CHECKED.has(normalized) ? true : UNCHECKED.has(normalized) ? false : null;
 }
 
 function plausibleLabel(label: string) {
@@ -177,6 +195,11 @@ type Candidate = DocxField & {
   position: number;
   /** For placeholders inside running text: the text nodes and character range, so several placeholders in one run can be filled together. */
   range?: { nodes: TextNode[]; from: number; to: number };
+  /**
+   * Checkboxes: `anchor` is the control, field or symbol element; `glyph` a ☐ character inside a text node.
+   * `preset` is the label the form's author gave the control. `state` turns ticked/unticked into the value passed to edit.
+   */
+  checkbox?: { anchor?: [number, number]; glyph?: { node: number; offset: number }; preset?: string; state: (checked: boolean) => string };
 };
 
 const BLANK = /_{3,}(?:\s*\/\s*_{2,}){0,2}/g;
@@ -200,6 +223,18 @@ function paragraphCandidates(xml: string, part: string, paragraph: Block, counte
     const text = nodes.map((node) => node.text).join("");
     if (!text.trim()) continue;
     const context = text.trim().slice(0, 120);
+    // ☐ typed as text. Labelled later (labelCheckboxes), once every checkbox in the paragraph is known.
+    let offset = 0;
+    for (const node of nodes) {
+      for (let i = 0; i < node.text.length; i += 1) {
+        const glyph = node.text[i]!;
+        if (!BOX_GLYPHS.has(glyph)) continue;
+        const from = offset + i;
+        const empty = glyph === "☐" || glyph === "□" ? glyph : "☐";
+        out.push({ part, kind: "checkbox", ordinal: counters.checkbox++, label: "", position: node.start, context, range: { nodes, from, to: from + 1 }, checkbox: { glyph: { node: node.start, offset: i }, state: (checked) => (checked ? "☒" : empty) }, edit: (value) => replaceTextRange(nodes, from, from + 1, value) });
+      }
+      offset += node.text.length;
+    }
     const tokenEnds: number[] = [];
     for (const match of text.matchAll(TOKEN)) {
       const from = match.index!, to = from + match[0].length;
@@ -214,7 +249,7 @@ function paragraphCandidates(xml: string, part: string, paragraph: Block, counte
       // The label is the text right before the blank, after any earlier blank, merge token or separator.
       const labelFrom = Math.max(previousEnd, ...tokenEnds.filter((end) => end <= from));
       previousEnd = to;
-      const label = cleanLabel(text.slice(labelFrom, from).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
+      const label = cleanLabel(text.slice(labelFrom, from).split(LABEL_BREAK).at(-1) ?? "");
       if (!plausibleLabel(label)) continue;
       out.push({ part, kind: "label_blank", ordinal: counters.label_blank++, label, position: paragraph.start, context, range: { nodes, from, to }, edit: (value) => replaceTextRange(nodes, from, to, value) });
     }
@@ -229,11 +264,19 @@ function firstRunProperties(xml: string, start: number, end: number) {
   return (paragraphMark?.[1] ?? run?.[1] ?? "").replace(/<w:rStyle w:val="PlaceholderText"\/>/g, "");
 }
 
+/** Run properties without emphasis (bold, italic, underline, caps, colour, highlight, shading). */
+function withoutEmphasis(rPr: string) {
+  const kept = rPr.replace(/<w:(?:b|bCs|i|iCs|u|caps|smallCaps|color|highlight|shd|strike|dstrike)\b[^>]*?\/>/g, "");
+  return /^<w:rPr>\s*<\/w:rPr>$/.test(kept) ? "" : kept;
+}
+
 /** Edit that writes value into an empty table cell's first paragraph. */
 function fillEmptyCell(xml: string, cell: Block, labelCell: Block | null): (value: string) => Edit[] {
   return (value) => {
     const paragraphs = elements(xml, "w:p", cell.inner, cell.innerEnd);
-    const rPr = firstRunProperties(xml, paragraphs[0]?.start ?? cell.inner, paragraphs[0]?.end ?? cell.innerEnd) || (labelCell ? firstRunProperties(xml, labelCell.inner, labelCell.innerEnd) : "");
+    // An empty cell's own formatting wins. Borrowed from the label cell, only the font and size are kept:
+    // a value must not come out bold, underlined or shaded just because its label is.
+    const rPr = firstRunProperties(xml, paragraphs[0]?.start ?? cell.inner, paragraphs[0]?.end ?? cell.innerEnd) || (labelCell ? withoutEmphasis(firstRunProperties(xml, labelCell.inner, labelCell.innerEnd)) : "");
     const run = `<w:r>${rPr}${textElements(value)}</w:r>`;
     const paragraph = paragraphs[0];
     if (!paragraph) return [{ start: cell.innerEnd, end: cell.innerEnd, replacement: `<w:p>${run}</w:p>` }];
@@ -288,6 +331,128 @@ function tableCandidates(xml: string, part: string, table: Block, counters: Reco
   return out;
 }
 
+/** Tick or untick a checkbox content control: its w14:checked flag and the box symbol Word shows. */
+function checkboxControlEdits(xml: string, prBlock: Block, content: Block, checked: boolean): Edit[] {
+  const pr = xml.slice(prBlock.start, prBlock.end);
+  const state = pr.match(new RegExp(`<w14:${checked ? "checkedState" : "uncheckedState"}\\b[^>]*>`))?.[0] ?? "";
+  const stateChar = state.match(/w14:val="([0-9A-Fa-f]{4})"/)?.[1], stateFont = state.match(/w14:font="([^"]*)"/)?.[1];
+  const edits: Edit[] = [];
+  const flag = `<w14:checked w14:val="${checked ? 1 : 0}"/>`;
+  const existing = /<w14:checked\b[^>]*?\/>/.exec(pr);
+  const open = /<w14:checkbox\b[^>]*?(\/?)>/.exec(pr)!;
+  if (existing) edits.push({ start: prBlock.start + existing.index, end: prBlock.start + existing.index + existing[0].length, replacement: flag });
+  else if (open[1] === "/") edits.push({ start: prBlock.start + open.index, end: prBlock.start + open.index + open[0].length, replacement: `${open[0].slice(0, -2).trimEnd()}>${flag}</w14:checkbox>` });
+  else edits.push({ start: prBlock.start + open.index + open[0].length, end: prBlock.start + open.index + open[0].length, replacement: flag });
+  const body = xml.slice(content.inner, content.innerEnd);
+  const symbol = /<w:sym\b[^>]*\/>/.exec(body);
+  if (symbol) {
+    const font = stateFont ?? symbol[0].match(/w:font="([^"]*)"/)?.[1] ?? "Wingdings";
+    const char = stateChar ?? (checked ? "F0FE" : "F0A8");
+    edits.push({ start: content.inner + symbol.index, end: content.inner + symbol.index + symbol[0].length, replacement: `<w:sym w:font="${escapeXml(font)}" w:char="${char}"/>` });
+    return edits;
+  }
+  const nodes = textNodes(xml, content.inner, content.innerEnd);
+  const total = nodes.reduce((sum, node) => sum + node.text.length, 0);
+  const glyph = String.fromCodePoint(parseInt(stateChar ?? (checked ? "2612" : "2610"), 16));
+  if (nodes.length) edits.push(...replaceTextRange(nodes, 0, total, glyph));
+  else edits.push({ start: content.inner, end: content.inner, replacement: `<w:r>${textElements(glyph)}</w:r>` });
+  return edits;
+}
+
+/** Tick or untick a legacy FORMCHECKBOX field by setting its w:checked value. */
+function legacyCheckboxEdits(xml: string, begin: number, beginEnd: number, checked: boolean): Edit[] {
+  const box = elements(xml, "w:checkBox", begin, beginEnd)[0];
+  if (!box) return [];
+  const flag = `<w:checked w:val="${checked ? 1 : 0}"/>`;
+  if (box.inner === box.innerEnd) return [{ start: box.start, end: box.end, replacement: `<w:checkBox><w:sizeAuto/>${flag}</w:checkBox>` }];
+  const inner = xml.slice(box.inner, box.innerEnd).replace(/<w:checked\b[^>]*?\/>/g, "");
+  return [{ start: box.inner, end: box.innerEnd, replacement: inner + flag }];
+}
+
+/** Wingdings box symbols outside any control or field. */
+function symbolCheckboxCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>, reserved: (start: number, end: number) => boolean): Candidate[] {
+  const candidates: Candidate[] = [];
+  for (const match of xml.matchAll(/<w:sym\b[^>]*\/>/g)) {
+    const start = match.index!, end = start + match[0].length;
+    const font = match[0].match(/w:font="([^"]*)"/)?.[1] ?? "", char = (match[0].match(/w:char="([0-9A-Fa-f]{4})"/)?.[1] ?? "").toUpperCase();
+    if (!/^wingdings$/i.test(font) || !BOX_SYMBOLS.has(char) || reserved(start, end)) continue;
+    candidates.push({ part, kind: "checkbox", ordinal: counters.checkbox++, label: "", position: start, context: "Checkbox", checkbox: { anchor: [start, end], state: (checked) => (checked ? "1" : "0") }, edit: (value) => [{ start, end, replacement: `<w:sym w:font="${escapeXml(font)}" w:char="${value === "1" ? "F0FE" : "F0A8"}"/>` }] });
+  }
+  return candidates;
+}
+
+/**
+ * Label every checkbox from the words beside it. In a run of boxes that starts with a box ("☐ Passed ☐ Failed")
+ * each label follows its box; otherwise ("Passed ☐ Failed ☐") it comes before. A box with no words beside it in
+ * its paragraph takes the cell to its left in a table, or "Checkbox".
+ */
+function labelCheckboxes(xml: string, candidates: Candidate[], reservedRanges: readonly (readonly [number, number])[]) {
+  const boxes = candidates.filter((candidate) => candidate.checkbox);
+  if (!boxes.length) return;
+  const where = (box: Candidate) => box.checkbox!.anchor?.[0] ?? box.checkbox!.glyph!.node;
+  const beside = new Map<Candidate, string>();
+  for (const paragraph of elements(xml, "w:p")) {
+    const inside = boxes.filter((box) => where(box) >= paragraph.inner && where(box) < paragraph.innerEnd);
+    if (!inside.length) continue;
+    const anchored = inside.filter((box) => box.checkbox!.anchor);
+    type Item = { kind: "box"; box: Candidate } | { kind: "text"; text: string } | { kind: "stop" };
+    // Paragraph content in order: text, checkboxes, and other fields or controls (which end a run of boxes).
+    const events: Array<{ at: number; item: Item | { kind: "node"; node: TextNode } }> = [
+      ...textNodes(xml, paragraph.inner, paragraph.innerEnd).filter((node) => !reservedRanges.some(([a, b]) => node.start < b && node.end > a)).map((node) => ({ at: node.start, item: { kind: "node" as const, node } })),
+      ...anchored.map((box) => ({ at: box.checkbox!.anchor![0], item: { kind: "box" as const, box } })),
+      ...reservedRanges.filter(([a]) => a >= paragraph.inner && a < paragraph.innerEnd && !anchored.some((box) => box.checkbox!.anchor![0] === a)).map(([a]) => ({ at: a, item: { kind: "stop" as const } })),
+    ].sort((a, b) => a.at - b.at);
+    const items: Item[] = [];
+    for (const { item } of events) {
+      if (item.kind !== "node") { items.push(item); continue; }
+      let text = "";
+      for (let i = 0; i < item.node.text.length; i += 1) {
+        const glyphBox = inside.find((box) => box.checkbox!.glyph?.node === item.node.start && box.checkbox!.glyph.offset === i);
+        if (glyphBox) { items.push({ kind: "text", text }, { kind: "box", box: glyphBox }); text = ""; } else text += item.node.text[i];
+      }
+      items.push({ kind: "text", text });
+    }
+    // Split into runs of boxes; within a run, collect the words before and after each box.
+    let run: Array<{ box: Candidate; before: string; after: string }> = [], lead = "";
+    const finish = () => {
+      if (!run.length) return;
+      const leading = !(run[0]!.before.split(LABEL_BREAK).at(-1) ?? "").trim();
+      for (const entry of run) {
+        const after = cleanLabel(entry.after.split(LABEL_BREAK)[0] ?? ""), before = cleanLabel(entry.before.split(LABEL_BREAK).at(-1) ?? "");
+        const [first, second] = leading ? [after, before] : [before, after];
+        beside.set(entry.box, plausibleLabel(first) ? first : plausibleLabel(second) ? second : "");
+      }
+      run = []; lead = "";
+    };
+    for (const item of items) {
+      if (item.kind === "stop") { finish(); continue; }
+      if (item.kind === "text") { if (run.length) run.at(-1)!.after += item.text; else lead += item.text; continue; }
+      run.push({ box: item.box, before: run.length ? run.at(-1)!.after : lead, after: "" });
+    }
+    finish();
+  }
+  for (const box of boxes) {
+    const preset = box.checkbox!.preset ?? "";
+    const label = (plausibleLabel(preset) && !/^(check|checkbox|check box)\s*\d*$/i.test(preset) ? preset : "") || beside.get(box) || cellLabel(xml, where(box)) || "Checkbox";
+    box.label = label;
+    box.context = `Checkbox: ${label}`;
+  }
+}
+
+/** The text of the table cell to the left of a position, for a checkbox alone in its cell. */
+function cellLabel(xml: string, at: number) {
+  for (const table of allTables(xml).reverse()) {
+    if (at < table.start || at >= table.end) continue;
+    for (const row of elements(xml, "w:tr", table.inner, table.innerEnd)) {
+      const cells = elements(xml, "w:tc", row.inner, row.innerEnd);
+      const index = cells.findIndex((cell) => at >= cell.start && at < cell.end);
+      if (index > 0) { const label = cleanLabel(plainText(xml, cells[index - 1]!.inner, cells[index - 1]!.innerEnd)); return plausibleLabel(label) ? label : ""; }
+      if (index === 0) return "";
+    }
+  }
+  return "";
+}
+
 function contentControlCandidates(xml: string, part: string, counters: Record<DocxTargetKind, number>): { candidates: Candidate[]; ranges: Array<[number, number]> } {
   const candidates: Candidate[] = [], ranges: Array<[number, number]> = [];
   // Containers (building blocks, groups, controls wrapping tables) are not fields themselves; what is inside them is scanned normally.
@@ -307,8 +472,13 @@ function contentControlCandidates(xml: string, part: string, counters: Record<Do
   }
   found.sort((a, b) => a.sdt.start - b.sdt.start);
   for (const { sdt, prBlock, content, pr } of found) {
-    // Checkboxes, lists and pictures are not text fields; their content is left alone.
-    if (/<w14:checkbox|<w:dropDownList|<w:comboBox|<w:picture/.test(pr)) continue;
+    if (/<w14:checkbox/.test(pr)) {
+      const name = cleanLabel(decodeXml(pr.match(/<w:alias w:val="([^"]*)"/)?.[1] || pr.match(/<w:tag w:val="([^"]*)"/)?.[1] || ""));
+      candidates.push({ part, kind: "checkbox", ordinal: counters.checkbox++, label: "", position: sdt.start, context: "Checkbox", checkbox: { anchor: [sdt.start, sdt.end], preset: name, state: (checked) => (checked ? "1" : "0") }, edit: (value) => checkboxControlEdits(xml, prBlock, content, value === "1") });
+      continue;
+    }
+    // Lists and pictures are not text fields; their content is left alone.
+    if (/<w:dropDownList|<w:comboBox|<w:picture/.test(pr)) continue;
     const alias = pr.match(/<w:alias w:val="([^"]*)"/)?.[1], tag = pr.match(/<w:tag w:val="([^"]*)"/)?.[1];
     const placeholder = /<w:showingPlcHdr\/>/.test(pr) ? plainText(xml, content.inner, content.innerEnd) : "";
     const label = cleanLabel(decodeXml(alias || tag || placeholder || ""));
@@ -351,7 +521,7 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
   // Walk field characters through the whole part, so a field whose result runs into the next paragraph is
   // still one field. Each field is begin … [separate …] end; checkboxes have no separate.
   const token = /<w:fldChar\b[^>]*?w:fldCharType="(begin|separate|end)"[^>]*?(?:\/>|>([\s\S]*?)<\/w:fldChar>)|<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g;
-  type Open = { begin: number; ffData: string; instr: string; separateEnd: number | null; depth: number };
+  type Open = { begin: number; beginEnd: number; ffData: string; instr: string; separateEnd: number | null; depth: number };
   const stack: Open[] = [];
   // The label for a field is the text after the previous field in the same paragraph.
   let previousFieldEnd = 0;
@@ -359,7 +529,7 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
   while ((match = token.exec(xml))) {
     const at = match.index;
     if (match[3] !== undefined) { if (stack.length) stack[stack.length - 1]!.instr += decodeXml(match[3]); continue; }
-    if (match[1] === "begin") stack.push({ begin: at, ffData: match[2] ?? "", instr: "", separateEnd: null, depth: stack.length });
+    if (match[1] === "begin") stack.push({ begin: at, beginEnd: at + match[0].length, ffData: match[2] ?? "", instr: "", separateEnd: null, depth: stack.length });
     else if (match[1] === "separate") { if (stack.length) stack[stack.length - 1]!.separateEnd = at + match[0].length; }
     else {
       const field = stack.pop();
@@ -370,10 +540,16 @@ function legacyFieldCandidates(xml: string, part: string, counters: Record<DocxT
       if (!/\bFORM(TEXT|CHECKBOX|DROPDOWN)\b/.test(field.instr)) continue;
       // Only the form field itself (code and result) is reserved; text around it is scanned for placeholders.
       ranges.push([field.begin, fieldEnd]);
+      const name = cleanLabel(field.ffData.match(/<w:name w:val="([^"]*)"/)?.[1] ?? "");
+      if (/\bFORMCHECKBOX\b/.test(field.instr)) {
+        // Labelled later (labelCheckboxes) from the words beside the box when its name is generic ("Check1").
+        const { begin, beginEnd } = field;
+        candidates.push({ part, kind: "checkbox", ordinal: counters.checkbox++, label: "", position: begin, context: "Checkbox", checkbox: { anchor: [begin, fieldEnd], preset: /^(text|check|dropdown)\d*$/i.test(name) ? "" : name, state: (checked) => (checked ? "1" : "0") }, edit: (value) => legacyCheckboxEdits(xml, begin, beginEnd, value === "1") });
+        continue;
+      }
       if (!/\bFORMTEXT\b/.test(field.instr) || field.separateEnd === null) continue;
       const resultStart = field.separateEnd, resultEnd = at;
-      const name = cleanLabel(field.ffData.match(/<w:name w:val="([^"]*)"/)?.[1] ?? "");
-      const before = cleanLabel(plainText(xml, labelFrom, field.begin).split(/\t|\s{3,}|;|\|/).at(-1) ?? "");
+      const before = cleanLabel(plainText(xml, labelFrom, field.begin).split(LABEL_BREAK).at(-1) ?? "");
       const label = name && !/^(text|check|dropdown)\d*$/i.test(name) ? name : before;
       if (!plausibleLabel(label)) continue;
       const nodes = textNodes(xml, resultStart, resultEnd);
@@ -416,16 +592,21 @@ function allTables(xml: string, start = 0, end = xml.length): Block[] {
 }
 
 function detectPart(xml: string, part: string): Candidate[] {
-  const counters: Record<DocxTargetKind, number> = { token: 0, label_blank: 0, table_cell: 0, content_control: 0, legacy_field: 0 };
+  const counters: Record<DocxTargetKind, number> = { token: 0, label_blank: 0, table_cell: 0, content_control: 0, legacy_field: 0, checkbox: 0 };
   const controls = contentControlCandidates(xml, part, counters);
   const legacy = legacyFieldCandidates(xml, part, counters);
-  const reservedRanges = [...controls.ranges, ...legacy.ranges];
+  const reservedRanges: Array<readonly [number, number]> = [...controls.ranges, ...legacy.ranges];
   const reserved = (start: number, end: number) => reservedRanges.some(([a, b]) => start < b && end > a);
+  const symbols = symbolCheckboxCandidates(xml, part, counters, reserved);
+  // A box symbol separates the text around it, like a checkbox control.
+  reservedRanges.push(...symbols.map((symbol) => symbol.checkbox!.anchor!));
   const used = new Set<number>();
   const tables = allTables(xml).flatMap((table) => tableCandidates(xml, part, table, counters, used, reserved));
   const paragraphs = elements(xml, "w:p").flatMap((paragraph) => paragraphCandidates(xml, part, paragraph, counters, reserved));
   const titles = headings(xml);
-  return [...controls.candidates, ...legacy.candidates, ...tables, ...paragraphs].map((candidate) => {
+  const all = [...controls.candidates, ...legacy.candidates, ...symbols, ...tables, ...paragraphs];
+  labelCheckboxes(xml, all, reservedRanges);
+  return all.map((candidate) => {
     const section = [...titles].reverse().find((title) => title.position < candidate.position && title.text !== candidate.label)?.text;
     return { ...candidate, scheme: DOCX_LOCATOR_SCHEME, ...(section ? { section } : {}) };
   });
@@ -447,7 +628,7 @@ function loadParts(bytes: Uint8Array) {
 
 export function analyzeDocx(bytes: Uint8Array): DocxField[] {
   const { xml } = loadParts(bytes);
-  return [...xml.entries()].flatMap(([part, content]) => detectPart(content, part).map(({ edit: _edit, position: _position, ...field }) => { void _edit; void _position; return field; }));
+  return [...xml.entries()].flatMap(([part, content]) => detectPart(content, part).map(({ edit: _edit, position: _position, range: _range, checkbox: _checkbox, ...field }) => { void _edit; void _position; void _range; void _checkbox; return field; }));
 }
 
 export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes: Uint8Array; issues: DocxIssue[] } {
@@ -470,6 +651,13 @@ export function fillDocx(bytes: Uint8Array, fills: readonly DocxFill[]): { bytes
       const candidate = candidates.find((item) => item.kind === fill.target.kind && item.ordinal === fill.target.ordinal);
       if (!candidate) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_missing", message: `"${fill.label ?? fill.target.label}" could not be found in the Word document. Re-analyze the template.` }); continue; }
       if (candidate.label !== fill.target.label) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "target_changed", message: `The Word document changed near "${fill.target.label}". Re-analyze the template before generating.` }); continue; }
+      if (candidate.checkbox) {
+        // A checkbox is always written, ticked or not, so an unticked box is a decision rather than something skipped.
+        const checked = checkboxState(fill.value);
+        if (checked === null) { issues.push({ fieldId: fill.fieldId, label: fill.label, kind: "invalid_checkbox_value", message: `"${fill.label ?? fill.target.label}" is a checkbox; "${fill.value}" is not a yes/no value.` }); continue; }
+        write(candidate, candidate.checkbox.state(checked));
+        continue;
+      }
       if (!fill.value) {
         // A merge token or placeholder prompt must not be printed in an official document; a blank line or empty cell can stay.
         if (candidate.kind === "token" || candidate.kind === "content_control") write(candidate, "");

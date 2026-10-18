@@ -139,9 +139,12 @@ function hasAny(tokens: string[], words: readonly string[]) {
   return words.some((word) => tokens.includes(word));
 }
 
-/** True when the label carries a list index, e.g. "Serial 2" or "Make_3", meaning it may be one row of a repeating list. */
+/** Row words that carry a list index when joined to a number ("row1", "item2" in hierarchical names like Inventory.Row1.Serial). */
+const ROW_TOKEN = /^(?:row|line|item|entry|record|firearm|weapon|gun)(\d{1,2})$/;
+
+/** True when the label carries a list index, e.g. "Serial 2", "Make_3" or "Inventory.Row1.Serial", meaning it may be one row of a repeating list. */
 export function numberedIndex(tokens: string[]): number | null {
-  const digits = tokens.filter((token) => /^\d{1,2}$/.test(token));
+  const digits = tokens.flatMap((token) => (/^\d{1,2}$/.test(token) ? [token] : ROW_TOKEN.exec(token)?.slice(1, 2) ?? []));
   return digits.length === 1 ? Number(digits[0]) : null;
 }
 
@@ -186,6 +189,12 @@ export function matchFieldLabel(labels: string | readonly string[], options: { f
   if (distinct.length > 1) {
     return { status: "suggested", key: best.key, confidence: Math.min(best.confidence, 0.6), reason: `The field's labels point to different TracePoint fields (${distinct.map(label).join(", ")}). Confirm which one applies.`, alternatives: distinct.filter((key) => key !== best.key), normalizedLabel: best.normalizedLabel };
   }
+  // A row number in any source (e.g. the full name "Inventory.Row2.SerialNumber" behind a plain "Serial Number" tooltip)
+  // means the field may be one row of a list, so an exact match on another source is only a suggestion.
+  const rowIndex = allTokens.slice(0, sources.length).map((tokens) => numberedIndex(tokens)).find((index) => index !== null);
+  if (best.status === "exact" && rowIndex != null) {
+    return { ...best, status: "suggested", confidence: Math.min(best.confidence, 0.6), reason: `This field looks like ${label(best.key!)}, but its name is numbered (${rowIndex}). It may be one row of a list rather than the selected record; confirm before using it.` };
+  }
   // Any source (or the surrounding heading) that talks about another person or a personal detail contradicts the match.
   const concerns = [...new Set(allTokens.flatMap((tokens) => concernsFor(tokens, best.key)))];
   if (concerns.length) {
@@ -211,7 +220,7 @@ function matchSingle(raw: string, options: { fieldKind?: "text" | "checkbox" | "
 
   // Decisions a person made on another template. They never bypass the other-person checks in matchFieldLabel.
   const index = numberedIndex(tokens);
-  const core = tokens.filter((token) => !/^\d{1,2}$/.test(token));
+  const core = tokens.filter((token) => !/^\d{1,2}$/.test(token) && !ROW_TOKEN.test(token));
   const coreText = core.join(" ");
 
   const learned = options.learned?.find((entry) => entry.normalizedLabel === normalizedLabel);

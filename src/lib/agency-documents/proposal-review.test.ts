@@ -15,3 +15,22 @@ test("editing a proposal cannot change what was detected on the form", async () 
   assert.equal(merged.geometry.x, 0.2);
   assert.deepEqual(merged.formatting, { fontSize: 9 });
 });
+
+test("one TracePoint value mapped to several distinct form fields is flagged, not confirmed", async () => {
+  const { planAutomaticSetup, publishBlockers, sharedSourceKeys } = await import("./proposal-review");
+  const serial = (name: string, y: number) => ({ ...high, id: name, detectedLabel: "Serial Number", suggestedSemanticKey: "firearm.serial_number", matchStatus: "exact" as const, geometry: { ...high.geometry, y }, acroField: { name, kind: "text" as const, multiline: false, comb: false, maxLength: null, options: [], widgets: [] } });
+  const proposals = [serial("SerialA", 0.1), serial("SerialB", 0.2), { ...high, matchStatus: "exact" as const }];
+  const plan = planAutomaticSetup(proposals);
+  const serialRows = plan.rows.filter((row) => row.canonical_key === "firearm.serial_number");
+  assert.equal(serialRows.length, 2);
+  assert.ok(serialRows.every((row) => row.formatting.matchStatus === "suggested"));
+  assert.match(String(serialRows[0]!.formatting.matchReason), /used for 2 different fields/);
+  assert.equal(plan.rows.find((row) => row.canonical_key === "person.badge_number")!.formatting.matchStatus, "confirmed");
+  assert.equal(plan.summary.needsReview, 2);
+  assert.equal(publishBlockers(plan.rows).length, 2);
+  // Bulk "accept all exact matches" leaves them for one-by-one review too.
+  const shared = sharedSourceKeys(proposals);
+  assert.deepEqual([...shared], ["firearm.serial_number"]);
+  assert.equal(eligibleForBulkAccept(proposals[0]!, shared), false);
+  assert.equal(eligibleForBulkAccept(proposals[2]!, shared), true);
+});

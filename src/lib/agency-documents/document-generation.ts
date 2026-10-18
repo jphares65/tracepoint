@@ -72,10 +72,15 @@ const SAMPLES: Record<string, string> = {
   "qualification.date": "12/31/2026", "qualification.course_name": "Day Handgun Qualification", "qualification.score": "287", "qualification.result": "Pass", "qualification.instructor": "Sgt. Taylor R. Brooks",
 };
 
+/** PDF checkbox fields and Word checkboxes are answered yes/no. */
+export function isCheckboxField(field: Pick<TemplateFieldSpec, "formatting">) {
+  return field.formatting?.acroFieldKind === "checkbox" || (field.formatting?.docxTarget as { kind?: unknown } | undefined)?.kind === "checkbox";
+}
+
 export function sampleValue(field: TemplateFieldSpec) {
   if (field.fieldType === "static_text") return field.staticText ?? "";
   if (field.fieldType === "generated_date") return "12/31/2026";
-  if (field.fieldType === "manual") return field.formatting?.acroFieldKind === "checkbox" ? "Yes" : `‹${field.label ?? "Entered value"}›`;
+  if (field.fieldType === "manual") return isCheckboxField(field) ? "Yes" : `‹${field.label ?? "Entered value"}›`;
   return SAMPLES[field.canonicalKey ?? ""] ?? `‹${getDocumentField(field.canonicalKey ?? "")?.label ?? "Value"}›`;
 }
 
@@ -126,7 +131,7 @@ export function generateDocxDocument(source: Uint8Array, fields: readonly Templa
     return [{ target, value: resolved.value, fieldId: field.id, label: resolved.label }];
   });
   const filled = fillDocx(source, fills);
-  issues.push(...filled.issues.map((issue) => ({ fieldId: issue.fieldId, label: issue.label, page: 1, kind: "form_field_missing" as const, message: issue.message })));
+  issues.push(...filled.issues.map((issue) => ({ fieldId: issue.fieldId, label: issue.label, page: 1, kind: issue.kind === "invalid_checkbox_value" ? "invalid_checkbox_value" as const : "form_field_missing" as const, message: issue.message })));
   const previewHtml = docxPreviewHtml(filled.bytes, resolution.fields.map((item) => item.value));
   return { resolution, issues, bytes: filled.bytes, previewHtml, ready: resolution.ready && issues.length === 0 };
 }

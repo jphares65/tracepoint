@@ -87,12 +87,28 @@ export function suggestFromLabel(label: string | readonly string[], page: number
   });
 }
 
+const REPEATED_COLUMN = /^(?:make|manufacturer|model|serial(?: (?:number|no|num))?|caliber)$/i;
+
+/**
+ * Row index of a firearm-table field, from flat names ("Firearm1Make", "Make_2")
+ * or hierarchical ones ("Inventory.Row3.SerialNumber", "Firearms.Item_2.Make").
+ * `name` is the field's full name so a row number in a parent segment is seen.
+ */
 function repeatedName(name: string) {
-  const normalized = name.replace(/[._-]+/g, " ").trim();
+  const segments = name.replace(/\[\d+\]/g, "").split(".").filter(Boolean);
+  const last = segments.at(-1) ?? name;
+  const normalized = last.replace(/[_-]+/g, " ").trim();
   const prefix = normalized.match(/^(?:firearm|weapon)\s*(\d+)\s*(make|manufacturer|model|serial|caliber)\b/i);
   if (prefix) return { index: prefix[1] };
   const suffix = normalized.match(/^(make|manufacturer|model|serial|caliber)\s*(?:number\s*)?(\d+)\b/i);
-  return suffix ? { index: suffix[2] } : undefined;
+  if (suffix) return { index: suffix[2] };
+  const column = normalized.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/\s+/g, " ");
+  if (segments.length < 2 || !REPEATED_COLUMN.test(column)) return undefined;
+  for (const segment of segments.slice(0, -1).reverse()) {
+    const row = segment.match(/^(?:row|line|item|entry|record|firearm|weapon|gun)?[\s_-]*(\d{1,2})$/i);
+    if (row) return { index: row[1] };
+  }
+  return undefined;
 }
 
 function unionGeometry(items: NativeWidget[]) {
@@ -149,12 +165,12 @@ function acroRef(field: InspectedField): AcroFieldRef {
 /** Proposals for a PDF's native fillable fields. One proposal per field; all of its widgets are filled together at generation. */
 export function proposalsFromInspection(fields: readonly InspectedField[], learned: readonly LearnedMapping[] = []): AnalysisProposal[] {
   const fillable = fields.filter((field) => !field.readOnly && field.kind !== "button");
-  const widgets: NativeWidget[] = fillable.flatMap((field) => field.widgets.map((widget) => ({ name: field.name.split(".").at(-1) ?? field.name, page: widget.page, geometry: widget.geometry, fallback: false })));
+  const widgets: NativeWidget[] = fillable.flatMap((field) => field.widgets.map((widget) => ({ name: field.name, page: widget.page, geometry: widget.geometry, fallback: false })));
   const { grouped, proposals } = classifyRepeatedNativeGroups(widgets);
   for (const field of fillable) {
     const partial = field.name.split(".").at(-1) ?? field.name;
     const first = field.widgets[0];
-    if (first && grouped.has(`${first.page}:${partial}`)) continue;
+    if (first && grouped.has(`${first.page}:${field.name}`)) continue;
     const labels = labelSources(field);
     if (!first) {
       // Never guess a location. A field without a placeable widget is reported so the person can place it or ignore it.
@@ -190,7 +206,8 @@ export function proposalsFromDocxFields(fields: readonly DocxField[], learned: r
   const proposals: AnalysisProposal[] = [];
   fields.forEach((field, index) => {
     const geometry = { x: 0, y: Math.min(0.98, index * 0.001), width: 1, height: 0.001 };
-    const base = suggestFromLabel(field.label, 1, geometry, { learned, analyzerSource: "docx", context: field.section ? [field.section] : undefined });
+    // Checkboxes are never auto-filled: they become yes/no questions answered when generating.
+    const base = suggestFromLabel(field.label, 1, geometry, { learned, analyzerSource: "docx", context: field.section ? [field.section] : undefined, fieldKind: field.kind === "checkbox" ? "checkbox" : undefined });
     if (!base) return;
     let proposal: AnalysisProposal = { ...base, detectedLabel: field.label, docxTarget: field };
     if (field.repeating && proposal.matchStatus === "exact") {

@@ -14,6 +14,14 @@ export function resolveStructuredBinding(records: QualificationRecord[], binding
   if (binding.filters?.mostRecent) selected = selected.slice(0, binding.filters.mostRecent);
   const targets = orderedStructuredCells(cells), values = selected.slice(0, binding.maxRows).flatMap(record => binding.columnMappings.map(mapping => field(record, mapping.target, mapping.dateFormat))).slice(0, targets.length);
   const overflow = selected.length * binding.columnMappings.length > targets.length || selected.length > binding.maxRows;
-  if (overflow && binding.overflowBehavior === "error") throw new Error("Structured binding exceeds available cells.");
-  return { values: values.map((value, index) => ({ geometry: targets[index]!.geometry, value })), warnings: overflow ? ["Structured binding exceeds available cells."] : [], requiresReview: overflow && binding.overflowBehavior === "require_review" };
+  // Say how many records are left out, so the person generating knows exactly what the document will not show.
+  const fits = Math.min(binding.maxRows, Math.floor(targets.length / Math.max(1, binding.columnMappings.length)));
+  const message = `Structured binding exceeds available cells: ${selected.length} matching records, room for ${fits}; ${selected.length - fits} will not be printed.`;
+  if (overflow && binding.overflowBehavior === "error") throw new StructuredOverflowError(message);
+  return { values: values.map((value, index) => ({ geometry: targets[index]!.geometry, value })), warnings: overflow ? [message] : [], requiresReview: overflow && binding.overflowBehavior === "require_review" };
+}
+
+/** A binding set to stop with an error ("error") has more matching records than it has room for. */
+export class StructuredOverflowError extends Error {
+  constructor(message: string) { super(message); this.name = "StructuredOverflowError"; }
 }

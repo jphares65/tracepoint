@@ -182,3 +182,14 @@ test("a learned choice for a generic label is reused only as a suggestion", () =
   // "Submitted by" may be the officer or the preparer depending on the form.
   assert.equal(matchFieldLabel("Submitted By").status, "suggested");
 });
+
+test("a row number in the full hierarchical name keeps a plain tooltip match from being confirmed", async () => {
+  const { numberedIndex } = await import("./field-matcher");
+  assert.equal(numberedIndex(normalizeLabel("Inventory.Row1.SerialNumber")), 1);
+  assert.equal(numberedIndex(normalizeLabel("form1.Page1.SerialNumber")), null);
+  const match = matchFieldLabel(["Serial Number", "SerialNumber", "Inventory.Row2.SerialNumber"]);
+  assert.equal(match.key, "firearm.serial_number");
+  assert.equal(match.status, "suggested");
+  assert.match(match.reason, /numbered \(2\)/);
+  assert.equal(matchFieldLabel(["Serial Number", "SerialNumber"]).status, "exact");
+});
