@@ -120,4 +120,36 @@ foreach ($scriptName in @('migrate-db.ps1','apply-app-migrations.ps1','release-e
 $absent = [pscustomobject]@{ ledger='absent'; applied=@(); pending=@() }
 Assert-Throws { Assert-MigrationLedgerReport -Report $absent -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit } 'ledger is absent'
 
+# Release entry-point guards in release-entitlements-staging.ps1, read from its syntax tree.
+$releasePath = Join-Path $PSScriptRoot 'release-entitlements-staging.ps1'
+$parseErrors = $null
+$releaseAst = [System.Management.Automation.Language.Parser]::ParseFile($releasePath, [ref]$null, [ref]$parseErrors)
+if ($parseErrors.Count) { throw 'release-entitlements-staging.ps1 does not parse.' }
+$releaseParameters = @{}
+foreach ($parameter in $releaseAst.ParamBlock.Parameters) { $releaseParameters[$parameter.Name.VariablePath.UserPath] = $parameter }
+foreach ($name in @('ToolingCommit', 'ApplicationCommit')) {
+    $parameter = $releaseParameters[$name]
+    if ($null -eq $parameter) { throw "Release parameter -$name is missing." }
+    $mandatory = @($parameter.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' -and @($_.NamedArguments | Where-Object { $_.ArgumentName -eq 'Mandatory' }).Count -eq 1 })
+    if ($mandatory.Count -ne 1) { throw "Release parameter -$name must be mandatory." }
+    if ($null -ne $parameter.DefaultValue) { throw "Release parameter -$name must have no default commit." }
+}
+# The live pre-release revision is pinned: only 185 passes, and the check runs before the image is published.
+$revisionChecks = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -match '^\$previousTaskDefinition -notmatch ' }, $true))
+if ($revisionChecks.Count -ne 1) { throw 'Expected exactly one pre-release task revision check.' }
+$revisionCheck = $revisionChecks[0]
+$revisionComparison = @($revisionCheck.Clauses[0].Item1.FindAll({ param($node) $node -is [System.Management.Automation.Language.BinaryExpressionAst] }, $true)) | Select-Object -First 1
+$revisionPattern = [string]$revisionComparison.Right.Value
+if ($revisionPattern -cne ':185$') { throw "Pre-release revision pin is '$revisionPattern', expected ':185$'." }
+foreach ($revision in @(184, 186, 1185)) { if ("arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:$revision" -match $revisionPattern) { throw "Revision $revision passed the pre-release pin." } }
+if ('arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:185' -notmatch $revisionPattern) { throw 'Revision 185 failed the pre-release pin.' }
+if ($revisionCheck.Clauses[0].Item2.Extent.Text -notmatch '^\{\s*throw ') { throw 'The pre-release revision check must stop the release.' }
+$publishCall = $releaseAst.Extent.Text.IndexOf("'publish-tracepoint-staging-image.ps1'")
+if ($publishCall -lt 0 -or $revisionCheck.Extent.StartOffset -ge $publishCall) { throw 'The pre-release revision check must run before the image is published.' }
+# Only 043-045 may be applied, after an exact typed confirmation.
+$releaseText = $releaseAst.Extent.Text
+if ($releaseText -notmatch [regex]::Escape("`$expectedPending = @('043_range_workspace_authenticated_writes.sql', '044_cognito_password_global_scope.sql', '045_password_operation_resolution.sql')")) { throw 'Release pending set must be exactly 043-045.' }
+if ($releaseText -notmatch [regex]::Escape("if (`$confirmation -cne 'APPLY 043-045') { throw")) { throw 'Database apply must require the exact APPLY 043-045 confirmation.' }
+if ($releaseText -match "042_default_module_entitlements\.sql'") { throw 'The release must not list 042 as a migration to apply.' }
+
 Write-Host 'migration release core tests passed.'
