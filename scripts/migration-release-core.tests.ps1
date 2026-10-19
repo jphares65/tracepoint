@@ -206,4 +206,11 @@ Assert-EntitlementMigrationRecord -Report $migrated -ApplicationCommit 'e3b06e6a
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $migrated -ApplicationCommit ('f' * 40) -Environment staging } 'does not match'
 Assert-Throws { Assert-MigrationLedgerReport -Report $migrated -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'exactly migrations 043, 044 and 045 pending'
 
+# No interactive web-request prompt in the release path (seen during the 2026-10-19 redeploy).
+foreach ($scriptName in @('release-entitlements-staging.ps1', 'deploy-app.ps1')) {
+    $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $scriptName), [ref]$null, [ref]$null)
+    $webCalls = @($scriptAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -in @('Invoke-WebRequest', 'iwr', 'curl', 'wget') }, $true))
+    foreach ($call in $webCalls) { if ($call.Extent.Text -notmatch '-UseBasicParsing\b') { throw "$scriptName calls $($call.GetCommandName()) without -UseBasicParsing (line $($call.Extent.StartLineNumber))." } }
+}
+
 Write-Host 'migration release core tests passed.'

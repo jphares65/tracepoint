@@ -123,7 +123,9 @@ function Assert-StagingRuntimeHealth {
         $targets = Invoke-AwsRead @('elbv2','describe-target-health','--target-group-arn',[string]$loadBalancer.targetGroupArn)
         $null = Assert-StagingTargetHealth -Targets @($targets.TargetHealthDescriptions) -DesiredCount ([int]$service.desiredCount) -RunningTaskAddresses $addresses -AfterRollout:$AfterRollout
     }
-    try { $health = Invoke-WebRequest -Uri 'https://staging.tracepointhq.com/api/health' -TimeoutSec 20 -ErrorAction Stop }
+    # -UseBasicParsing: without it Windows PowerShell 5.1 asks an interactive security question whose default
+    # answer (No) fails this check, which after a deployment rolls back a healthy release.
+    try { $health = Invoke-WebRequest -UseBasicParsing -Uri 'https://staging.tracepointhq.com/api/health' -TimeoutSec 20 -ErrorAction Stop }
     catch { throw 'Staging /api/health request failed.' }
     if ([int]$health.StatusCode -ne 200) { throw "Staging /api/health returned HTTP $($health.StatusCode)." }
     return $service

@@ -4,6 +4,23 @@ Branch `claude/staging-rc-agency-documents-20261018` (supersedes
 `claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Validation
 evidence is in the commit history and the final report; this file is the operator's procedure.
 
+## Status: deployed to staging 2026-10-19 14:03 UTC
+
+`0d9a5677` redeployed with `-DeployOnly` (no migration): task definition revision **187**, image
+`sha256:d5a19dd23b0d7784713bc9e87b7bd840916a6003e4e31d655088e9db1d8101a2`, one healthy ALB
+target, `/api/health` 200, unauthenticated API probes refused (401), no errors logged and no
+target 5xx since start. Ledger 001–045 applied, 0 pending (verified by the release's `status`).
+Rollback target: revision 185 (`sha256:c264dab7…`). The 14 target 5xx at 13:57–13:58 UTC were
+served by revision 185 during an external scanner burst (user agent `chariot-…`, ~33,000
+requests, mostly WAF-blocked), before revision 187 started.
+
+The redeploy printed a Windows PowerShell 5.1 `Invoke-WebRequest` security prompt in the release
+health check, whose default answer (No) would have failed the check and rolled back a healthy
+release; the check now uses `-UseBasicParsing` (as `deploy-app.ps1` already did), with a test.
+"LOCAL VALIDATION WARNING: node.exe failed" came from `deploy-app.ps1`'s optional post-deploy
+workstation diagnostics, which never decide a deployment; the HTTP smoke suite passes against
+revision 187 (10/10).
+
 ## 2026-10-19 release of `e3b06e6a`: migrations applied, application rolled back
 
 What happened (times UTC, from ECS service events, task records, ALB metrics and logs):
