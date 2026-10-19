@@ -62,36 +62,75 @@ refuses unless 001–042 are recorded with exactly matching filenames and hashes
 044 and 045 are pending. (The earlier candidate `bd615bb5` expected 042 to be pending and would
 have refused against the real ledger.)
 
-## Before deployment
+## Staging state observed read-only (2026-10-19 01:5x UTC)
 
-1. `aws sso login --sso-session tracepoint-staging` (covers the `tracepoint-staging` and
-   `tracepoint-member-staging` profiles; the session had expired on 2026-10-18).
-2. Read-only state capture (no changes):
-   - ECS: `aws ecs describe-services --cluster tracepoint-staging --services tracepoint-staging`
-     and `describe-task-definition` for its task — record the task definition ARN and image
-     digest. Expect the `a3fa985…` image; if staging runs anything else, stop and re-review.
-   - Ledger: `scripts/migrate-db.ps1 staging -Action diagnose -ImageCommit a3fa9855f4c797dfb7b4dd16144cf6c85a445946`
-     from this branch. Read-only for the database; note it first builds and pushes an
-     immutable `migration-<tooling commit>` image in CodeBuild/ECR. Then, after step 3 publishes the candidate
-     image, `-Action status` must show 001–042 applied and 043–045 pending with no drift.
-   - Password operations: confirm there are no unresolved `authentication_lifecycle_operations`
-     on staging. After 044 such users' membership/platform-admin changes are refused until
-     resolved (production resolved them in one reviewed unit; staging applies 044 and 045 in order).
-   - Confirm a recent RDS restore point (the release script checks PITR freshness); take a
-     manual snapshot if policy requires.
-   - Release lease: `/tracepoint/staging/database-release-lease` (SSM) must hold an unexpired
-     lease (at most 7 days ahead). **On 2026-10-18 the parameter did not exist**, so the release
-     would stop at the lease check until one is created. Renewal tooling
-     (`renew-staging-database-lease.ps1` and its GitHub workflow) lives on `origin/main`, not on the
-     staging line or this branch. The release only reads the lease.
-3. From a clean checkout of this branch, run the existing migration-first procedure
-   `scripts/release-entitlements-staging.ps1` (approved branch list now includes this branch).
-   It publishes and scans the image in CodeBuild — the staging Docker build runs the lint
-   ratchet, the application suite and the migration tests — verifies status, asks
-   `APPLY 043-045`, verifies the three new ledger rows, then asks `DEPLOY APPLICATION`.
-4. After deployment: confirm health, Cognito login (web and mobile bearer), module visibility
-   for demo agencies, Range Day save/load, and an Agency Documents generate → unpublish →
-   "revision 2" cycle with synthetic data.
+- Identity: account `559054714699`, SSO role `TracePointMigrationStaging`.
+- ECS `tracepoint-staging`: ACTIVE, 1/1 running, task definition revision **185**, one PRIMARY
+  deployment (COMPLETED 2026-10-14), image `tracepoint-staging@sha256:c264dab7323e9ebf…` = tag
+  `a3fa9855f4c797dfb7b4dd16144cf6c85a445946-aws-native-staging`.
+- RDS `tracepoint-staging-full-aws`: available, PostgreSQL 18.4, backup retention 1 day,
+  PITR current.
+- Ledger: 001–042 recorded, nothing pending (see Migration lineage).
+- SSM `/tracepoint/staging/database-release-lease`: present (version 1, written 2026-10-07 by the
+  GitHub lease workflow), **expired 2026-10-09 22:25 UTC**.
+
+### The release lease is not required by this procedure
+
+The lease is read only by `release-tracepoint-staging.ps1` (the GitHub runtime/infrastructure
+release lane) and `deploy-tracepoint-staging.ps1 -Action DeployRuntime`. The migration-first
+procedure below (`release-entitlements-staging.ps1` → `publish-tracepoint-staging-image.ps1`,
+`migrate-db.ps1`, `deploy-app.ps1`) never reads it — the 2026-10-14 release applied 042 while the
+lease was expired. No lease write is needed for this release. If a lease is wanted for
+coordination, the established procedure is the `origin/main` workflow "Renew staging database
+lease" (`aws-staging-database-lease.yml`, dispatch from `main`, protected `aws-staging`
+environment, OIDC role) which runs `renew-staging-database-lease.ps1 -Execute`: one
+`ssm put-parameter --overwrite` of that single parameter (expiry 30 min–7 days ahead, owner
+`github-<actor>`, reference `github:<run>:<attempt>`), then a validated readback. It touches no
+other resource.
+
+## Deployment procedure (requires explicit approval; every step fails closed)
+
+Run in Windows PowerShell from a clean checkout of this branch at its HEAD (`<HEAD>` below is
+`git rev-parse HEAD`; tooling and application commit are the same reviewed commit):
+
+```powershell
+aws sso login --sso-session tracepoint-staging
+git -C <checkout> status --porcelain --untracked-files=all   # must print nothing
+npm ci                                                      # the script runs node_modules\.bin\tsc.cmd
+.\scripts\release-entitlements-staging.ps1 -ToolingCommit <HEAD> -ApplicationCommit <HEAD>
+```
+
+What the script does, in order — it stops at the first failure:
+
+1. Verifies HEAD = `-ToolingCommit`, a clean tree, the application commit is a local ancestor,
+   the staging identity and region; runs `tsc --noEmit`, the AWS-native provider reachability
+   check and `migration-release-core.tests.ps1` (which pins staging's recorded 038–042 hashes).
+2. Verifies staging is healthy and on task revision **185** (records it as the rollback target)
+   and that RDS PITR is no older than 30 minutes.
+3. Publishes the application image through CodeBuild (approved-branch and archive checks; the
+   Docker build runs the lint ratchet, application suite, migration tests and `next build`),
+   requires a clean ECR scan, and records the digest. **No ECS change.**
+4. Runs migration `status` against the live ledger with that image: requires 001–042 recorded
+   with matching names and hashes and exactly 043, 044, 045 pending. Re-checks PITR and that the
+   service is still on revision 185.
+5. Prompt **`APPLY 043-045`** — the only database write. Each migration runs in its own
+   transaction with its ledger row. Then `status` again must show nothing pending, and the
+   043–045 rows must carry this commit, `staging`, `apply`.
+6. Prompt **`DEPLOY APPLICATION`** — `deploy-app.ps1` re-runs the application suite locally,
+   reuses the scanned image (digest asserted), registers revision 186 from revision 185 (only the
+   image changes) and updates the ECS service; verifies steady state, ALB health, running digest
+   and `/api/health`. On any failure it restores revision 185 automatically.
+
+Answering anything other than the exact prompt text stops the release at that point.
+
+After deployment: confirm Cognito login (web and mobile bearer), module visibility for demo
+agencies, Range Day save/load, inventory and fleet pages, and an Agency Documents upload →
+setup → publish → generate → unpublish → "revision 2" cycle with synthetic data only.
+
+Operator notes:
+- 044 refuses membership and platform-admin changes for users with an unresolved password
+  operation until it is resolved; check `authentication_lifecycle_operations` if such a change is
+  refused after the release.
 
 ## Rollback (preserves the current staging environment)
 
@@ -100,7 +139,9 @@ have refused against the real ledger.)
   failed deployment `release-entitlements-staging.ps1` restores it automatically
   (`deploy-app.ps1 staging -RollbackTaskDefinitionArn <prior>`). Manually:
   `scripts/invoke-tracepoint-staging-rollback.ps1 -TaskDefinitionArn <prior> -ExpectedImageDigest <recorded digest> -Execute`.
-  The rollback verifies the running task serves exactly that digest.
+  The rollback verifies the running task serves exactly that digest. For this release the prior
+  target is `arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:185`
+  with digest `sha256:c264dab7323e9ebf55df7400e233b76e88e9efe18dfa99a26df212ce4efa9afb`.
 - **Database:** 043–045 are additive and are not reversed automatically. The prior app
   `a3fa985` does not check the migration ledger at startup, so it still boots after them. A full database rollback is a restore from the
   pre-release snapshot/PITR into a new instance — an operational decision, not a script.

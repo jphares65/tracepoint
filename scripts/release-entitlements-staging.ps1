@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ToolingCommit,
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$ApplicationCommit = '353933a6b98ad7e6c3ac082b786c6a8c7b7aedb8',
+    # No default: the reviewed application commit is always named explicitly (a stale default would build an older release).
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ApplicationCommit,
     [ValidateRange(5,60)][int]$MaximumPitrAgeMinutes = 30
 )
 
@@ -136,7 +137,8 @@ try {
 
     $previousService = Assert-StagingRuntimeHealth
     $previousTaskDefinition = [string]$previousService.taskDefinition
-    if ($previousTaskDefinition -notmatch ':184$') { throw "Expected the reviewed pre-release staging task revision 184; found '$previousTaskDefinition'." }
+    # Revision 185 runs a3fa985 (digest sha256:c264dab7...), deployed 2026-10-14 and observed read-only on 2026-10-19.
+    if ($previousTaskDefinition -notmatch ':185$') { throw "Expected the reviewed pre-release staging task revision 185; found '$previousTaskDefinition'." }
     $null = Assert-RdsPitr
 
     Write-Host "Building and scanning application image for $ApplicationCommit; no ECS service update occurs in this step."
