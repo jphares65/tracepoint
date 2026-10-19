@@ -65,7 +65,10 @@ function Get-TracePointStagingImageArchiveIncludes {
         'next.config.ts', 'package.json', 'package-lock.json', 'postcss.config.mjs',
         'tsconfig.json', 'lint-baseline.json', 'public', 'src', 'database/aws', 'scripts',
         # Test-only schema fixtures for the application suite the Docker build runs.
-        'database/rehearsal', 'supabase/migrations'
+        'database/rehearsal', 'supabase/migrations',
+        # Imported by scripts/validate-production-live-readiness.mts; the migration tests the Docker build runs
+        # check that every archived script's local imports are present. Matches the migration image archive.
+        'infra/lib/production-target.ts'
     )
 }
 
@@ -88,7 +91,7 @@ function Assert-TracePointStagingImageArchive {
         '.dockerignore', 'buildspec.staging-image.yml', 'Dockerfile', 'eslint.config.mjs',
         'next.config.ts', 'package.json', 'package-lock.json', 'postcss.config.mjs',
         'tsconfig.json', 'lint-baseline.json', 'scripts/lint-ratchet.mjs', 'scripts/run-application-tests.mjs', 'scripts/aws-native-migrations.test.mjs',
-        'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs'
+        'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs', 'infra/lib/production-target.ts'
     )
     $missing = @($requiredFiles | Where-Object { $_ -notin $EntryNames })
     foreach ($prefix in @('public/', 'src/', 'database/aws/', 'scripts/')) {

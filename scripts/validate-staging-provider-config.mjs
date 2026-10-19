@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { stripByteOrderMark } from './stdin-json.mjs';
 const origin = 'https://wztqqqashilusoppddxi.supabase.co';
 function keyKind(key, expectedRole, prefix) {
   if (typeof key !== 'string') throw new Error('Missing staging Supabase key');
@@ -34,7 +35,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     let input = '';
     for await (const chunk of process.stdin) input += chunk;
     let secret;
-    try { secret = JSON.parse(input); } catch { throw new Error('Invalid staging secret JSON'); }
+    try { secret = JSON.parse(stripByteOrderMark(input)); } catch { throw new Error('Invalid staging secret JSON'); }
     const email = !process.argv.includes('--supabase-only');
     await validateStagingProviderConfig(secret, fetch, {email});
     console.log(email ? 'Staging Supabase and Brevo probes passed.' : 'Staging Supabase probes passed; email is a separate deployment gate.');

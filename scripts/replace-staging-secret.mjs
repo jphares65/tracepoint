@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { validateStagingProviderConfig } from './validate-staging-provider-config.mjs';
+import { stripByteOrderMark } from './stdin-json.mjs';
 // JSON arrives over stdin. Node serializes Windows argv correctly, avoiding
 // PowerShell 5 native-argument quote loss. AWS errors never echo secret args.
 const env = { ...process.env, AWS_REGION: 'us-east-1', AWS_DEFAULT_REGION: 'us-east-1' };
@@ -13,7 +14,7 @@ function gate() {
 }
 try {
   let input = ''; for await (const chunk of process.stdin) input += chunk;
-  let secret; try { secret = JSON.parse(input); } catch { throw new Error('Invalid staging secret JSON'); }
+  let secret; try { secret = JSON.parse(stripByteOrderMark(input)); } catch { throw new Error('Invalid staging secret JSON'); }
   gate();
   await validateStagingProviderConfig(secret);
   const keys = ['SUPABASE_SECRET_KEY', 'BREVO_API_KEY', 'NOTIFICATION_DISPATCH_SECRET', 'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY', 'NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SITE_URL', 'CONFIGURATION_ENVIRONMENT'];

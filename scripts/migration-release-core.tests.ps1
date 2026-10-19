@@ -40,6 +40,7 @@ foreach ($branch in @('codex/aws-staging-readiness-20260902','codex/aws-staging-
 }
 Assert-ReleaseBranch 'codex/demo-pd-module-visibility' | Out-Null
 Assert-ReleaseBranch 'claude/staging-release-agency-documents' | Out-Null
+Assert-ReleaseBranch 'claude/staging-rc-agency-documents-20261018' | Out-Null
 Assert-Throws { Assert-ReleaseBranch 'feature/unreviewed-release' } 'unapproved branch'
 
 $identity = [pscustomobject]@{ Account='559054714699'; Arn='arn:aws:sts::559054714699:assumed-role/AWSReservedSSO_TracePointMigrationStaging_test/operator' }

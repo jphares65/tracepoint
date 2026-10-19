@@ -9,7 +9,9 @@ $script:StagingReleaseBranches = @(
     'codex/staging-mobile-api-release-20261007',
     'codex/demo-pd-module-visibility',
     # Staging release candidate: demo-pd + Agency Documents + production line (2026-10-18).
-    'claude/staging-release-agency-documents'
+    'claude/staging-release-agency-documents',
+    # Same candidate with the image-archive and Windows PowerShell 5.1 release fixes (2026-10-18).
+    'claude/staging-rc-agency-documents-20261018'
 )
 
 function Get-ReviewedImageTag {

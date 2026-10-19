@@ -1,5 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 does not load the zip types by default (the publisher loads them the same way).
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 Import-Module (Join-Path $PSScriptRoot 'TracePoint.Staging.psm1') -Force
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
