@@ -1,8 +1,23 @@
 # Staging release candidate: Agency Documents on the staging line (2026-10-18)
 
-Branch `claude/staging-release-agency-documents`. Nothing has been deployed, published,
-migrated or changed in AWS. Validation evidence is in the commit history and the final
-report; this file is the operator's procedure.
+Branch `claude/staging-rc-agency-documents-20261018` (supersedes
+`claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Nothing has
+been deployed, published, migrated or changed in AWS. Validation evidence is in the commit
+history and the final report; this file is the operator's procedure.
+
+### Release blockers found and fixed on this branch
+
+- **Staging image build would fail.** The candidate's Dockerfile runs the migration tests, and
+  `next build` type-checks `scripts/`; both need `infra/lib/production-target.ts`, which the
+  application image archive did not contain (`.dockerignore` and the migration image archive
+  already allowed it). Reproduced by building the exact archive locally (migration test
+  "archives ... include its validation dependencies" and `next build` TS2307), fixed in
+  `TracePoint.Staging.psm1`, and re-verified on the rebuilt archive.
+- **Release stopped at the lease check under Windows PowerShell 5.1.** 5.1 prefixes JSON piped to
+  `node` with a UTF-8 BOM; the lease, provider-config, secret-replacement and storage-activation
+  validators rejected it (fails closed). They now remove one leading BOM (`scripts/stdin-json.mjs`).
+  `test-staging-image-archive.ps1` also failed on 5.1 (zip types not loaded); fixed.
+- This branch is on the approved staging release branch list.
 
 ## What the candidate contains
 
@@ -35,7 +50,8 @@ filenames and hashes and exactly 042, 043, 044 and 045 are pending.
 
 ## Before deployment
 
-1. `aws sso login --profile tracepoint-member-staging` (the SSO session has expired).
+1. `aws sso login --sso-session tracepoint-staging` (covers the `tracepoint-staging` and
+   `tracepoint-member-staging` profiles; the session had expired on 2026-10-18).
 2. Read-only state capture (no changes):
    - ECS: `aws ecs describe-services --cluster tracepoint-staging --services tracepoint-staging`
      and `describe-task-definition` for its task — record the task definition ARN and image
@@ -49,6 +65,10 @@ filenames and hashes and exactly 042, 043, 044 and 045 are pending.
      resolved (production resolved them in one reviewed unit; staging applies 044 and 045 in order).
    - Confirm a recent RDS restore point (the release script checks PITR freshness); take a
      manual snapshot if policy requires.
+   - Release lease: `/tracepoint/staging/database-release-lease` (SSM) must hold an unexpired
+     lease (at most 7 days ahead). Renewal tooling (`renew-staging-database-lease.ps1` and its
+     GitHub workflow) lives on `origin/main`, not on the staging line or this branch; renew from
+     there if needed. The release only reads the lease.
 3. From a clean checkout of this branch, run the existing migration-first procedure
    `scripts/release-entitlements-staging.ps1` (approved branch list now includes this branch).
    It publishes and scans the image in CodeBuild — the staging Docker build runs the lint
@@ -74,8 +94,13 @@ filenames and hashes and exactly 042, 043, 044 and 045 are pending.
 
 ## Known limitations
 
-- Docker could not be built locally (Docker is not installed on the release workstation);
-  the CodeBuild image build in step 3 is the first real Docker build of this candidate.
+- Docker is not installed on the release workstation. The image build was emulated instead: the
+  exact `git archive` the publisher uploads, with `.dockerignore` applied, `npm ci`, then the
+  Dockerfile's builder steps (lint ratchet, application suite, migration tests, `npm run build`,
+  mobile route image contract). The CodeBuild build in step 3 is still the first real Docker
+  build (Linux, distroless runner stage, image scan).
+- Not covered locally: browser interaction with the builder and generate pages, Word/LibreOffice
+  rendering of generated .docx files (soffice is not installed), and real agency forms.
 - `042_default_module_entitlements` enables every active feature for every existing agency
   (noted for production in `docs/production-followups-20261017.md`); intended for staging demo
   agencies, not cleared for production.
