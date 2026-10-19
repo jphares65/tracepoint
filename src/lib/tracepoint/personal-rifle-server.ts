@@ -1,3 +1,4 @@
+import type { ServerAccessContext } from "@/lib/tracepoint/server-access";
 import { resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { MODULE_FEATURE } from "@/lib/tracepoint/module-catalog";
@@ -60,7 +61,7 @@ export function getPersonalRifleDisplayName(
 }
 
 export async function getPersonalRifleUsers(
-  admin: any,
+  admin: ServerAccessContext["admin"],
   departmentId: string,
   candidateUserIds: string[],
 ): Promise<{ data: { users: SupabaseAuthUser[] } | null; error: { message: string } | null }> {
@@ -118,7 +119,7 @@ export async function getPersonalRifleRequestContext() {
 }
 
 export async function getPersonalRifleRules(
-  admin: any,
+  admin: ServerAccessContext["admin"],
   departmentId: string,
 ): Promise<PersonalRifleRules> {
   const { data, error } = await admin
@@ -164,7 +165,7 @@ export async function getPersonalRifleRules(
 }
 
 export async function getPersonalRifleAccess(
-  admin: any,
+  admin: ServerAccessContext["admin"],
   departmentId: string,
   userId: string,
 ): Promise<PersonalRifleAccess> {
@@ -179,7 +180,7 @@ export async function getPersonalRifleAccess(
   const roleCodes: string[] = Array.from(
     new Set<string>(
       (roleRows ?? [])
-        .map((row: any) => String(row.role_code ?? ""))
+        .map((row: { role_code?: unknown }) => String(row.role_code ?? ""))
         .filter(Boolean),
     ),
   );
@@ -197,7 +198,7 @@ export async function getPersonalRifleAccess(
     permissions = Array.from(
       new Set<string>(
         (permissionRows ?? [])
-          .map((row: any) => String(row.permission_code ?? ""))
+          .map((row: { permission_code?: unknown }) => String(row.permission_code ?? ""))
           .filter(Boolean),
       ),
     );
@@ -248,7 +249,7 @@ export function getPersonalRifleExpirationDate(
 }
 
 export async function recordPersonalRifleHistory(
-  admin: any,
+  admin: ServerAccessContext["admin"],
   values: {
     departmentId: string;
     rifleId: string;
