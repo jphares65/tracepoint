@@ -1,9 +1,37 @@
 # Staging release candidate: Agency Documents on the staging line (2026-10-18)
 
 Branch `claude/staging-rc-agency-documents-20261018` (supersedes
-`claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Nothing has
-been deployed, published, migrated or changed in AWS. Validation evidence is in the commit
-history and the final report; this file is the operator's procedure.
+`claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Validation
+evidence is in the commit history and the final report; this file is the operator's procedure.
+
+## 2026-10-19 release of `e3b06e6a`: migrations applied, application rolled back
+
+What happened (times UTC, from ECS service events, task records, ALB metrics and logs):
+
+| Time | Event |
+| --- | --- |
+| 02:49 | Migrations 043, 044, 045 applied once; ledger 001–045, 0 pending (rows recorded by `e3b06e6a`). |
+| 03:04:58 | Revision 186 task `8b4834c6` started (image `sha256:0c575c7c…`); "Ready" at 03:05:26, no errors logged. |
+| 03:05:28 | 186 registered with the ALB target group. |
+| 03:06:19–29 | Revision 185 task `84bdb205` stopping; its target deregistered and **draining** (deregistration delay 300 s, so until about 03:11:29). |
+| 03:07:29 | ECS: deployment completed, steady state. `deploy-app.ps1` verified 186 (it sets draining targets aside). |
+| ~03:07–03:10 | `release-entitlements-staging.ps1` post-deploy check: every target must be `healthy`; the draining 185 target failed it ("Staging ALB targets are not all healthy"). |
+| 03:10:24 | Automatic rollback to revision 185 (task `54c9a144`, healthy from 03:11; 186 stopped with SIGTERM, exit 143). |
+
+Throughout 03:00–03:20 the target group reported `UnHealthyHostCount` 0 and no target or ALB 5xx
+responses. Revision 186 did not crash, fail startup or fail health checks; the release check
+misread the previous task's normal draining target.
+
+Fix: the post-deploy check (`Assert-StagingRuntimeHealth -AfterRollout` →
+`Assert-StagingTargetHealth`) sets draining targets aside only after a rollout, as `deploy-app.ps1`
+does, and in both modes now also requires the active targets to be exactly the running tasks
+(by private IP) and as many as desired (previously "at least"). The pre-release check still
+rejects any draining target. Redeploy uses `-DeployOnly`, which never applies a migration.
+
+Revision 185 (`a3fa985`) has run on the migrated schema since 03:11 with no errors: 043 only
+grants privileges, 044 adds guards, and 045 keeps the three-argument
+`finish_cognito_password_operation` call working (new fourth parameter has a default) and
+re-grants it to `tracepoint_runtime`.
 
 ### Release blockers found and fixed on this branch
 
@@ -88,7 +116,25 @@ environment, OIDC role) which runs `renew-staging-database-lease.ps1 -Execute`: 
 `github-<actor>`, reference `github:<run>:<attempt>`), then a validated readback. It touches no
 other resource.
 
-## Deployment procedure (requires explicit approval; every step fails closed)
+## Redeploy after the 2026-10-19 rollback (application only; no migration)
+
+Staging now records 001–045 with nothing pending. Use the deploy-only mode; it never applies a
+migration and has no `APPLY` prompt:
+
+```powershell
+aws sso login --sso-session tracepoint-staging
+git -C <checkout> status --porcelain --untracked-files=all   # must print nothing
+npm ci
+.\scripts\release-entitlements-staging.ps1 -ToolingCommit <HEAD> -ApplicationCommit <HEAD> `
+    -DeployOnly -RecordedMigrationCommit e3b06e6ada3a7ef93f41f49831d0723dd345e7d7
+```
+
+It runs the same steps 1–3 and 6 below. Step 4 becomes: `status` must show exactly 001–045
+applied, 0 pending, every row hash-matching this commit's files, and the 043–045 rows recorded
+by `e3b06e6a` (`staging`, `apply`); `e3b06e6a` must be an ancestor of the application commit.
+Step 5 is skipped. Without `-DeployOnly` the script now stops at step 4 (nothing is pending).
+
+## Original deployment procedure (used 2026-10-19; requires explicit approval; every step fails closed)
 
 Run in Windows PowerShell from a clean checkout of this branch at its HEAD (`<HEAD>` below is
 `git rev-parse HEAD`; tooling and application commit are the same reviewed commit):
@@ -117,9 +163,10 @@ What the script does, in order — it stops at the first failure:
    transaction with its ledger row. Then `status` again must show nothing pending, and the
    043–045 rows must carry this commit, `staging`, `apply`.
 6. Prompt **`DEPLOY APPLICATION`** — `deploy-app.ps1` re-runs the application suite locally,
-   reuses the scanned image (digest asserted), registers revision 186 from revision 185 (only the
-   image changes) and updates the ECS service; verifies steady state, ALB health, running digest
-   and `/api/health`. On any failure it restores revision 185 automatically.
+   reuses the scanned image (digest asserted), registers a new revision from revision 185 (only
+   the image changes) and updates the ECS service; verifies steady state, ALB health, running
+   digest and `/api/health`. The release then re-checks runtime health with draining targets of
+   the previous task set aside. On any failure it restores revision 185 automatically.
 
 Answering anything other than the exact prompt text stops the release at that point.
 

@@ -152,4 +152,58 @@ if ($releaseText -notmatch [regex]::Escape("`$expectedPending = @('043_range_wor
 if ($releaseText -notmatch [regex]::Escape("if (`$confirmation -cne 'APPLY 043-045') { throw")) { throw 'Database apply must require the exact APPLY 043-045 confirmation.' }
 if ($releaseText -match "042_default_module_entitlements\.sql'") { throw 'The release must not list 042 as a migration to apply.' }
 
+# ALB target health. Regression for the 2026-10-19 release: revision 186's target 10.40.1.151 was healthy and the
+# previous task's target was draining (deregistration delay 300 s); the post-deploy check counted the draining
+# target as unhealthy and rolled back a healthy release.
+function New-Target([string]$Id, [string]$State) { [pscustomobject]@{ Target = [pscustomobject]@{ Id = $Id; Port = 3000 }; TargetHealth = [pscustomobject]@{ State = $State } } }
+$newTask = '10.40.1.151'; $oldTask = '10.40.0.82'
+$afterRolloutTargets = @((New-Target $newTask 'healthy'), (New-Target $oldTask 'draining'))
+$result = Assert-StagingTargetHealth -Targets $afterRolloutTargets -DesiredCount 1 -RunningTaskAddresses @($newTask) -AfterRollout
+if (($result.Active -join ',') -cne $newTask -or ($result.Draining -join ',') -cne $oldTask) { throw 'After a rollout the new healthy target must pass while the old one drains.' }
+Assert-Throws { Assert-StagingTargetHealth -Targets $afterRolloutTargets -DesiredCount 1 -RunningTaskAddresses @($newTask) } 'draining before the release started'
+Assert-StagingTargetHealth -Targets @((New-Target $oldTask 'healthy')) -DesiredCount 1 -RunningTaskAddresses @($oldTask) | Out-Null
+# Nothing else is relaxed: the active targets must be healthy, exactly the running tasks, and as many as desired.
+foreach ($state in @('initial', 'unhealthy', 'unused', 'unavailable')) {
+    Assert-Throws { Assert-StagingTargetHealth -Targets @((New-Target $newTask $state), (New-Target $oldTask 'draining')) -DesiredCount 1 -RunningTaskAddresses @($newTask) -AfterRollout } 'not all healthy'
+}
+Assert-Throws { Assert-StagingTargetHealth -Targets @((New-Target $oldTask 'draining')) -DesiredCount 1 -RunningTaskAddresses @($newTask) -AfterRollout } '0 healthy active target(s)'
+Assert-Throws { Assert-StagingTargetHealth -Targets @() -DesiredCount 1 -RunningTaskAddresses @($newTask) -AfterRollout } '0 healthy active target(s)'
+Assert-Throws { Assert-StagingTargetHealth -Targets @((New-Target $newTask 'healthy'), (New-Target $oldTask 'healthy')) -DesiredCount 1 -RunningTaskAddresses @($newTask) -AfterRollout } '2 healthy active target(s)'
+Assert-Throws { Assert-StagingTargetHealth -Targets @((New-Target '10.40.9.9' 'healthy'), (New-Target $oldTask 'draining')) -DesiredCount 1 -RunningTaskAddresses @($newTask) -AfterRollout } 'are not the running tasks'
+Assert-Throws { Assert-StagingTargetHealth -Targets @((New-Target $newTask 'healthy'), (New-Target $oldTask 'draining')) -DesiredCount 2 -RunningTaskAddresses @($newTask, $oldTask) -AfterRollout } '1 healthy active target(s)'
+
+# Only the post-deploy check sets draining targets aside; the pre-release check does not.
+$healthCalls = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Assert-StagingRuntimeHealth' }, $true))
+if ($healthCalls.Count -ne 2) { throw "Expected two Assert-StagingRuntimeHealth calls; found $($healthCalls.Count)." }
+$deployCall = $releaseText.IndexOf("'deploy-app.ps1') -ScriptArguments @('staging','-ImageCommit'")
+foreach ($call in $healthCalls) {
+    $afterDeploy = $call.Extent.StartOffset -gt $deployCall
+    $hasSwitch = $call.Extent.Text -match '-AfterRollout\b'
+    if ($afterDeploy -ne $hasSwitch) { throw "Assert-StagingRuntimeHealth -AfterRollout must be used exactly for the post-deploy check (at offset $($call.Extent.StartOffset))." }
+}
+if ($releaseText -notmatch 'Assert-StagingTargetHealth -Targets') { throw 'The release health check must use Assert-StagingTargetHealth.' }
+
+# Deploy-only redeploy over the migrated ledger: verifies 001-045 with nothing pending and never applies.
+foreach ($name in @('DeployOnly', 'RecordedMigrationCommit')) { if (-not $releaseParameters.ContainsKey($name)) { throw "Release parameter -$name is missing." } }
+$deployOnlyBranch = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -ceq '$DeployOnly' -and $node.ElseClause -and $node.ElseClause.Extent.Text.Contains("'migrate-db.ps1'") }, $true))
+if ($deployOnlyBranch.Count -ne 1) { throw 'Expected one if ($DeployOnly) { ... } else { ... } around the migration steps.' }
+$deployOnlyText = $deployOnlyBranch[0].Clauses[0].Item2.Extent.Text
+$applyText = $deployOnlyBranch[0].ElseClause.Extent.Text
+if ($deployOnlyText -match "'-Action','apply'|APPLY 043-045|Read-Host") { throw 'The deploy-only branch must not apply or prompt for migrations.' }
+foreach ($required in @("-Expectation 'after-apply'", 'Count -ne 45', 'Count -ne 0', 'Assert-EntitlementMigrationRecord -Report $status -ApplicationCommit $RecordedMigrationCommit -Environment staging', 'Assert-RdsPitr')) {
+    if (-not $deployOnlyText.Contains($required)) { throw "The deploy-only branch must contain: $required" }
+}
+if (-not $applyText.Contains("'-Action','apply'") -or -not $applyText.Contains("-cne 'APPLY 043-045'")) { throw 'Migration apply must remain only in the confirmed non-deploy-only branch.' }
+if (@($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $node.Value -ceq 'apply' -and $node.Parent.Extent.Text -match "'-Action','apply'" }, $true)).Count -ne 1) { throw 'There must be exactly one migration apply call.' }
+foreach ($guard in @("if (`$DeployOnly -and -not `$RecordedMigrationCommit) { throw", "if (`$RecordedMigrationCommit -and -not `$DeployOnly) { throw", "'merge-base','--is-ancestor',`$RecordedMigrationCommit,`$ApplicationCommit")) {
+    if (-not $releaseText.Contains($guard)) { throw "Missing deploy-only guard: $guard" }
+}
+# The ledger staging now holds (after the 2026-10-19 apply by e3b06e6a): 001-045, 043-045 recorded by that commit.
+$migratedRecords = @($pending43 | ForEach-Object { [pscustomobject]@{ version=$_.version; filename=$_.filename; content_sha256=$_.content_sha256; application_git_sha='e3b06e6ada3a7ef93f41f49831d0723dd345e7d7'; environment='staging'; application_context='apply'; is_baseline=$false } })
+$migrated = [pscustomobject]@{ ledger='present'; applied=@($applied + $migratedRecords); pending=@() }
+Assert-MigrationLedgerReport -Report $migrated -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation after-apply | Out-Null
+Assert-EntitlementMigrationRecord -Report $migrated -ApplicationCommit 'e3b06e6ada3a7ef93f41f49831d0723dd345e7d7' -Environment staging | Out-Null
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $migrated -ApplicationCommit ('f' * 40) -Environment staging } 'does not match'
+Assert-Throws { Assert-MigrationLedgerReport -Report $migrated -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'exactly migrations 043, 044 and 045 pending'
+
 Write-Host 'migration release core tests passed.'

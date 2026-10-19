@@ -3,8 +3,14 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ToolingCommit,
     # No default: the reviewed application commit is always named explicitly (a stale default would build an older release).
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ApplicationCommit,
-    [ValidateRange(5,60)][int]$MaximumPitrAgeMinutes = 30
+    [ValidateRange(5,60)][int]$MaximumPitrAgeMinutes = 30,
+    # Application-only redeploy over an already migrated ledger: requires 001-045 recorded with nothing pending and
+    # the 043-045 rows written by -RecordedMigrationCommit; never applies a migration.
+    [switch]$DeployOnly,
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$RecordedMigrationCommit
 )
+if ($DeployOnly -and -not $RecordedMigrationCommit) { throw '-DeployOnly requires -RecordedMigrationCommit (the commit whose release applied 043-045).' }
+if ($RecordedMigrationCommit -and -not $DeployOnly) { throw '-RecordedMigrationCommit is only valid with -DeployOnly.' }
 
 # Controlled, migration-first AWS-native staging release. The image publisher,
 # migration runner, and application deployer each retain their own account gates.
@@ -97,16 +103,25 @@ function Get-StagingService {
     return $service
 }
 function Assert-StagingRuntimeHealth {
+    # -AfterRollout: called right after deploy-app.ps1, while the previous task's target is still draining
+    # (deregistration delay 300 s). See Assert-StagingTargetHealth; the 2026-10-19 release was rolled back
+    # because this check treated that draining target as unhealthy.
+    param([switch]$AfterRollout)
     $service = Get-StagingService
     $tasks = Invoke-AwsRead @('ecs','list-tasks','--cluster','tracepoint-staging','--service-name','tracepoint-staging','--desired-status','RUNNING')
     if (@($tasks.taskArns).Count -ne [int]$service.desiredCount) { throw 'Staging running task count does not match the ECS service desired count.' }
     $taskInfo = Invoke-AwsRead (@('ecs','describe-tasks','--cluster','tracepoint-staging','--tasks') + @($tasks.taskArns))
+    $addresses = @()
     foreach ($task in @($taskInfo.tasks)) {
         if ($task.lastStatus -cne 'RUNNING' -or @($task.containers | Where-Object { $_.lastStatus -cne 'RUNNING' -or $_.healthStatus -eq 'UNHEALTHY' }).Count -gt 0) { throw 'A staging application task is not healthy.' }
+        if ([string]$task.taskDefinitionArn -cne [string]$service.taskDefinition) { throw 'A running staging task is not on the service task revision.' }
+        $address = @($task.attachments | ForEach-Object { $_.details } | Where-Object { $_.name -ceq 'privateIPv4Address' } | ForEach-Object { [string]$_.value }) | Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace($address)) { throw 'A running staging task has no private IPv4 address.' }
+        $addresses += $address
     }
     foreach ($loadBalancer in @($service.loadBalancers)) {
         $targets = Invoke-AwsRead @('elbv2','describe-target-health','--target-group-arn',[string]$loadBalancer.targetGroupArn)
-        if (@($targets.TargetHealthDescriptions).Count -lt [int]$service.desiredCount -or @($targets.TargetHealthDescriptions | Where-Object { $_.TargetHealth.State -cne 'healthy' }).Count -gt 0) { throw 'Staging ALB targets are not all healthy.' }
+        $null = Assert-StagingTargetHealth -Targets @($targets.TargetHealthDescriptions) -DesiredCount ([int]$service.desiredCount) -RunningTaskAddresses $addresses -AfterRollout:$AfterRollout
     }
     try { $health = Invoke-WebRequest -Uri 'https://staging.tracepointhq.com/api/health' -TimeoutSec 20 -ErrorAction Stop }
     catch { throw 'Staging /api/health request failed.' }
@@ -126,6 +141,10 @@ try {
     $app = (Invoke-NativeChecked 'git.exe' @('-C',$repositoryRoot,'rev-parse',"$ApplicationCommit^{commit}") | Out-String).Trim().ToLowerInvariant()
     if ($app -cne $ApplicationCommit) { throw 'Application commit is not an exact local commit.' }
     Invoke-NativeChecked 'git.exe' @('-C',$repositoryRoot,'merge-base','--is-ancestor',$ApplicationCommit,$ToolingCommit) | Out-Null
+    if ($DeployOnly) {
+        # The release that applied the migrations must be in this application's history (same migration files).
+        Invoke-NativeChecked 'git.exe' @('-C',$repositoryRoot,'merge-base','--is-ancestor',$RecordedMigrationCommit,$ApplicationCommit) | Out-Null
+    }
 
     $identity = Assert-StagingIdentity (Invoke-AwsRead @('sts','get-caller-identity'))
     if ($env:AWS_REGION -cne $region -or $env:AWS_DEFAULT_REGION -cne $region) { throw 'AWS region is not us-east-1.' }
@@ -150,6 +169,17 @@ try {
     if ($imageDigest -notmatch '^sha256:[0-9a-f]{64}$') { throw 'Reviewed application image digest is invalid.' }
 
     $statusOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit)
+    if ($DeployOnly) {
+        # Every recorded row is hash-checked against this commit's files; nothing may be pending; 043-045 must be the
+        # rows the earlier release wrote. No migration is applied in this mode.
+        $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
+        if (@($status.applied).Count -ne 45 -or @($status.pending).Count -ne 0) { throw 'Deploy-only release requires exactly 001-045 applied and nothing pending.' }
+        $null = Assert-EntitlementMigrationRecord -Report $status -ApplicationCommit $RecordedMigrationCommit -Environment staging
+        Write-Host "Ledger verified: 001-045 applied, 0 pending; 043-045 recorded by $RecordedMigrationCommit. No migration will be applied."
+        $null = Assert-RdsPitr
+        $currentService = Get-StagingService
+        if ($currentService.taskDefinition -cne $previousTaskDefinition) { throw 'Staging application task changed during release preparation; stop for review.' }
+    } else {
     $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'before-apply' -ExpectedDigest $imageDigest
     # 042 (module entitlements) is already recorded on staging; this release applies 043-045 only.
     $expectedPending = @('043_range_workspace_authenticated_writes.sql', '044_cognito_password_global_scope.sql', '045_password_operation_resolution.sql')
@@ -167,6 +197,7 @@ try {
     $finalOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest)
     $finalStatus = Get-VerifiedLedgerReport -Output $finalOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
     if (@($finalStatus.pending).Count -ne 0) { throw 'Final migration status did not verify an empty pending set.' }
+    }
 
     $confirmation = Read-Host 'Type DEPLOY APPLICATION to update the staging ECS application service'
     if ($confirmation -cne 'DEPLOY APPLICATION') { throw 'Application deployment was not confirmed; database migration remains applied.' }
@@ -174,8 +205,9 @@ try {
     if ($currentService.taskDefinition -cne $previousTaskDefinition) { throw 'Staging application task changed after migration; do not deploy this release.' }
     $deploymentStarted = $true
     Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest) | Out-Null
-    $null = Assert-StagingRuntimeHealth
-        Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); migrations 043-045 applied; prior task $previousTaskDefinition."
+    $null = Assert-StagingRuntimeHealth -AfterRollout
+    $migrationSummary = if ($DeployOnly) { "migrations unchanged (001-045, 043-045 by $RecordedMigrationCommit)" } else { 'migrations 043-045 applied' }
+    Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); $migrationSummary; prior task $previousTaskDefinition."
 }
 catch {
     $failure = $_
@@ -187,10 +219,10 @@ catch {
             $serviceResult = Invoke-AwsRead @('ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging')
             $service = @($serviceResult.services) | Select-Object -First 1
             if ($null -ne $service -and $service.taskDefinition -cne $previousTaskDefinition) {
-                Write-Warning 'Application release failed after migration; restoring the prior ECS task revision. Migration 038 remains applied.'
+                Write-Warning 'Application release failed after migration; restoring the prior ECS task revision. Migrations 043-045 remain applied (additive; the prior revision is compatible).'
                 Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-RollbackTaskDefinitionArn',$previousTaskDefinition) | Out-Null
             }
-        } catch { throw "Release failed: $($failure.Exception.Message). Application rollback also failed: $($_.Exception.Message). Migration 038 was not reversed; stop and recover forward." }
+        } catch { throw "Release failed: $($failure.Exception.Message). Application rollback also failed: $($_.Exception.Message). Migrations 043-045 were not reversed; stop and recover forward." }
     }
     throw
 }

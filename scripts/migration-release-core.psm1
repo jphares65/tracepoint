@@ -219,4 +219,29 @@ function Assert-EntitlementMigrationRecord {
     return $records[0]
 }
 
-Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Get-AwsMigrationArchiveHashes,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord
+function Assert-StagingTargetHealth {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Targets,
+        [Parameter(Mandatory)][ValidateRange(1, 100)][int]$DesiredCount,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$RunningTaskAddresses,
+        [switch]$AfterRollout
+    )
+    # Before a release every registered target must be healthy. After a rolling deployment the previous task's
+    # target stays 'draining' for the target group's deregistration delay (300 s on staging): ECS has already
+    # stopped routing to it and it is not part of the new release, so only then are draining targets set aside,
+    # the same rule deploy-app.ps1 applies. A draining target must not be a running task. Every other target
+    # must be healthy, and they must be exactly the running tasks (one per task, none missing, none extra).
+    $draining = @($Targets | Where-Object { [string]$_.TargetHealth.State -ceq 'draining' })
+    $active = @($Targets | Where-Object { [string]$_.TargetHealth.State -cne 'draining' })
+    if (-not $AfterRollout -and $draining.Count) { throw 'Staging ALB targets are not all healthy: a target is draining before the release started.' }
+    if (@($active | Where-Object { [string]$_.TargetHealth.State -cne 'healthy' }).Count) { throw "Staging ALB targets are not all healthy: $(@($active | ForEach-Object { "$($_.Target.Id)=$($_.TargetHealth.State)" }) -join ', ')." }
+    if ($active.Count -ne $DesiredCount) { throw "Staging ALB has $($active.Count) healthy active target(s); the service desires $DesiredCount." }
+    $activeIds = @($active | ForEach-Object { [string]$_.Target.Id } | Sort-Object)
+    $taskIds = @($RunningTaskAddresses | Sort-Object)
+    if (($activeIds -join ',') -cne ($taskIds -join ',')) { throw "Staging ALB active targets ($($activeIds -join ', ')) are not the running tasks ($($taskIds -join ', '))." }
+    if (@($draining | Where-Object { $taskIds -ccontains [string]$_.Target.Id }).Count) { throw 'A running staging task is draining from the ALB.' }
+    return [pscustomobject]@{ Active = $activeIds; Draining = @($draining | ForEach-Object { [string]$_.Target.Id }) }
+}
+
+Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Get-AwsMigrationArchiveHashes,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord,Assert-StagingTargetHealth
