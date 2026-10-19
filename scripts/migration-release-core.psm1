@@ -190,7 +190,8 @@ function Assert-MigrationLedgerReport {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
     if ($filesByVersion.Count -ne 45 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 045, preserving the Agency Documents lineage at 038-041.' }
-    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 4 -or @(42, 43, 44, 45 | Where-Object { -not $pendingByVersion.ContainsKey($_) }).Count -ne 0)) { throw 'Apply requires exactly migrations 042, 043, 044 and 045 pending.' }
+    # Staging records 001-042 (042 module entitlements was applied by the staging line's release); this release applies 043-045.
+    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 3 -or @(43, 44, 45 | Where-Object { -not $pendingByVersion.ContainsKey($_) }).Count -ne 0)) { throw 'Apply requires exactly migrations 043, 044 and 045 pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -204,7 +205,8 @@ function Assert-EntitlementMigrationRecord {
     )
     # Every migration this release applies must be recorded by this commit, in this environment, as an apply.
     # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
-    $expected = @(@(42, '042_default_module_entitlements.sql'), @(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'))
+    # 042 was recorded by an earlier staging release (its content is still verified by Assert-MigrationLedgerReport).
+    $expected = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'))
     $records = @()
     foreach ($pair in $expected) {
         $version = [int]$pair[0]; $filename = [string]$pair[1]

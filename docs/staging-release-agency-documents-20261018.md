@@ -17,6 +17,10 @@ history and the final report; this file is the operator's procedure.
   `node` with a UTF-8 BOM; the lease, provider-config, secret-replacement and storage-activation
   validators rejected it (fails closed). They now remove one leading BOM (`scripts/stdin-json.mjs`).
   `test-staging-image-archive.ps1` also failed on 5.1 (zip types not loaded); fixed.
+- **Release guard expected the wrong ledger state.** Staging's ledger already records 042 (see
+  below); the guard required 001–041 recorded and 042–045 pending, so the release would have
+  refused. It now requires 001–042 recorded and exactly 043–045 pending, and the post-apply check
+  verifies the 043–045 rows written by this release.
 - This branch is on the approved staging release branch list.
 
 ## What the candidate contains
@@ -34,19 +38,29 @@ deliberate edits listed in the merge and follow-up commit messages.
 
 Files `database/aws/001`–`045`, contiguous, unique versions:
 
-| Version | File | Staging (expected) |
-| --- | --- | --- |
-| 001–037 | historical | recorded |
-| 038–041 | Agency Documents | recorded (038 row hash `83f1ffdb…`, CRLF archive bytes, read by the 2026-10-13 diagnostics; 039–041 implied by the staging runbook's "contiguous 001–041" precondition — **not yet observed**) |
-| 042 | `default_module_entitlements` | pending (never applied: the deployed `a3fa985` shipped it as 038, which collided with the recorded Agency Documents row) |
-| 043 | `range_workspace_authenticated_writes` (production's 038) | pending |
-| 044 | `cognito_password_global_scope` (production's 039) | pending |
-| 045 | `password_operation_resolution` (production's 040) | pending |
+Observed staging ledger: the last migration status report in CloudWatch
+(`/tracepoint/staging/application`, stream `database-bootstrap/bootstrap/350b3333…`,
+2026-10-14 14:22 UTC) lists 001–042 applied and nothing pending; no later report exists, and staging
+has run `a3fa985` (task definition 185) since 2026-10-14 14:40 UTC.
+
+| Version | File | Staging (observed 2026-10-14) | Recorded hash (= this branch's CRLF archive bytes) |
+| --- | --- | --- | --- |
+| 001–037 | historical | recorded | (checked by the runner on every status) |
+| 038 | `agency_documents_template_builder` | recorded | `83f1ffdb10c646d4…` |
+| 039 | `document_template_analysis` | recorded | `ef5a8670edc6dba6…` |
+| 040 | `document_template_structured_bindings` | recorded | `640a5c8093413a17…` |
+| 041 | `document_template_write_authority` | recorded | `72ba79c43da8c4f9…` |
+| 042 | `default_module_entitlements` | recorded by `a3fa985`, staging apply | `f24425f5370f1ab3…` |
+| 043 | `range_workspace_authenticated_writes` (production's 038) | pending | — |
+| 044 | `cognito_password_global_scope` (production's 039) | pending | — |
+| 045 | `password_operation_resolution` (production's 040) | pending | — |
 
 Staging hashes are of the canonical archive bytes (`git -c core.autocrlf=true archive`),
-which `apply-app-migrations.ps1` keeps for staging. Nothing previously applied is re-run:
-the runner's staging `apply` refuses unless 001–041 are recorded with exactly matching
-filenames and hashes and exactly 042, 043, 044 and 045 are pending.
+which `apply-app-migrations.ps1` keeps for staging; `migration-release-core.tests.ps1` pins the
+five recorded hashes above. Nothing previously applied is re-run: the runner's staging `apply`
+refuses unless 001–042 are recorded with exactly matching filenames and hashes and exactly 043,
+044 and 045 are pending. (The earlier candidate `bd615bb5` expected 042 to be pending and would
+have refused against the real ledger.)
 
 ## Before deployment
 
@@ -59,21 +73,22 @@ filenames and hashes and exactly 042, 043, 044 and 045 are pending.
    - Ledger: `scripts/migrate-db.ps1 staging -Action diagnose -ImageCommit a3fa9855f4c797dfb7b4dd16144cf6c85a445946`
      from this branch. Read-only for the database; note it first builds and pushes an
      immutable `migration-<tooling commit>` image in CodeBuild/ECR. Then, after step 3 publishes the candidate
-     image, `-Action status` must show 001–041 applied and 042–045 pending with no drift.
+     image, `-Action status` must show 001–042 applied and 043–045 pending with no drift.
    - Password operations: confirm there are no unresolved `authentication_lifecycle_operations`
      on staging. After 044 such users' membership/platform-admin changes are refused until
      resolved (production resolved them in one reviewed unit; staging applies 044 and 045 in order).
    - Confirm a recent RDS restore point (the release script checks PITR freshness); take a
      manual snapshot if policy requires.
    - Release lease: `/tracepoint/staging/database-release-lease` (SSM) must hold an unexpired
-     lease (at most 7 days ahead). Renewal tooling (`renew-staging-database-lease.ps1` and its
-     GitHub workflow) lives on `origin/main`, not on the staging line or this branch; renew from
-     there if needed. The release only reads the lease.
+     lease (at most 7 days ahead). **On 2026-10-18 the parameter did not exist**, so the release
+     would stop at the lease check until one is created. Renewal tooling
+     (`renew-staging-database-lease.ps1` and its GitHub workflow) lives on `origin/main`, not on the
+     staging line or this branch. The release only reads the lease.
 3. From a clean checkout of this branch, run the existing migration-first procedure
    `scripts/release-entitlements-staging.ps1` (approved branch list now includes this branch).
    It publishes and scans the image in CodeBuild — the staging Docker build runs the lint
    ratchet, the application suite and the migration tests — verifies status, asks
-   `APPLY 042-045`, verifies all four ledger rows, then asks `DEPLOY APPLICATION`.
+   `APPLY 043-045`, verifies the three new ledger rows, then asks `DEPLOY APPLICATION`.
 4. After deployment: confirm health, Cognito login (web and mobile bearer), module visibility
    for demo agencies, Range Day save/load, and an Agency Documents generate → unpublish →
    "revision 2" cycle with synthetic data.
@@ -86,9 +101,8 @@ filenames and hashes and exactly 042, 043, 044 and 045 are pending.
   (`deploy-app.ps1 staging -RollbackTaskDefinitionArn <prior>`). Manually:
   `scripts/invoke-tracepoint-staging-rollback.ps1 -TaskDefinitionArn <prior> -ExpectedImageDigest <recorded digest> -Execute`.
   The rollback verifies the running task serves exactly that digest.
-- **Database:** 042–045 are additive and are not reversed automatically. The prior app
-  `a3fa985` does not read the new objects; its migration runner already reports drift at 038
-  and is not used for this release. A full database rollback is a restore from the
+- **Database:** 043–045 are additive and are not reversed automatically. The prior app
+  `a3fa985` does not check the migration ledger at startup, so it still boots after them. A full database rollback is a restore from the
   pre-release snapshot/PITR into a new instance — an operational decision, not a script.
 - Do not retry a partially failed apply blindly: run `status`, reconcile, then decide.
 
@@ -101,8 +115,8 @@ filenames and hashes and exactly 042, 043, 044 and 045 are pending.
   build (Linux, distroless runner stage, image scan).
 - Not covered locally: browser interaction with the builder and generate pages, Word/LibreOffice
   rendering of generated .docx files (soffice is not installed), and real agency forms.
-- `042_default_module_entitlements` enables every active feature for every existing agency
-  (noted for production in `docs/production-followups-20261017.md`); intended for staging demo
-  agencies, not cleared for production.
+- `042_default_module_entitlements` (already applied on staging) enables every active feature for
+  every existing agency (noted for production in `docs/production-followups-20261017.md`); not
+  cleared for production.
 - Production is not a target of this candidate. Its ledger-adoption path still refuses
   (see `docs/agency-documents-integration-20261018.md`).

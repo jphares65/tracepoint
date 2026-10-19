@@ -93,10 +93,10 @@ function verifyLedger(files, rows) {
   }
 }
 // The staging release that combines the demo-pd line, Agency Documents and the production line.
-// Staging's ledger records Agency Documents at 038-041 (CRLF archive bytes). Its apply must find
-// 001-041 recorded and exactly the four later migrations pending; anything else stops before any SQL.
+// Staging's ledger records Agency Documents at 038-041 and module entitlements at 042 (CRLF archive
+// bytes; 042 was applied by the staging line's release on 2026-10-14, per its status reports). Its
+// apply must find 001-042 recorded and exactly 043-045 pending; anything else stops before any SQL.
 export const STAGING_RELEASE_PENDING = Object.freeze([
-  "042_default_module_entitlements.sql",
   "043_range_workspace_authenticated_writes.sql",
   "044_cognito_password_global_scope.sql",
   "045_password_operation_resolution.sql",
@@ -106,11 +106,11 @@ function requireStagingReleaseMigrations(report, files) {
   if (report.ledger !== "present" || versions.length !== 45 || versions.some((version, index) => version !== index + 1)) {
     throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-045.");
   }
-  if (report.applied.length !== 41 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-041, including the Agency Documents lineage, must all be recorded before 042-045.");
+  if (report.applied.length !== 42 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-042, including the Agency Documents lineage and module entitlements, must all be recorded before 043-045.");
   }
   if (report.pending.length !== STAGING_RELEASE_PENDING.length || report.pending.some((file, index) => file.filename !== STAGING_RELEASE_PENDING[index])) {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 042, 043, 044 and 045 pending.");
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 043, 044 and 045 pending.");
   }
 }
 async function report(client, files) {
