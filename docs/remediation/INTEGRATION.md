@@ -49,3 +49,10 @@ Every test name in the following files has a matching ✔ line in the log. The d
 - `inventory-native-schema` (3/3)
 
 The four xlsx failures and the "ran no tests" exclusions recorded during local development were environment limitations of the development sandbox. They do not occur in CI.
+
+## Follow-up merges (owner decisions)
+
+| Branch | Commit | Migration |
+|---|---|---|
+| `claude/fix-f1-account-import-decisions` | `ddcfc58acf8af3203227ae12774af24d1c554ab0` | 044 |
+| `claude/fix-f4-qr-disclosure` | `2edaba653ff2bf4e821fa159aadce295566c9b29` | — |
