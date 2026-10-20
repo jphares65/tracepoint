@@ -20,7 +20,7 @@ function dependencies(failAt?: "create" | "commit" | "send" | "identity") {
     directory: {
       async createPending() { calls.push("create"); if (failAt === "create") throw new Error("provider"); return { username: failAt === "identity" ? input.providerUsername : subject, subject, email: "user@example.test", enabled: true, status: "FORCE_CHANGE_PASSWORD" }; },
       async deleteCompensation() { calls.push("delete"); },
-      async get() { throw new Error("unused"); }, async resendInvitation() {}, async setPermanentPassword() {}, async markEmailVerified() {}, async beginPasswordReset() {}, async completePasswordReset() {}, async disable() {}, async enable() {}, async globalSignOut() {},
+      async get() { throw new Error("unused"); }, async resendInvitation() {}, async setPermanentPassword() {}, async beginPasswordReset() {}, async completePasswordReset() {}, async disable() {}, async enable() {}, async globalSignOut() {},
     },
     store: {
       async prepare() { calls.push("prepare"); return { email: "user@example.test", fullName: "Synthetic User" }; },

@@ -23,7 +23,6 @@ export interface CognitoAdminDirectory{
  get(username:string):Promise<CognitoDirectoryUser>;
  resendInvitation(email:string,expectedSubject:string):Promise<void>;
  setPermanentPassword(username:string,password:string):Promise<void>;
- markEmailVerified(username:string):Promise<void>;
  beginPasswordReset(username:string):Promise<void>;
  completePasswordReset(username:string,code:string,password:string):Promise<void>;
  disable(username:string):Promise<void>;

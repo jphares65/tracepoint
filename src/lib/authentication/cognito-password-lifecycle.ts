@@ -84,7 +84,8 @@ export async function assignCognitoPassword(input: {
   try {
     assertDirectoryMatch(prepared, await directory.get(prepared.providerUsername));
     await directory.setPermanentPassword(prepared.providerUsername, input.password);
-    if (prepared.identityState === "pending") await directory.markEmailVerified(prepared.providerUsername);
+    // ADM-07: an assigned password proves nothing about the mailbox, so the
+    // email is not marked verified here.
     await directory.globalSignOut(prepared.providerUsername);
     await finish(operationId, true);
     return prepared;

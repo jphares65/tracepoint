@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       }
       if (error.code === "recovery_unavailable") {
         return NextResponse.json(
-          { error: "Cognito email recovery is unavailable for this account. No reset email was sent." },
+          { error: "Cognito cannot send a reset code to this account: its email address has not been verified, or the account is not in a state that allows a reset. Use Assign Password instead. No reset email was sent." },
           { status: 409 },
         );
       }

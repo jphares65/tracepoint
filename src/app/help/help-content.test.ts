@@ -49,3 +49,9 @@ test("ADM-07 (verify): web sign-in hands off to Cognito managed login, whose poo
   assert.match(source("../../lib/authentication/cognito-pkce.ts"), /new URL\(domain\+'\/oauth2\/authorize'\)/);
   assert.match(source("../../../infra/lib/cognito-foundation-stack.ts"), /accountRecovery:cognito\.AccountRecovery\.EMAIL_ONLY/);
 });
+
+test("ADM-07: password help names the remedy for each account state", () => {
+  const tip = String(article("password-reset").tip);
+  assert.match(tip, /Before your first sign-in, Forgot your password\? cannot be used: ask a department administrator to select Send Activation/);
+  assert.match(tip, /refused or no code arrives after your first sign-in, ask a department administrator to assign a password/);
+});
