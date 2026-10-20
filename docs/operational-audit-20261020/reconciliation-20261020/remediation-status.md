@@ -119,3 +119,13 @@ B8 and B11 are now merged, in that order. The staging package covers migrations 
 Open owner decisions from B8/B11:
 - B8: profile name read for `manage_firearms`-only armorers ("Unknown User"); two read-policy gaps (off-duty inspection without review permission; rifle-review permission resolution for non-administrators); review the narrow personal-rifle history INSERT grant in 052.
 - B11: ADM-07 `email_verified` for invited users (S23 step 3); bridge-mode member save stays non-atomic; 63 other routes still pass raw error text in some path; 33 armory backup files still to remove.
+
+## Update: owner follow-ups before staging
+
+| Item | Branch @ commit | Migration | Integration CI |
+|---|---|---|---|
+| ADM-07 invited-user reset | `claude/fix-adm07-invited-reset` @ `9a7a234` | — | Green (run 15) |
+| DC2 timestamp contract | `claude/fix-dc2-timestamp-contract` @ `2f4d675` | — | Green (run 16) |
+| B8a armory audit history and access | `claude/fix-b8a-armory-access` @ `de82a0d` | 052 (edited in place, unapplied anywhere), 053 | Green (run 18 on `196542a`; run 17 was superseded) |
+
+**Candidate staging code commit:** `8574db3`. Everything after it on the branch is documentation only. The staging package covers the 15 pending migrations 038–046 and 048–053, plus steps S1–S24 with S22a and the revised S23-3. The open information-disclosure items are in [security-backlog.md](security-backlog.md).
