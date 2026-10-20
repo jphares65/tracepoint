@@ -72,3 +72,4 @@ F3 merge notes:
 
 B6 merge note: `claude/fix-b6-notification-delivery` restructures `src/app/api/notifications/route.ts`, which TV also edits. Expect a conflict when B6 is integrated. Re-run the TV notification tests after resolving it.
 | `claude/fix-b9-separated-custody` | `330ce2042fd12150b469f0d59c635f7bfb241a14` | 049 |
+| `claude/fix-b7-training-records` | `15867d05f52d11a081b35aa0e8a97cf3a407f614` | 050 |

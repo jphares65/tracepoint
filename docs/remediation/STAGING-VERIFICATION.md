@@ -26,7 +26,7 @@ Every gate must be satisfied and recorded before the owner approves the staging 
 | Gate | Requirement | Evidence |
 |---|---|---|
 | G1 CI | `Application quality gate` green on the **exact** integration commit to be deployed. All steps must pass: app tests with no file running zero tests, script tests, infra tests, `tsc`, `db:validate-bootstrap`, `next build`. | Run URL and commit SHA |
-| G2 Migration ledger | `migrate-db.ps1 staging -Action status`: ledger present, no drift, **001–037 applied**, only 038–046, 048 and 049 pending | Status output |
+| G2 Migration ledger | `migrate-db.ps1 staging -Action status`: ledger present, no drift, **001–037 applied**, only 038–046 and 048–050 pending | Status output |
 | G3 Hard schema dependencies | 028–031 (custody, used by the F6b QR lookup and the custody API) and 033–037 applied **before** the image. 045 applied **before** the image: every QR scan calls `can_submit_fleet_inspection` (F5) and returns 500 without it. 039 applied before the image (B1 first-login activation). | Ledger rows |
 | G4 Data-impact previews (read-only) | Run and record: (a) the 046 safety-hold preview query (F6a record), which counts vehicles newly held when 046 lands; (b) the equipment lifecycle constraint check (§1.4); (c) the date-defect checks Q1–Q9 (hotfix record), including **Q3 queued false-"Expired" emails**. The email dispatcher stays off. | Query outputs |
 | G5 Snapshot | Manual RDS snapshot taken and `available` | Snapshot ARN |
@@ -48,7 +48,7 @@ This package can move items to stage 3 only. Nothing in this document moves any 
 
 1. Record the current staging state:
    - ECS task definition revision and image digest: `aws ecs describe-services --cluster tracepoint-staging --services tracepoint-staging`. This is the **rollback target**.
-   - `scripts/migrate-db.ps1 staging -Action status`. Expected: ledger present, 001–037 applied, 038–046, 048 and 049 pending, no `MIGRATION_DRIFT`.
+   - `scripts/migrate-db.ps1 staging -Action status`. Expected: ledger present, 001–037 applied, 038–046 and 048–050 pending, no `MIGRATION_DRIFT`.
 2. Take a manual RDS snapshot of the staging database: `tracepoint-staging-pre-integration-<date>`.
 3. Confirm the migration role owns `public.equipment_assets` and `public.equipment_asset_assignments`, which 041's `SECURITY DEFINER` function requires:
 
@@ -88,6 +88,7 @@ All files are idempotent and wrapped in `begin;` and `commit;`.
 | 046 | `fleet_safety_hold_clearance` | F3, F6a | Safety-hold clearance columns and guard (managers only, reason required, refused while a critical work order is open); critical inspections take the vehicle Out of Service whatever the automation settings; outbox stores the inspection's work order; reconciliation skips entries under 5 minutes old that were never attempted | 043 (045 optional) | **Edited in place by F6a** (never applied anywhere; staging and production stop at 037). **One-time data baseline on first apply:** only vehicles with a later passing inspection after their latest critical condition, and no open critical work order, are marked cleared, each with an `audit_events` row (actor null). Vehicles whose only evidence is a completed or cancelled work order are **held** until re-inspection or a manager clearance. Run the per-agency preview query in the F6a record **before** applying. |
 | 048 | `training_record_visibility` | TV | Own-row-or-permission read policies on certifications, agency-training attendee/requirement/certificate tables, qualification results, drill results, range roster, remediation recommendations, range packets and qualification attachments | — | 047 is reserved for the separate B6 branch; the gap is allowed by the runner (strictly increasing versions only) |
 | 049 | `equipment_separated_holder` | B9 | Equipment trigger validates the holder only when it changes (items held by separated members can go out of service, be removed or returned; new assignments to inactive members are still refused); removal reason recorded in history; **profiles read policy:** `manage_users`, `manage_equipment` or `administer_department` holders can read a former member's profile in their agency (owner decision pending) | 038 | Apply before or with the image, or separated holders show as "Unnamed Officer" |
+| 050 | `training_closeout_records` | B7 | Closeout refuses Completed/Passed without Present; issue date is the event date in the department zone; records which credentials a closeout superseded (`training_certifications.superseded_by_training_event_id`) so reopen restores exactly those | — | Additive. Before deploy, run the B7 record's upcoming-event drift review query (TRN-02) |
 
 **After applying**, run `migrate-db.ps1 staging -Action status` again. Expected: no pending files, no drift.
 
@@ -128,6 +129,7 @@ Run every step **before** (current staging image and schema) and **after** (migr
 | S17 | A synthetic member holds a certification valid until next year. Open My Home, the inbox, `/training/certifications` and the readiness views on the website. Through the native app, open any view with a date (equipment expiry, inspection due date). | Shows **current** with the correct expiry date. Before the DC fix it showed **expired** with no date. The native app parses `YYYY-MM-DD` dates correctly. If it does not, **stop**: the native client needs an update before deploy. | DC (date contract) |
 | S18 | As a plain officer, through the API and the pages: list certifications, open an agency-training roster, `/api/qualifications`, the range workspace GET and another officer's evidence download. Repeat as `manage_certifications`, `manage_training`, a range scorer and `view_command_dashboard`. | Officer sees only their own records (the workspace response has `recordScope: "own"`), and another officer's evidence returns 403/404. Each permitted role sees what the TV record's mapping table lists. An officer's workspace PUT still returns 403 and erases nothing. | TRN-26, RNG-28 |
 | S19 | Deactivate a synthetic officer who holds equipment and a firearm. As an equipment manager, view the asset list, the per-officer view and the CSV export, then mark one item out of service and remove another, each with a reason. Try to assign a new item to the deactivated officer. As an armorer, view the firearm list. | Items show "Name (inactive)", never "Unassigned". Out of service and removal succeed and require a reason, and the history closes with the reason. A new assignment is refused. The armorer sees "Name (inactive)", or "Unknown User" if they hold `manage_firearms` only (known limitation). Deactivation removes no assignment. | EQP-01, EQP-04, EQP-12, ARM-08 (display) |
+| S20 | Agency training, in a tenant whose timezone differs from the tester's browser (full steps in the B7 record, "S19-B7"). Create an 18:00 event and edit it three times; closeout attendance rules; Complete Event blocked while edits are unsaved; reopen restores the superseded credential; roster with a deactivated officer; certification edit rules. | Time stays 18:00 department time. A no-show cannot be Completed. Closeout issues the credential dated the local event date. Reopen restores the earlier credential. The roster saves with the inactive officer, and their recorded row cannot be removed. A closeout-issued credential's issue date and officer cannot be changed. | TRN-02, 03, 04, 11, 12, 18, 27, 29, 30 |
 
 ## 5. Rollback
 
@@ -161,6 +163,7 @@ The migrations are additive and were designed to stay in place under the previou
 | S17 | | | | | | | |
 | S18 | | | | | | | |
 | S19 | | | | | | | |
+| S20 | | | | | | | |
 | S1 … S16 | | | | | | | |
 
 ## 7. Known open items: not covered or not yet decided
