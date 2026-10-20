@@ -6,6 +6,9 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { ammunitionUserNames } from "@/lib/armory/ammunition-user-names";
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy dynamic database boundary */
 
 type ReconciliationCycleRules = {
   spring_cycle_start: string;
@@ -111,25 +114,6 @@ async function reconciliationCycleRules(
   };
 }
 
-async function userNames(admin: any) {
-  const { data, error } = await admin.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
-
-  if (error) throw new Error(error.message);
-
-  return new Map(
-    (data?.users ?? []).map((user: any) => [
-      user.id,
-      user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.email ||
-        "Unknown User",
-    ]),
-  );
-}
-
 async function loadReconciliation(
   admin: any,
   departmentId: string,
@@ -169,7 +153,10 @@ async function loadReconciliation(
     itemRows = data ?? [];
   }
 
-  const names = await userNames(admin);
+  const names = await ammunitionUserNames(
+    admin,
+    (historyRows ?? []).flatMap((row: any) => [row.created_by, row.submitted_by, row.certified_by]),
+  );
 
   const mapReconciliation = (row: any) => ({
     id: row.id,

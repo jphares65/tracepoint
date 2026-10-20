@@ -481,6 +481,12 @@ try {
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
+  try {
+    await client.query(await readFile("scripts/validate-local-field-write-authorization.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native field-write authorization failed: ${error.message}`, { cause: error });
+  }
 
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {

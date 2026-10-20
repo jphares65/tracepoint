@@ -46,3 +46,22 @@ test("self-service check-in cannot clear another user's custody", async () => {
   assert.match(route, /\.eq\("assigned_user_id", context\.user\.id\)/);
   assert.match(route, /assigned_user_id: null/);
 });
+
+test("aws-native custody transfers use the bounded database function after the route checks", async () => {
+  const route = await readFile(routePath, "utf8");
+  const post = route.slice(route.indexOf("export async function POST"), route.indexOf("async function nativeCustody"));
+  const nativeBranch = /if \(process\.env\.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native"\) \{\s*return nativeCustody\(context, id, action, condition, notes\);/g;
+
+  // Both transfers branch only after the availability and holder checks, and
+  // before the direct table update that the AWS subject is not permitted.
+  assert.equal(post.match(nativeBranch)?.length, 2);
+  assert.ok(post.indexOf("not available for checkout") < post.search(nativeBranch));
+  const checkIn = post.slice(post.indexOf("You can check in only equipment currently assigned to you"));
+  assert.ok(checkIn.search(nativeBranch) < checkIn.indexOf('.from("equipment_assets")'));
+  const native = route.slice(route.indexOf("async function nativeCustody"));
+  assert.match(native, /rpc\("operate_equipment_self_custody"/);
+  assert.match(native, /p_department_id: context\.departmentId/);
+  assert.match(native, /p_note: custodyNote\(condition, notes\)/);
+  assert.match(native, /checked out by someone else/);
+  assert.match(native, /custody changed before check-in completed/);
+});

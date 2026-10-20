@@ -7,6 +7,9 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { ammunitionUserNames } from "@/lib/armory/ammunition-user-names";
+
+/* eslint-disable @typescript-eslint/no-explicit-any -- legacy dynamic database boundary */
 
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -23,7 +26,7 @@ function parseDecimal(value: unknown) {
 }
 
 async function loadLedger(admin: any, departmentId: string) {
-  const [lotsResult, transactionsResult, usersResult] = await Promise.all([
+  const [lotsResult, transactionsResult] = await Promise.all([
     admin
       .from("ammunition_lots")
       .select("*")
@@ -40,22 +43,15 @@ async function loadLedger(admin: any, departmentId: string) {
       .eq("department_id", departmentId)
       .order("created_at", { ascending: false })
       .limit(100),
-    admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
 
   if (lotsResult.error) throw new Error(lotsResult.error.message);
   if (transactionsResult.error)
     throw new Error(transactionsResult.error.message);
-  if (usersResult.error) throw new Error(usersResult.error.message);
 
-  const names = new Map(
-    (usersResult.data?.users ?? []).map((user: any) => [
-      user.id,
-      user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        user.email ||
-        "Unknown User",
-    ]),
+  const names = await ammunitionUserNames(
+    admin,
+    (transactionsResult.data ?? []).map((transaction: any) => transaction.actor_user_id),
   );
 
   return {
