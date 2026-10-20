@@ -6,14 +6,14 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { calendarDateOrNull, certificationInputError } from "@/lib/training/certification-input";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 function dateOrNull(value: unknown) {
-  const result = text(value);
-  return result || null;
+  return calendarDateOrNull(value) ?? null;
 }
 
 function reminderDays(value: unknown) {
@@ -119,6 +119,11 @@ export async function PATCH(
     );
   }
 
+  const inputError = certificationInputError(body);
+  if (inputError) {
+    return NextResponse.json({ error: inputError }, { status: 400 });
+  }
+
   const [
     existingResult,
     memberResult,
@@ -126,7 +131,7 @@ export async function PATCH(
   ] = await Promise.all([
     context.admin
       .from("training_certifications")
-      .select("id")
+      .select("id,user_id,certification_type_id,issue_date,source_training_event_id")
       .eq("id", certificationId)
       .eq("department_id", context.departmentId)
       .eq("is_active", true)
@@ -162,6 +167,26 @@ export async function PATCH(
     return NextResponse.json(
       { error: "Certification record not found." },
       { status: 404 },
+    );
+  }
+
+  // A credential's holder is history; a closeout-issued credential also keeps
+  // the type and issue date of its training event.
+  const existing = existingResult.data;
+  if (userId !== String(existing.user_id)) {
+    return NextResponse.json(
+      { error: "The officer on a certification record cannot be changed. Archive it and add a record for the correct officer." },
+      { status: 400 },
+    );
+  }
+  if (
+    existing.source_training_event_id &&
+    (certificationTypeId !== String(existing.certification_type_id) ||
+      (dateOrNull(body.issueDate) ?? null) !== (existing.issue_date ?? null))
+  ) {
+    return NextResponse.json(
+      { error: "A certification issued by training closeout keeps its type and issue date. Reopen the training event to correct them." },
+      { status: 400 },
     );
   }
 

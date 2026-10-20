@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
+import { resolveTimeZone } from "@/lib/agency-training/event-time";
 
 type RouteContext = { params: Promise<{ eventId: string; certificateId: string }> };
 function clean(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
@@ -40,7 +41,7 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   centered(pdfText(profile.data?.full_name) || "Department Member", 370, 30, bold, blue);
   centered("successfully completed", 330, 12, regular, rgb(0.32, 0.38, 0.48));
   centered(pdfText(result.data.certificate_title), 285, 22, bold);
-  const eventDate = new Date(result.data.agency_training_events?.starts_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+  const eventDate = new Date(result.data.agency_training_events?.starts_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: resolveTimeZone(result.data.departments?.timezone) });
   const detail = [eventDate, result.data.training_hours != null ? `${result.data.training_hours} training hours` : "", pdfText(result.data.agency_training_events?.location)].filter(Boolean).join("  |  ");
   centered(detail, 240, 11, regular, rgb(0.32, 0.38, 0.48));
   if (pdfText(result.data.instructor_display)) centered(`Instructor: ${pdfText(result.data.instructor_display)}`, 205, 11, regular);

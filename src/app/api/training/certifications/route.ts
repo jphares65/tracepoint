@@ -6,6 +6,7 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { calendarDateOrNull, certificationInputError } from "@/lib/training/certification-input";
 import { createTrainingReadRepository } from "@/lib/training/read-repository";
 import { ownRows } from "@/lib/tracepoint/training-record-visibility";
 
@@ -14,8 +15,7 @@ function text(value: unknown) {
 }
 
 function dateOrNull(value: unknown) {
-  const result = text(value);
-  return result || null;
+  return calendarDateOrNull(value) ?? null;
 }
 
 function reminderDays(value: unknown) {
@@ -148,6 +148,11 @@ export async function POST(request: NextRequest) {
       },
       { status: 400 },
     );
+  }
+
+  const inputError = certificationInputError(body);
+  if (inputError) {
+    return NextResponse.json({ error: inputError }, { status: 400 });
   }
 
   const [{ data: member, error: memberError }, typeResult] =

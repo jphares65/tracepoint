@@ -41,6 +41,37 @@ function warningDays(value: unknown) {
   ).sort((left, right) => right - left);
 }
 
+const SCOPE_TYPES = new Set(["all_members", "role", "rank", "unit", "selected_members"]);
+const INTERVAL_UNITS = new Set(["days", "months", "years", "calendar_year"]);
+const DUE_BASES = new Set(["completion_date", "fixed_annual_date"]);
+
+// Rejects requirement input the notification rules cannot evaluate.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- route clients are untyped
+async function requirementInputError(admin: any, departmentId: string, body: Record<string, unknown>) {
+  const scopeType = text(body.scopeType) || "all_members";
+  const dueBasis = text(body.dueBasis) || "completion_date";
+  const intervalValue = positiveIntegerOrNull(body.intervalValue);
+  const intervalUnit = intervalValue ? text(body.intervalUnit) : "";
+  if (!SCOPE_TYPES.has(scopeType)) return "The requirement scope is not valid.";
+  if (!DUE_BASES.has(dueBasis)) return "The requirement due basis is not valid.";
+  if (intervalValue && !INTERVAL_UNITS.has(intervalUnit)) return "Choose a valid repeat interval unit.";
+  if (dueBasis === "completion_date" && !intervalValue) return "A requirement due after completion needs a repeat interval.";
+  if (dueBasis === "fixed_annual_date") {
+    const month = Number(body.fixedMonth); const day = Number(body.fixedDay);
+    if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1 || day > 31) return "Enter a valid annual due month and day.";
+  }
+  const course = await admin.from("agency_training_courses").select("id").eq("department_id", departmentId).eq("id", text(body.courseId)).maybeSingle();
+  if (course.error) throw new Error(course.error.message);
+  if (!course.data) return "The selected course is not available.";
+  const selectedMembers = stringList(body.selectedMemberIds);
+  if (scopeType === "selected_members" && selectedMembers.length > 0) {
+    const members = await admin.from("department_memberships").select("user_id").eq("department_id", departmentId).in("user_id", selectedMembers);
+    if (members.error) throw new Error(members.error.message);
+    if ((members.data ?? []).length !== selectedMembers.length) return "One or more selected members are not department members.";
+  }
+  return null;
+}
+
 export async function GET() {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
@@ -72,7 +103,7 @@ export async function POST(request: NextRequest) {
   const courseId = text(body.courseId);
   const requirementName = text(body.requirementName);
   const scopeType = text(body.scopeType) || "all_members";
-  const intervalUnit = text(body.intervalUnit) || null;
+  const intervalUnit = positiveIntegerOrNull(body.intervalValue) ? text(body.intervalUnit) || null : null;
   const dueBasis = text(body.dueBasis) || "completion_date";
 
   if (!courseId || !requirementName) {
@@ -80,6 +111,12 @@ export async function POST(request: NextRequest) {
       { error: "Course and requirement name are required." },
       { status: 400 },
     );
+  }
+  try {
+    const inputError = await requirementInputError(context.admin, context.departmentId, body);
+    if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Training requirement could not be validated." }, { status: 500 });
   }
 
   const inserted = await context.admin
@@ -152,10 +189,16 @@ export async function PATCH(request: NextRequest) {
   const courseId = text(body.courseId);
   const requirementName = text(body.requirementName);
   const scopeType = text(body.scopeType) || "all_members";
-  const intervalUnit = text(body.intervalUnit) || null;
+  const intervalUnit = positiveIntegerOrNull(body.intervalValue) ? text(body.intervalUnit) || null : null;
   const dueBasis = text(body.dueBasis) || "completion_date";
   if (!requirementId || !courseId || !requirementName) {
     return NextResponse.json({ error: "Requirement, course, and name are required." }, { status: 400 });
+  }
+  try {
+    const inputError = await requirementInputError(context.admin, context.departmentId, body);
+    if (inputError) return NextResponse.json({ error: inputError }, { status: 400 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Training requirement could not be validated." }, { status: 500 });
   }
 
   const existing = await context.admin.from("agency_training_requirements").select("id")

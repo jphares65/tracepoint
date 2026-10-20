@@ -83,6 +83,7 @@ export default function AgencyTrainingRosterBoard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [showPersonnel, setShowPersonnel] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -119,6 +120,7 @@ export default function AgencyTrainingRosterBoard({
 
       setMembers(nextMembers);
       setRows(nextRows);
+      setDirty(false);
       setEventStatus(payload.event?.status ?? "");
       setCanManage(
         payload.canManage === true &&
@@ -156,6 +158,7 @@ export default function AgencyTrainingRosterBoard({
 
   function updateRow(userId: string, patch: Partial<RosterRow>) {
     setSaved(false);
+    setDirty(true);
     setRows((current) =>
       current.map((row) => (row.userId === userId ? { ...row, ...patch } : row)),
     );
@@ -175,6 +178,7 @@ export default function AgencyTrainingRosterBoard({
     setSearch("");
     setShowPersonnel(false);
     setSaved(false);
+    setDirty(true);
   }
 
   async function saveRoster() {
@@ -214,6 +218,7 @@ export default function AgencyTrainingRosterBoard({
       );
       setRows(nextRows);
       setSaved(true);
+      setDirty(false);
       onSaved?.(
         nextRows.length,
         nextRows.filter((row) => resultComplete(row.outcomeStatus)).length,
@@ -333,11 +338,10 @@ export default function AgencyTrainingRosterBoard({
                       value={row.outcomeStatus}
                       disabled={!canManage}
                       onChange={(event) => {
-                        const outcomeStatus = event.target.value as RosterRow["outcomeStatus"];
+                        // Attendance is kept as entered; the API rejects Completed/Passed
+                        // unless attendance is Present.
                         updateRow(row.userId, {
-                          outcomeStatus,
-                          attendanceStatus:
-                            outcomeStatus === "pending" ? row.attendanceStatus : "present",
+                          outcomeStatus: event.target.value as RosterRow["outcomeStatus"],
                         });
                       }}
                       className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-blue-500"
@@ -394,6 +398,7 @@ export default function AgencyTrainingRosterBoard({
                             current.filter((item) => item.userId !== row.userId),
                           );
                           setSaved(false);
+                          setDirty(true);
                         }}
                         className="rounded-lg border border-slate-700 p-2 text-slate-500 hover:border-rose-500/50 hover:text-rose-300"
                         aria-label={`Remove ${row.fullName}`}
@@ -413,6 +418,7 @@ export default function AgencyTrainingRosterBoard({
         eventId={eventId}
         eventStatus={eventStatus}
         canManage={pageCanManage}
+        hasUnsavedChanges={dirty}
         onClosed={() => {
           setEventStatus("completed");
           setCanManage(false);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
 import { mapAgencyTrainingEvent } from "@/lib/agency-training/read-repository-core";
+import { loadDepartmentTimeZone, parseEventDateTime } from "@/lib/agency-training/event-time";
 
 import {
   accessFailureResponse,
@@ -16,11 +17,11 @@ const MANAGE_PERMISSIONS = [
   "manage_training",
 ] as const;
 
+// "completed" is set only by closeout.
 const VALID_STATUSES = new Set([
   "draft",
   "scheduled",
   "in_progress",
-  "completed",
   "cancelled",
 ]);
 
@@ -43,13 +44,6 @@ function positiveIntegerOrNull(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function dateTimeOrNull(value: unknown) {
-  const valueText = text(value);
-  if (!valueText) return null;
-  const parsed = new Date(valueText);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 function topics(value: unknown) {
@@ -77,6 +71,7 @@ export async function GET() {
     return NextResponse.json({
       events,
       canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),
+      timeZone: await loadDepartmentTimeZone(context.admin, context.departmentId),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Training events could not be loaded." }, { status: 500 });
@@ -99,9 +94,16 @@ export async function POST(request: NextRequest) {
     unknown
   >;
 
+  let timeZone: string;
+  try {
+    timeZone = await loadDepartmentTimeZone(context.admin, context.departmentId);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Department settings could not be loaded." }, { status: 500 });
+  }
+
   const title = text(body.title);
-  const startsAt = dateTimeOrNull(body.startsAt);
-  const endsAt = dateTimeOrNull(body.endsAt);
+  const startsAt = parseEventDateTime(body.startsAt, timeZone);
+  const endsAt = parseEventDateTime(body.endsAt, timeZone);
   const requestedStatus = text(body.status).toLowerCase() || "draft";
 
   if (!title) {
@@ -118,6 +120,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (text(body.endsAt) && !endsAt) {
+    return NextResponse.json(
+      { error: "The training end date and time are not valid." },
+      { status: 400 },
+    );
+  }
+
   if (endsAt && new Date(endsAt).getTime() < new Date(startsAt).getTime()) {
     return NextResponse.json(
       { error: "Training cannot end before it starts." },
@@ -130,6 +139,25 @@ export async function POST(request: NextRequest) {
       { error: "The selected training-event status is not valid." },
       { status: 400 },
     );
+  }
+
+  const courseId = nullableText(body.courseId);
+  if (courseId) {
+    const course = await context.admin
+      .from("agency_training_courses")
+      .select("id")
+      .eq("department_id", context.departmentId)
+      .eq("id", courseId)
+      .maybeSingle();
+    if (course.error) {
+      return NextResponse.json({ error: course.error.message }, { status: 500 });
+    }
+    if (!course.data) {
+      return NextResponse.json(
+        { error: "The selected course is not available." },
+        { status: 400 },
+      );
+    }
   }
 
   const certificationTypeId = nullableText(body.certificationTypeId);
@@ -162,7 +190,7 @@ export async function POST(request: NextRequest) {
     .insert({
       department_id: context.departmentId,
       title,
-      course_id: nullableText(body.courseId),
+      course_id: courseId,
       training_type: text(body.trainingType) || "In-Service",
       category: nullableText(body.category),
       description: nullableText(body.description),

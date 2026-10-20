@@ -6,6 +6,7 @@ import {
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { loadDepartmentTimeZone, parseEventDateTime } from "@/lib/agency-training/event-time";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
 
@@ -17,11 +18,14 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function dateTimeOrNull(value: unknown) {
-  const valueText = text(value);
-  if (!valueText) return null;
-  const parsed = new Date(valueText);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+function positiveIntegerOrNull(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function invalid(error: string) {
+  return NextResponse.json({ error }, { status: 400 });
 }
 
 function numberOrNull(value: unknown) {
@@ -99,7 +103,16 @@ export async function PATCH(request: NextRequest, routeContext: RouteContext) {
     }
     return NextResponse.json({ event: refreshed.data });
   } else {
-    if ("title" in body) patch.title = text(body.title);
+    let timeZone: string;
+    try {
+      timeZone = await loadDepartmentTimeZone(context.admin, context.departmentId);
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Department settings could not be loaded." }, { status: 500 });
+    }
+    if ("title" in body) {
+      patch.title = text(body.title);
+      if (!patch.title) return invalid("Training-event title is required.");
+    }
     if ("trainingType" in body) patch.training_type = text(body.trainingType);
     if ("category" in body) patch.category = text(body.category) || null;
     if ("description" in body) patch.description = text(body.description) || null;
@@ -109,16 +122,58 @@ export async function PATCH(request: NextRequest, routeContext: RouteContext) {
         : [];
     }
     if ("location" in body) patch.location = text(body.location) || null;
-    if ("startsAt" in body) patch.starts_at = dateTimeOrNull(body.startsAt);
-    if ("endsAt" in body) patch.ends_at = dateTimeOrNull(body.endsAt);
+    if ("startsAt" in body) {
+      patch.starts_at = parseEventDateTime(body.startsAt, timeZone);
+      if (!patch.starts_at) return invalid("A valid training start date and time are required.");
+    }
+    if ("endsAt" in body) {
+      patch.ends_at = parseEventDateTime(body.endsAt, timeZone);
+      if (text(body.endsAt) && !patch.ends_at) return invalid("The training end date and time are not valid.");
+    }
+    const startsAt = String(patch.starts_at ?? existing.data.starts_at);
+    const endsAt = "ends_at" in patch ? patch.ends_at : existing.data.ends_at;
+    if (endsAt && new Date(String(endsAt)).getTime() < new Date(startsAt).getTime()) {
+      return invalid("Training cannot end before it starts.");
+    }
     if ("defaultHours" in body) patch.default_hours = numberOrNull(body.defaultHours);
     if ("status" in body) {
       const status = text(body.status);
-      if (["draft", "scheduled", "in_progress", "cancelled"].includes(status)) {
-        patch.status = status;
+      // "completed" is set only by closeout.
+      if (!["draft", "scheduled", "in_progress", "cancelled"].includes(status)) {
+        return invalid("The selected training-event status is not valid.");
+      }
+      patch.status = status;
+    }
+    if ("courseId" in body) {
+      patch.course_id = text(body.courseId) || null;
+      if (patch.course_id && patch.course_id !== existing.data.course_id) {
+        const course = await context.admin
+          .from("agency_training_courses")
+          .select("id")
+          .eq("department_id", context.departmentId)
+          .eq("id", patch.course_id)
+          .maybeSingle();
+        if (course.error) return NextResponse.json({ error: course.error.message }, { status: 500 });
+        if (!course.data) return invalid("The selected course is not available.");
       }
     }
-    if ("courseId" in body) patch.course_id = text(body.courseId) || null;
+    if ("certificationTypeId" in body) {
+      patch.certification_type_id = text(body.certificationTypeId) || null;
+      if (patch.certification_type_id && patch.certification_type_id !== existing.data.certification_type_id) {
+        const certificationType = await context.admin
+          .from("certification_types")
+          .select("id")
+          .eq("department_id", context.departmentId)
+          .eq("id", patch.certification_type_id)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (certificationType.error) return NextResponse.json({ error: certificationType.error.message }, { status: 500 });
+        if (!certificationType.data) return invalid("The selected certification type is not available.");
+      }
+    }
+    if ("certificationValidDays" in body) {
+      patch.certification_valid_days = positiveIntegerOrNull(body.certificationValidDays);
+    }
     if ("lessonPlanRequired" in body) {
       patch.lesson_plan_required = body.lessonPlanRequired === true;
     }

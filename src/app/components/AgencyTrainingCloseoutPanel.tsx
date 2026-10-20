@@ -2,11 +2,11 @@
 import { Award, CheckCircle2, Download, FileText, Loader2, Paperclip, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type Props = { eventId: string; eventStatus: string; canManage: boolean; onClosed: () => void };
+type Props = { eventId: string; eventStatus: string; canManage: boolean; hasUnsavedChanges?: boolean; onClosed: () => void };
 type TrainingFile = { id: string; attachment_type: string; file_name: string; file_size: number };
 type Certificate = { id: string; certificate_number: string; fullName: string; revoked_at: string | null };
 
-export default function AgencyTrainingCloseoutPanel({ eventId, eventStatus, canManage, onClosed }: Props) {
+export default function AgencyTrainingCloseoutPanel({ eventId, eventStatus, canManage, hasUnsavedChanges = false, onClosed }: Props) {
   const [files, setFiles] = useState<TrainingFile[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,14 @@ export default function AgencyTrainingCloseoutPanel({ eventId, eventStatus, canM
   }
 
   async function closeout() {
-    if (busy || !window.confirm("Complete this training event? Results will lock and eligible certifications will be issued.")) return;
+    if (busy) return;
+    // Closeout reads the saved roster; unsaved edits would be silently left out.
+    if (hasUnsavedChanges) {
+      const prompt = "The roster has unsaved changes. Save All before completing this event.";
+      setError(prompt); setMessage(""); window.alert(prompt);
+      return;
+    }
+    if (!window.confirm("Complete this training event? Results will lock and eligible certifications will be issued.")) return;
     setBusy(true); setError(""); setMessage("");
     const response = await fetch(`/api/agency-training/events/${encodeURIComponent(eventId)}/closeout`, { method: "POST" });
     const payload = await response.json().catch(() => ({})); setBusy(false);
