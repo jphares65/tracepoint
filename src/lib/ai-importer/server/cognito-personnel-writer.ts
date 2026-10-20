@@ -4,6 +4,7 @@ import { inviteCognitoUser } from "@/lib/authentication/cognito-invite";
 import { setCognitoMembershipActive } from "@/lib/authentication/cognito-membership-lifecycle";
 import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
+import { planExistingCognitoPersonnel } from "@/lib/onboarding/personnel-reimport";
 import type { PersonnelImportWriter } from "./execution";
 
 export type CognitoPersonnelWriteResult = {
@@ -33,6 +34,8 @@ export async function writeCognitoPersonnel(
   );
 
   if (row.action === "CREATE") {
+    const memberships = await admin.from("department_memberships").select("user_id,is_active").eq("department_id", departmentId);
+    await assertResult(memberships, "Personnel membership lookup failed.", "Personnel membership lookup failed.");
     const existing = await admin.rpc("attach_existing_cognito_personnel_import", {
       p_department_id: departmentId,
       p_email: String(value.email),
@@ -46,21 +49,24 @@ export async function writeCognitoPersonnel(
     const existingIdentity = existing.data as { user_id?: unknown; identity_state?: unknown } | null;
     if (existingIdentity?.user_id) {
       let invitationSent = false;
-      if (value.active !== false) {
+      const prior = ((memberships.data ?? []) as Array<{ user_id?: unknown; is_active?: unknown }>)
+        .find((membership) => String(membership.user_id) === String(existingIdentity.user_id));
+      const plan = planExistingCognitoPersonnel(value.active, prior, existingIdentity.identity_state);
+      if (plan.setActive !== undefined) {
         await setCognitoMembershipActive({
           actorUserId: actorId,
           departmentId,
           targetUserId: String(existingIdentity.user_id),
-          active: true,
+          active: plan.setActive,
         });
-        if (existingIdentity.identity_state === "pending") {
-          await resendPendingCognitoActivation({
-            actorUserId: actorId,
-            departmentId,
-            targetUserId: String(existingIdentity.user_id),
-          });
-          invitationSent = true;
-        }
+      }
+      if (plan.resendInvitation) {
+        await resendPendingCognitoActivation({
+          actorUserId: actorId,
+          departmentId,
+          targetUserId: String(existingIdentity.user_id),
+        });
+        invitationSent = true;
       }
       return {
         userId: String(existingIdentity.user_id),
