@@ -19,6 +19,31 @@ Rules for the run:
 - Use only generated synthetic tenants and users (`acceptance-<UUID>`, the pattern of `scripts/smoke-staging.ps1`).
 - No real agency data.
 
+## 0a. Readiness gates
+
+Every gate must be satisfied and recorded before the owner approves the staging deployment.
+
+| Gate | Requirement | Evidence |
+|---|---|---|
+| G1 CI | `Application quality gate` green on the **exact** integration commit to be deployed. All steps must pass: app tests with no file running zero tests, script tests, infra tests, `tsc`, `db:validate-bootstrap`, `next build`. | Run URL and commit SHA |
+| G2 Migration ledger | `migrate-db.ps1 staging -Action status`: ledger present, no drift, **001–037 applied**, only 038–046 pending | Status output |
+| G3 Hard schema dependencies | 028–031 (custody, used by the F6b QR lookup and the custody API) and 033–037 applied **before** the image. 045 applied **before** the image: every QR scan calls `can_submit_fleet_inspection` (F5) and returns 500 without it. 039 applied before the image (B1 first-login activation). | Ledger rows |
+| G4 Data-impact previews (read-only) | Run and record: (a) the 046 safety-hold preview query (F6a record), which counts vehicles newly held when 046 lands; (b) the equipment lifecycle constraint check (§1.4); (c) the date-defect checks Q1–Q9 (hotfix record), including **Q3 queued false-"Expired" emails**. The email dispatcher stays off. | Query outputs |
+| G5 Snapshot | Manual RDS snapshot taken and `available` | Snapshot ARN |
+| G6 Native client | A native client build pointed at staging is available, with synthetic accounts for the roles in S1–S17. Without it, S2–S5 and S17 can only be run on the web, and the native client checklist (C1–C24, `api-contract-changes` inventory) stays **unverified**. | Build ID |
+| G7 Owner approval | The owner approves this package and the exact commit | Written approval |
+
+## 0b. Defect status tracking
+
+Each defect moves through four separate stages:
+
+1. **Found:** evidence in the reconciliation.
+2. **Fixed in code:** branch, commit and CI.
+3. **Validated in staging:** the S-step "after" result, recorded in §6.
+4. **Confirmed resolved in production:** a post-deployment check, only after separate production authorization.
+
+This package can move items to stage 3 only. Nothing in this document moves any defect to stage 4.
+
 ## 1. Pre-flight (read-only)
 
 1. Record the current staging state:
