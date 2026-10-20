@@ -1,5 +1,6 @@
 /** Canonical feature codes shared by navigation, API guards, and tests. */
 export const MODULE_FEATURE = {
+  AGENCY_DOCUMENTS: "agency_documents",
   AMMUNITION: "ammunition",
   ANALYTICS: "analytics",
   CERTIFICATIONS: "certifications",
@@ -20,6 +21,8 @@ export const OPERATIONAL_MODULE_CATALOG: readonly {
   displayName: string;
   description: string;
   sortOrder: number;
+  /** Agencies start with the module off until a platform administrator enables it. */
+  defaultEnabled?: false;
 }[] = [
   { code: MODULE_FEATURE.AMMUNITION, displayName: "Ammunition", description: "Ammunition inventory and transactions.", sortOrder: 10 },
   { code: MODULE_FEATURE.ANALYTICS, displayName: "Analytics", description: "Agency analytics and reports.", sortOrder: 20 },
@@ -32,6 +35,7 @@ export const OPERATIONAL_MODULE_CATALOG: readonly {
   { code: MODULE_FEATURE.OFF_DUTY, displayName: "Off-duty Firearms", description: "Off-duty firearm requests and approvals.", sortOrder: 70 },
   { code: MODULE_FEATURE.QUALIFICATIONS, displayName: "Qualifications", description: "Officer qualification records and standards.", sortOrder: 80 },
   { code: MODULE_FEATURE.RANGE_TRAINING, displayName: "Range and Training", description: "Range days, agency training, and digital packets.", sortOrder: 90 },
+  { code: MODULE_FEATURE.AGENCY_DOCUMENTS, displayName: "Agency Documents", description: "Agency form templates and documents generated from TracePoint records.", sortOrder: 95, defaultEnabled: false },
 ];
 
 export const MODULE_FEATURE_CODES = OPERATIONAL_MODULE_CATALOG.map(({ code }) => code);

@@ -92,25 +92,23 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
-// The staging release that combines the demo-pd line, Agency Documents and the production line.
-// Staging's ledger records Agency Documents at 038-041 and module entitlements at 042 (CRLF archive
-// bytes; 042 was applied by the staging line's release on 2026-10-14, per its status reports). Its
-// apply must find 001-042 recorded and exactly 043-045 pending; anything else stops before any SQL.
+// The staging release of the Agency Documents module toggle. Staging's ledger records 001-045 (038-041
+// Agency Documents, 042 module entitlements, 043-045 applied by e3b06e6a on 2026-10-19). Its apply must
+// find 001-045 recorded and exactly 046 pending; anything else stops before any SQL.
 export const STAGING_RELEASE_PENDING = Object.freeze([
-  "043_range_workspace_authenticated_writes.sql",
-  "044_cognito_password_global_scope.sql",
-  "045_password_operation_resolution.sql",
+  "046_agency_documents_module_toggle.sql",
 ]);
+const STAGING_RELEASE_RECORDED = 45;
 function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
-  if (report.ledger !== "present" || versions.length !== 45 || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-045.");
+  if (report.ledger !== "present" || versions.length !== 46 || versions.some((version, index) => version !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-046.");
   }
-  if (report.applied.length !== 42 || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-042, including the Agency Documents lineage and module entitlements, must all be recorded before 043-045.");
+  if (report.applied.length !== STAGING_RELEASE_RECORDED || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-045, including the Agency Documents lineage and module entitlements, must all be recorded before 046.");
   }
   if (report.pending.length !== STAGING_RELEASE_PENDING.length || report.pending.some((file, index) => file.filename !== STAGING_RELEASE_PENDING[index])) {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 043, 044 and 045 pending.");
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 046 pending.");
   }
 }
 async function report(client, files) {

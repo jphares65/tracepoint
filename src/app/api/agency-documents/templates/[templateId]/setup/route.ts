@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { DocxFormError } from "@/lib/agency-documents/docx-forms";
 import { PdfInspectionError } from "@/lib/agency-documents/pdf-form-inspector";
@@ -18,7 +19,7 @@ type Context = { params: Promise<{ templateId: string }> };
  * signatures left blank. Refuses to overwrite existing fields unless asked.
  */
 export async function POST(request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, ["manage_document_templates"])) return permissionDeniedResponse("Template-management permission is required.");
   const { admin, departmentId, userId } = access.context;
   const { templateId } = await route.params;

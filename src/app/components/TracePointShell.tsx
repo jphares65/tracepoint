@@ -268,6 +268,7 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
         label: "Agency Documents",
         href: "/agency-documents",
         icon: FileText,
+        featureCode: MODULE_FEATURE.AGENCY_DOCUMENTS,
         requirement: {
           anyOf: [
             "view_agency_documents",

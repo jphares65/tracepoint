@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { normalizeStructuredBindingInput } from "@/lib/agency-documents/structured-binding-http";
 import { StructuredBindingDuplicateError, StructuredBindingRepository, StructuredBindingRepositoryError, type StructuredBindingSupabaseClient } from "@/lib/agency-documents/structured-binding-repository";
@@ -27,7 +28,7 @@ async function ownedVersion(admin: { from(table: string): { select(fields: strin
 function repository(admin: StructuredBindingSupabaseClient, departmentId: string) { return new StructuredBindingRepository(admin, departmentId); }
 
 export async function GET(_request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, VIEW)) return permissionDeniedResponse("Agency Documents access is required.");
   const { templateId, versionId } = await route.params;
   const ownership = await ownedVersion(access.context.admin, access.context.departmentId, templateId, versionId, false);
@@ -37,7 +38,7 @@ export async function GET(_request: Request, route: Context) {
 }
 
 export async function POST(request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, MANAGE)) return permissionDeniedResponse("Template-management permission is required.");
   const { templateId, versionId } = await route.params;
   const ownership = await ownedVersion(access.context.admin, access.context.departmentId, templateId, versionId, true);

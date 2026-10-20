@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { analyzeDocumentContext } from "@/lib/agency-documents/context-analysis";
 import { requiredSelections } from "@/lib/agency-documents/field-values";
@@ -11,7 +12,7 @@ function safeSearch(value: string) { return value.replace(/[^a-z0-9 .'-]/gi, "")
 
 export async function GET(request: Request) {
   const access = await resolveServerAccess();
-  if (!access.ok) return accessFailureResponse(access);
+  if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, ["generate_agency_documents", "manage_document_templates"])) return permissionDeniedResponse("Document-generation permission is required.");
   const { admin, departmentId } = access.context;
   const url = new URL(request.url), templateId = clean(url.searchParams.get("templateId")), kind = clean(url.searchParams.get("kind")), search = safeSearch(clean(url.searchParams.get("search"))), personId = clean(url.searchParams.get("personId"));

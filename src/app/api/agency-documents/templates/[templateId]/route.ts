@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { publishBlockers } from "@/lib/agency-documents/proposal-review";
 import { structuredPublishBlockers } from "@/lib/agency-documents/field-persistence";
@@ -11,7 +12,7 @@ const MANAGE = ["manage_document_templates"] as const;
 function response(error: string, status = 400) { return NextResponse.json({ error }, { status }); }
 
 export async function GET(_request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, VIEW)) return permissionDeniedResponse("Agency Documents access is required.");
   const { templateId } = await route.params;
   const template = await access.context.admin.from("document_templates").select("*").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();
@@ -26,7 +27,7 @@ export async function GET(_request: Request, route: Context) {
 }
 
 export async function PATCH(request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, MANAGE)) return permissionDeniedResponse("Template-management permission is required.");
   const { templateId } = await route.params; const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const existing = await access.context.admin.from("document_templates").select("id,name,status,current_version,source_filename,source_storage_path,description,category").eq("id", templateId).eq("department_id", access.context.departmentId).maybeSingle();

@@ -189,9 +189,9 @@ function Assert-MigrationLedgerReport {
     foreach ($version in $expectedVersions) {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
-    if ($filesByVersion.Count -ne 45 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 045, preserving the Agency Documents lineage at 038-041.' }
-    # Staging records 001-042 (042 module entitlements was applied by the staging line's release); this release applies 043-045.
-    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 3 -or @(43, 44, 45 | Where-Object { -not $pendingByVersion.ContainsKey($_) }).Count -ne 0)) { throw 'Apply requires exactly migrations 043, 044 and 045 pending.' }
+    if ($filesByVersion.Count -ne 46 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 046, preserving the Agency Documents lineage at 038-041.' }
+    # Staging records 001-045 (043-045 applied by e3b06e6a on 2026-10-19); this release applies only 046.
+    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(46))) { throw 'Apply requires exactly migration 046 pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -201,12 +201,18 @@ function Assert-EntitlementMigrationRecord {
     param(
         [Parameter(Mandatory)]$Report,
         [Parameter(Mandatory)][string]$ApplicationCommit,
-        [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment
+        [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
+        # The migrations one release applied: 046 by default (this release); 043-045 were applied by e3b06e6a.
+        [ValidateSet(43, 44, 45, 46)][int[]]$Versions = @(46)
     )
-    # Every migration this release applies must be recorded by this commit, in this environment, as an apply.
+    # Every migration a release applies must be recorded by its commit, in this environment, as an apply.
     # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
     # 042 was recorded by an earlier staging release (its content is still verified by Assert-MigrationLedgerReport).
-    $expected = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'))
+    $known = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'), @(46, '046_agency_documents_module_toggle.sql'))
+    # Built with a loop: piping the pairs would unroll a single selected pair into its two elements.
+    $expected = [System.Collections.Generic.List[object]]::new()
+    foreach ($pair in $known) { if ($Versions -contains [int]$pair[0]) { $expected.Add($pair) } }
+    if ($expected.Count -ne @($Versions | Select-Object -Unique).Count) { throw 'Migration record check received an unknown or duplicate version.' }
     $records = @()
     foreach ($pair in $expected) {
         $version = [int]$pair[0]; $filename = [string]$pair[1]

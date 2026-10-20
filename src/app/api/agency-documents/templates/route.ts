@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { createObjectStore } from "@/lib/storage/object-store";
 import { templateFormat } from "@/lib/agency-documents/document-generation";
@@ -13,7 +14,7 @@ function failure(message: string, status = 400) { return NextResponse.json({ err
 
 export async function GET() {
   const access = await resolveServerAccess();
-  if (!access.ok) return accessFailureResponse(access);
+  if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, VIEW)) return permissionDeniedResponse("Agency Documents access is required.");
   const result = await access.context.admin.from("document_templates")
     .select("id,name,description,category,status,current_version,source_filename,updated_at,created_at")
@@ -24,7 +25,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const access = await resolveServerAccess();
-  if (!access.ok) return accessFailureResponse(access);
+  if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, MANAGE)) return permissionDeniedResponse("Template-management permission is required.");
   const form = await request.formData();
   const name = String(form.get("name") ?? "").trim();

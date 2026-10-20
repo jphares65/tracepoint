@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { MODULE_FEATURE_CODES } from "./module-catalog.ts";
+import { OPERATIONAL_MODULE_CATALOG } from "./module-catalog.ts";
+
+// 042 seeds the default-enabled modules; default-off modules (Agency Documents) are added by their own migration.
+const MODULE_FEATURE_CODES = OPERATIONAL_MODULE_CATALOG.filter((module) => module.defaultEnabled !== false).map(({ code }) => code);
 
 const migrations = [
   "database/aws/042_default_module_entitlements.sql",

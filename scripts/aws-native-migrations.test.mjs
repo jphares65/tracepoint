@@ -1287,12 +1287,13 @@ test("final migration stages contain the recursive local runtime dependency clos
   }
 });
 
-test("migration versions are unique and 038-045 hold the reconciled lineage with unchanged contents", async () => {
+test("migration versions are unique and 038-046 hold the reconciled lineage with unchanged contents", async () => {
   // Agency Documents keeps 038-041 (recorded in the staging ledger). The release line's range-workspace and
   // password-scope migrations, applied to production without ledger rows, moved byte-for-byte to 043-045.
   // 042 is the staging line's default module entitlements migration. Hashes here are of LF content
   // (normalizedSha256), as the live release-unit pins record; staging's ledger records the SHA-256 of the
   // CRLF bytes of the core.autocrlf=true migration archive, checked below for 038 and 042.
+  // 046 adds the default-off Agency Documents module toggle to the catalog.
   const directory = new URL("../database/aws/", import.meta.url);
   const names = (await readdir(directory)).filter((name) => /^\d{3}_.*\.sql$/.test(name)).sort();
   const versions = names.map((name) => Number(name.slice(0, 3)));
@@ -1306,12 +1307,13 @@ test("migration versions are unique and 038-045 hold the reconciled lineage with
     43: ["043_range_workspace_authenticated_writes.sql", "f250c74b87b63a9d4ac614edf09ae84e15976cbe0234114a158f79b2b0cae3e1"],
     44: ["044_cognito_password_global_scope.sql", "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987"],
     45: ["045_password_operation_resolution.sql", "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b"],
+    46: ["046_agency_documents_module_toggle.sql", "f308741ec52ab2947cc5cf8a08bde0e20e0dd7d89c25b633ccc0c714f1457f4b"],
   };
   for (const [version, [filename, sha256]] of Object.entries(expected)) {
     assert.ok(names.includes(filename), `${filename} is version ${version}`);
     assert.equal(normalizedSha256(await readFile(new URL(filename, directory), "utf8")), sha256, `${filename} contents are unchanged`);
   }
-  assert.deepEqual(versions, Array.from({ length: 45 }, (_, index) => index + 1), "migrations are 001-045 contiguous");
+  assert.deepEqual(versions, Array.from({ length: 46 }, (_, index) => index + 1), "migrations are 001-046 contiguous");
   assert.equal(names.find((name) => name.startsWith("042_")), "042_default_module_entitlements.sql", "042 holds the default module entitlements");
   const crlfSha256 = async (filename) => createHash("sha256").update((await readFile(new URL(filename, directory), "utf8")).replace(/\r\n/g, "\n").replace(/\n/g, "\r\n")).digest("hex");
   assert.equal(await crlfSha256("038_agency_documents_template_builder.sql"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a", "038 staging ledger (CRLF archive) hash");

@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { getDocumentField } from "@/lib/agency-documents/field-registry";
 import { planFieldSave } from "@/lib/agency-documents/field-persistence";
@@ -9,7 +10,7 @@ type FieldInput = { id?: string; pageNumber: number; fieldType: "tracepoint_data
 function invalid(field: FieldInput) { const g = field.geometry; return !Number.isInteger(field.pageNumber) || field.pageNumber < 1 || !g || [g.x, g.y, g.width, g.height].some((n) => typeof n !== "number" || !Number.isFinite(n)) || g.width <= 0 || g.height <= 0 || g.x < 0 || g.y < 0 || g.x + g.width > 1 || g.y + g.height > 1 || (field.fieldType === "tracepoint_data" && !getDocumentField(field.canonicalKey ?? "")) || (field.fieldType === "manual" && !field.label?.trim()) || (field.fieldType === "static_text" && !field.staticText?.trim()); }
 
 export async function PUT(request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, ["manage_document_templates"])) return permissionDeniedResponse("Template-management permission is required.");
   const { templateId } = await route.params; const body = await request.json().catch(() => ({})) as { fields?: FieldInput[] };
   if (!Array.isArray(body.fields) || body.fields.some(invalid)) return NextResponse.json({ error: "One or more template fields are invalid." }, { status: 400 });

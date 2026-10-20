@@ -1,3 +1,4 @@
+import { agencyDocumentsDisabledResponse } from "@/lib/agency-documents/module-access";
 import { NextResponse } from "next/server";
 import { getDocumentField } from "@/lib/agency-documents/field-registry";
 import { fieldLocator } from "@/lib/agency-documents/field-persistence";
@@ -11,7 +12,7 @@ type ProposalRow = { id: string; proposal: AnalysisProposal; status: string };
 const manage = ["manage_document_templates"] as const;
 
 export async function GET(_request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, manage)) return permissionDeniedResponse();
   const { templateId } = await route.params;
   const rows = await access.context.admin.from("document_template_analysis_proposals").select("id,proposal,status").eq("department_id", access.context.departmentId).eq("template_id", templateId).order("created_at");
@@ -19,7 +20,7 @@ export async function GET(_request: Request, route: Context) {
 }
 
 export async function PATCH(request: Request, route: Context) {
-  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access);
+  const access = await resolveServerAccess(); if (!access.ok) return accessFailureResponse(access); const moduleDisabled = agencyDocumentsDisabledResponse(access.context); if (moduleDisabled) return moduleDisabled;
   if (!hasAnyServerPermission(access.context, manage)) return permissionDeniedResponse();
   const { admin, departmentId, userId } = access.context;
   const { templateId } = await route.params;
