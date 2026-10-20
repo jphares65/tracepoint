@@ -76,3 +76,6 @@ B6 merge note: `claude/fix-b6-notification-delivery` restructures `src/app/api/n
 | `claude/fix-b10-qualification-range-roles` | `6e43ab400910347c4be4bbcaab1e852db1b30d10` | 051 |
 
 B10 merge note: `scripts/validate-clean-bootstrap.mjs` conflicted with B7 (both add an AWS-stage suite after training visibility). Resolved by keeping both, closeout first. Range and TV tests 80/80 on the merged tree; `tsc` clean.
+| `claude/fix-b8-armory-integrity` | `06d397da9d4c8f0240d81c48e0220c818c437c2b` | 052 |
+
+B8 merge note: clean merge (cut from the integration head `9ba56a3`).
