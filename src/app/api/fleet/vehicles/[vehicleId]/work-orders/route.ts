@@ -1,22 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { auditFleet, canPerformFleetMaintenance, nullableDate, nullableText, numeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canPerformFleetMaintenance, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 
 const maintenanceTypes = new Set(["Preventive Maintenance", "Repair", "Recall"]);
 const statuses = new Set(["Open", "Assigned", "Scheduled", "In Progress", "Awaiting Parts", "Completed", "Cancelled"]);
 const priorities = new Set(["Normal", "High", "Critical"]);
 
-async function updateVehicleService(context: any, vehicleId: string, body: any, completed: boolean) {
+async function updateVehicleService(context: any, vehicleId: string, body: any, item: { mileage?: number | null; hours?: number | null }, completed: boolean) {
   const update: Record<string, unknown> = { updated_by_user_id: context.user.id, updated_at: new Date().toISOString() };
-  if (body.mileage !== undefined) update.current_mileage = Math.round(numeric(body.mileage));
-  if (body.hours !== undefined) update.current_hours = numeric(body.hours);
+  // Reported readings only move the vehicle odometer and hour meter forward; the work order keeps its own reading.
+  const mileage = optionalNumeric(body.mileage);
+  const hours = optionalNumeric(body.hours);
+  if (mileage !== null || hours !== null) {
+    const { data: vehicle } = await context.admin.from("fleet_vehicles").select("current_mileage,current_hours").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
+    if (vehicle && mileage !== null && Math.round(mileage) > (Number(vehicle.current_mileage) || 0)) update.current_mileage = Math.round(mileage);
+    if (vehicle && hours !== null && hours > (Number(vehicle.current_hours) || 0)) update.current_hours = hours;
+  }
   if (body.nextServiceDate !== undefined) update.next_service_date = nullableDate(body.nextServiceDate);
   if (body.nextServiceMileage !== undefined) update.next_service_mileage = numeric(body.nextServiceMileage) || null;
   if (body.nextServiceHours !== undefined) update.next_service_hours = numeric(body.nextServiceHours) || null;
   if (completed) {
     update.last_service_date = new Date().toISOString().slice(0, 10);
-    update.last_service_mileage = Math.round(numeric(body.mileage)) || null;
-    update.last_service_hours = numeric(body.hours) || null;
+    update.last_service_mileage = item.mileage ?? null;
+    update.last_service_hours = item.hours ?? null;
   }
   await context.admin.from("fleet_vehicles").update(update).eq("department_id", context.departmentId).eq("id", vehicleId);
 }
@@ -70,7 +76,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   try { await auditFleet(context, isIssue ? "fleet_issue_reported" : "fleet_maintenance_created", "fleet_vehicle", vehicleId, { work_order: data }); }
   catch (auditError) { await context.admin.from("fleet_work_orders").delete().eq("id", data.id); return NextResponse.json({ error: auditError instanceof Error ? auditError.message : "Audit failed." }, { status: 500 }); }
-  await updateVehicleService(context, vehicleId, body, status === "Completed" && !isIssue);
+  await updateVehicleService(context, vehicleId, body, data, status === "Completed" && !isIssue);
   const readiness = await refreshFleetVehicle(context, vehicleId);
   return NextResponse.json({ ok: true, item: data, readiness }, { status: 201 });
 }
@@ -117,7 +123,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   try { await auditFleet(context, "fleet_work_order_updated", "fleet_vehicle", vehicleId, { reason, previous, current: data }); }
   catch (auditError) { return NextResponse.json({ error: auditError instanceof Error ? auditError.message : "Audit failed." }, { status: 500 }); }
-  await updateVehicleService(context, vehicleId, body, status === "Completed" && previous.record_type !== "Issue");
+  await updateVehicleService(context, vehicleId, body, data, status === "Completed" && previous.record_type !== "Issue");
   const readiness = await refreshFleetVehicle(context, vehicleId);
   return NextResponse.json({ ok: true, item: data, readiness });
 }

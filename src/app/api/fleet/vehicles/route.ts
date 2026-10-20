@@ -4,7 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
-import { canManageFleet } from "@/lib/tracepoint/fleet-server";
+import { canManageFleet, refreshFleetVehicle } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 import { FleetReadRepositoryError } from "@/lib/fleet/read-repository-core";
 
@@ -315,11 +315,12 @@ export async function PATCH(request: NextRequest) {
       : normalizeAssignment(body.assignmentType),
     assigned_to: nullableText(value("assignedTo", "assigned_to"), 200),
     home_location: nullableText(value("homeLocation", "home_location"), 200),
-    current_mileage: requiredInteger(value("currentMileage", "current_mileage"), 0, 10_000_000),
-    current_hours: Math.max(0, Number(value("currentHours", "current_hours")) || 0),
+    current_mileage: optionalInteger(value("currentMileage", "current_mileage"), 0, 10_000_000) ?? requiredInteger(existing.current_mileage, 0, 10_000_000),
+    current_hours: nullableHours("currentHours", "current_hours") ?? Math.max(0, Number(existing.current_hours) || 0),
     status: nextStatus,
     status_reason: nextStatus === existing.status ? existing.status_reason : reason,
-    status_override_active: nextStatus === existing.status ? existing.status_override_active : true,
+    // status_override_active is not in VEHICLE_SELECT; only write it when the status changes (an undefined value is written as NULL on PostgreSQL).
+    ...(nextStatus === existing.status ? {} : { status_override_active: true }),
     inspection_due_date: nullableDate(value("inspectionDueDate", "inspection_due_date")),
     registration_expiration_date: nullableDate(value("registrationExpirationDate", "registration_expiration_date")),
     insurance_expiration_date: nullableDate(value("insuranceExpirationDate", "insurance_expiration_date")),
@@ -387,5 +388,14 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ ok: true, item: data });
+  // Readiness is recomputed like every other vehicle write, so a manual status never masks an open critical defect.
+  try {
+    const readiness = await refreshFleetVehicle(resolved, id);
+    return NextResponse.json({ ok: true, item: { ...data, status: readiness.status, open_issue_count: readiness.openIssueCount } });
+  } catch (refreshError) {
+    return NextResponse.json(
+      { error: `The vehicle changes were saved, but readiness was not recalculated. ${refreshError instanceof Error ? refreshError.message : ""}`.trim() },
+      { status: 500 },
+    );
+  }
 }

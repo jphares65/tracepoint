@@ -5,7 +5,7 @@ import {
   createObjectStore,
 } from "@/lib/storage/object-store";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
@@ -127,8 +127,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const update: Record<string, unknown> = { updated_by_user_id: context.user.id, updated_at: new Date().toISOString() };
   const fields: Array<[string, string]> = [["status","status"],["assignedTo","assigned_to"],["homeLocation","home_location"],["comments","comments"]];
   for (const [input, column] of fields) if (body[input] !== undefined) update[column] = nullableText(body[input], 5000);
-  if (body.currentMileage !== undefined) update.current_mileage = Math.round(numeric(body.currentMileage));
-  if (body.currentHours !== undefined) update.current_hours = numeric(body.currentHours);
+  const currentMileage = optionalNumeric(body.currentMileage);
+  const currentHours = optionalNumeric(body.currentHours);
+  if (currentMileage !== null) update.current_mileage = Math.round(currentMileage);
+  if (currentHours !== null) update.current_hours = currentHours;
   if (body.nextServiceDate !== undefined) update.next_service_date = nullableDate(body.nextServiceDate);
   if (body.nextServiceMileage !== undefined) update.next_service_mileage = numeric(body.nextServiceMileage) || null;
   if (body.nextServiceHours !== undefined) update.next_service_hours = numeric(body.nextServiceHours) || null;
@@ -140,6 +142,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   try { await auditFleet(context, "fleet_vehicle_updated", "fleet_vehicle", vehicleId, { reason, previous, current: data }); }
   catch (auditError) { await context.admin.from("fleet_vehicles").update(previous).eq("department_id", context.departmentId).eq("id", vehicleId); return NextResponse.json({ error: auditError instanceof Error ? auditError.message : "Audit failed; update reversed." }, { status: 500 }); }
-  await refreshFleetVehicle(context, vehicleId);
+  try { await refreshFleetVehicle(context, vehicleId); }
+  catch (refreshError) { return NextResponse.json({ error: `The vehicle update was saved, but its readiness was not recalculated. ${refreshError instanceof Error ? refreshError.message : ""}`.trim() }, { status: 500 }); }
   return NextResponse.json({ ok: true, vehicle: data });
 }

@@ -8,6 +8,7 @@ import {
 import {
   auditFleet,
   numeric,
+  optionalNumeric,
   refreshFleetVehicle,
   text,
 } from "@/lib/tracepoint/fleet-server";
@@ -36,7 +37,7 @@ export async function POST(
 
   const { data: vehicle, error: vehicleError } = await context.admin
     .from("fleet_vehicles")
-    .select("id,unit_number,current_mileage,current_hours")
+    .select("id,unit_number,current_mileage,current_hours,inspection_due_date,status,open_issue_count")
     .eq("department_id", context.departmentId)
     .eq("id", vehicleId)
     .maybeSingle();
@@ -186,9 +187,9 @@ export async function POST(
     );
 
   const mileage = Math.round(
-    numeric(body.mileage, vehicle.current_mileage ?? 0),
+    optionalNumeric(body.mileage) ?? numeric(vehicle.current_mileage),
   );
-  const hours = numeric(body.hours, vehicle.current_hours ?? 0);
+  const hours = optionalNumeric(body.hours) ?? numeric(vehicle.current_hours);
   const result = critical.length
     ? "Failed"
     : defects.length
@@ -216,6 +217,27 @@ export async function POST(
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // The data client cannot span statements in one transaction, so every side
+  // effect is checked and, when one fails, the earlier ones are reversed and the
+  // officer is told the inspection was not saved.
+  const undo: Array<() => Promise<unknown>> = [
+    async () => (await context.admin.from("fleet_vehicle_inspections").delete().eq("department_id", context.departmentId).eq("id", inspection.id)).error,
+  ];
+  const fail = async (step: string, cause: unknown) => {
+    let reversed = true;
+    for (const action of undo.reverse()) {
+      try { if (await action()) reversed = false; }
+      catch { reversed = false; }
+    }
+    const detail = cause instanceof Error ? cause.message : text((cause as any)?.message, 500);
+    return NextResponse.json(
+      {
+        error: `The inspection was not saved because ${step} failed${detail ? ` (${detail})` : ""}. ${reversed ? "No changes were kept; submit the inspection again." : "Some changes could not be reversed; tell a fleet manager before submitting again."}`,
+      },
+      { status: 500 },
+    );
+  };
+
   for (const item of checklist.filter((entry: any) => entry.equipmentId)) {
     const status =
       item.condition === "Pass"
@@ -223,7 +245,7 @@ export async function POST(
         : item.condition === "Critical"
           ? "Out of Service"
           : "Attention";
-    await context.admin
+    const { data: updatedEquipment, error: equipmentError } = await context.admin
       .from("fleet_vehicle_equipment")
       .update({
         status,
@@ -232,7 +254,17 @@ export async function POST(
       })
       .eq("department_id", context.departmentId)
       .eq("vehicle_id", vehicleId)
-      .eq("id", item.equipmentId);
+      .eq("id", item.equipmentId)
+      .select("id")
+      .maybeSingle();
+    if (equipmentError || !updatedEquipment)
+      return fail("updating vehicle equipment status", equipmentError);
+    undo.push(async () => (await context.admin
+      .from("fleet_vehicle_equipment")
+      .update({ status: item.existingStatus, updated_at: new Date().toISOString() })
+      .eq("department_id", context.departmentId)
+      .eq("vehicle_id", vehicleId)
+      .eq("id", item.equipmentId)).error);
   }
 
   let workOrder = null;
@@ -240,7 +272,7 @@ export async function POST(
     const description = defects
       .map((item: any) => `${item.label}: ${item.note}`)
       .join("\n");
-    const { data } = await context.admin
+    const { data, error: workOrderError } = await context.admin
       .from("fleet_work_orders")
       .insert({
         department_id: context.departmentId,
@@ -262,7 +294,10 @@ export async function POST(
       })
       .select("*")
       .single();
+    if (workOrderError || !data)
+      return fail("creating the defect work order", workOrderError);
     workOrder = data;
+    undo.push(async () => (await context.admin.from("fleet_work_orders").delete().eq("department_id", context.departmentId).eq("id", data.id)).error);
   }
 
   const frequencyDays = Math.max(
@@ -271,7 +306,7 @@ export async function POST(
   );
   const nextDue = new Date();
   nextDue.setUTCDate(nextDue.getUTCDate() + frequencyDays);
-  await context.admin
+  const { data: updatedVehicle, error: vehicleUpdateError } = await context.admin
     .from("fleet_vehicles")
     .update({
       current_mileage: Math.max(mileage, Number(vehicle.current_mileage) || 0),
@@ -281,16 +316,42 @@ export async function POST(
       updated_at: new Date().toISOString(),
     })
     .eq("department_id", context.departmentId)
-    .eq("id", vehicleId);
+    .eq("id", vehicleId)
+    .select("id")
+    .maybeSingle();
+  if (vehicleUpdateError || !updatedVehicle)
+    return fail("updating the vehicle", vehicleUpdateError);
+  undo.push(async () => (await context.admin
+    .from("fleet_vehicles")
+    .update({
+      current_mileage: vehicle.current_mileage,
+      current_hours: vehicle.current_hours,
+      inspection_due_date: vehicle.inspection_due_date ?? null,
+      status: vehicle.status,
+      open_issue_count: vehicle.open_issue_count,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("department_id", context.departmentId)
+    .eq("id", vehicleId)).error);
 
-  await auditFleet(
-    context,
-    "fleet_vehicle_inspected",
-    "fleet_vehicle",
-    vehicleId,
-    { inspection, work_order_id: workOrder?.id ?? null },
-  );
-  const readiness = await refreshFleetVehicle(context, vehicleId);
+  let readiness;
+  try {
+    readiness = await refreshFleetVehicle(context, vehicleId);
+  } catch (refreshError) {
+    return fail("recalculating vehicle readiness", refreshError);
+  }
+
+  try {
+    await auditFleet(
+      context,
+      "fleet_vehicle_inspected",
+      "fleet_vehicle",
+      vehicleId,
+      { inspection, work_order_id: workOrder?.id ?? null },
+    );
+  } catch (auditError) {
+    return fail("recording the audit entry", auditError);
+  }
   return NextResponse.json(
     { ok: true, inspection, workOrder, readiness },
     { status: 201 },
