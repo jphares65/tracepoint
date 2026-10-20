@@ -56,10 +56,10 @@ async function entitlement(departmentId: string, code: string) {
 
 test("the catalog migrations seed every canonical module with its default", async () => {
   const { rows } = await owner.query("select code, display_name, sort_order, is_active, default_enabled from public.feature_catalog order by code");
-  assert.deepEqual(rows.map((row) => row.code), OPERATIONAL_MODULE_CATALOG.map((module) => module.code).sort());
-  for (const module of OPERATIONAL_MODULE_CATALOG) {
-    const row = rows.find((candidate) => candidate.code === module.code);
-    assert.deepEqual([row.display_name, row.sort_order, row.is_active, row.default_enabled], [module.displayName, module.sortOrder, true, module.defaultEnabled ?? true], module.code);
+  assert.deepEqual(rows.map((row) => row.code), OPERATIONAL_MODULE_CATALOG.map((entry) => entry.code).sort());
+  for (const entry of OPERATIONAL_MODULE_CATALOG) {
+    const row = rows.find((candidate) => candidate.code === entry.code);
+    assert.deepEqual([row.display_name, row.sort_order, row.is_active, row.default_enabled], [entry.displayName, entry.sortOrder, true, entry.defaultEnabled ?? true], entry.code);
   }
 });
 

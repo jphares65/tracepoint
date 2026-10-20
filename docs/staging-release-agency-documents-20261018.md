@@ -4,6 +4,47 @@ Branch `claude/staging-rc-agency-documents-20261018` (supersedes
 `claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Validation
 evidence is in the commit history and the final report; this file is the operator's procedure.
 
+## Next release: date fixes and the Agency Documents module toggle (migration 046)
+
+Pending. It contains:
+- **A1 date fix.** On the AWS runtime, node-postgres returned DATE columns as `Date` objects, so
+  Agency Documents treated every qualification date as missing. The pool now returns DATE as
+  `yyyy-mm-dd` text (`postgres-type-parsers.ts`), and Agency Documents normalizes dates itself.
+- **046 `agency_documents_module_toggle`.** Agency Documents joins the platform feature catalog
+  with `default_enabled = false`. Every agency, existing or new, gets an explicit disabled row and
+  audit event. A platform administrator enables pilot agencies in the platform catalog. The
+  navigation, the `/agency-documents` pages and every `/api/agency-documents` route require the
+  entitlement.
+
+Starting state, verified read-only before the release: revision **187** (`0d9a5677`, digest
+`sha256:d5a19dd2…`) and ledger 001–045 with nothing pending.
+
+```powershell
+aws sso login --sso-session tracepoint-staging
+git -C <checkout> status --porcelain --untracked-files=all   # must print nothing
+npm ci
+.\scripts\release-entitlements-staging.ps1 -ToolingCommit <HEAD> -ApplicationCommit <HEAD>
+```
+
+The release runs steps 1–6 below with these changes:
+- The pre-release pin is revision 187.
+- Step 4 requires 001–045 recorded (hash-matched) and exactly 046 pending.
+- Step 5 prompts **`APPLY 046`**. Afterwards the 046 row must carry this commit, `staging` and
+  `apply`.
+- Step 6 prompts **`DEPLOY APPLICATION`**.
+
+On an application failure it restores revision 187. 046 is additive: revision 187 ignores the new
+`default_enabled` column and catalog row.
+
+Once 046 is applied, Agency Documents is **off for every agency, including Demo Township PD**. Its
+pages redirect home and its API returns 403 `FEATURE_NOT_ENABLED` until a platform administrator
+turns it on.
+
+After deploying:
+- Enable it for Demo Township PD in the platform catalog.
+- Confirm a qualification dated 2026-09-14 shows as `09/14/2026` in the generate picker.
+- Confirm `/api/qualifications` returns `2026-09-14`, not a timestamp.
+
 ## Status: deployed to staging 2026-10-19 14:03 UTC
 
 `0d9a5677` redeployed with `-DeployOnly` (no migration): task definition revision **187**, image

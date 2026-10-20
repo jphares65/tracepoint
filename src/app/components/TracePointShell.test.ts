@@ -16,11 +16,30 @@ test("support-mode department administrators retain Agency Documents in Administ
   const visible = getVisibleChildren(
     administration,
     ["administer_department"],
-    new Set(),
+    new Set(["agency_documents"]),
   );
 
   assert.deepEqual(
     visible.map((item) => item.label),
     ["Settings", "Import / Export", "Agency Documents"],
+  );
+});
+
+test("Agency Documents leaves the navigation when the platform administrator has not enabled it", () => {
+  const administration = NAV_ITEMS.find(
+    (item) => "children" in item && item.label === "Administration",
+  );
+
+  assert.ok(administration && "children" in administration);
+
+  const visible = getVisibleChildren(
+    administration,
+    ["administer_department"],
+    new Set(),
+  );
+
+  assert.deepEqual(
+    visible.map((item) => item.label),
+    ["Settings", "Import / Export"],
   );
 });
