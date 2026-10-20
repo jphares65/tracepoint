@@ -123,6 +123,9 @@ export async function POST(request: NextRequest) {
     if (asset.assigned_user_id || asset.assigned_vehicle_id || asset.assigned_location) {
       return errorResponse("This equipment is already assigned and is not available for checkout.", 409);
     }
+    if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+      return nativeCustody(context, id, action, condition, notes);
+    }
 
     const { data, error } = await context.admin
       .from("equipment_assets")
@@ -160,6 +163,9 @@ export async function POST(request: NextRequest) {
   if (asset.assigned_user_id !== context.user.id) {
     return errorResponse("You can check in only equipment currently assigned to you.", 403);
   }
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+    return nativeCustody(context, id, action, condition, notes);
+  }
 
   const { data, error } = await context.admin
     .from("equipment_assets")
@@ -189,6 +195,40 @@ export async function POST(request: NextRequest) {
     data as EquipmentAsset,
     context.user.id,
     "checked-in",
+  );
+}
+
+// The AWS runtime runs as the subject, who has no direct asset or history
+// update rights; the bounded database function performs the same transfer.
+async function nativeCustody(
+  context: { admin: any; departmentId: string; user: { id: string } },
+  id: string,
+  action: string,
+  condition: string,
+  notes: string,
+) {
+  const { data, error } = await context.admin.rpc("operate_equipment_self_custody", {
+    p_department_id: context.departmentId,
+    p_asset_id: id,
+    p_action: action,
+    p_condition: condition,
+    p_note: custodyNote(condition, notes),
+  });
+  if (error) return errorResponse(error.message, 500);
+  if (!data) {
+    return errorResponse(
+      action === "check-out"
+        ? "This equipment was checked out by someone else."
+        : "Equipment custody changed before check-in completed.",
+      409,
+    );
+  }
+  return custodyResponse(
+    context.admin,
+    context.departmentId,
+    data as EquipmentAsset,
+    context.user.id,
+    action === "check-out" ? "checked-out" : "checked-in",
   );
 }
 

@@ -5,8 +5,44 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createPlatformReadRepository } from "@/lib/platform/read-repository";
+import { PlatformAdminOperationError, resolvePlatformAdminAccess, type PlatformAdminRepository } from "@/lib/platform/admin-access";
 
 export const dynamic = "force-dynamic";
+
+// The AWS runtime has no service-role client: platform entitlements are read
+// and written only through the platform-administrator database functions.
+async function resolvePostgresSuperAdmin() {
+  const access = await resolvePlatformAdminAccess();
+  if (!access.ok) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { error: access.status === 401 ? "Authentication is required." : access.status === 403 ? "TracePoint platform administrator access is required." : "Platform administrator access could not be verified." },
+        { status: access.status, headers: { "Cache-Control": "no-store" } },
+      ),
+    };
+  }
+  return { ok: true as const, repository: access.repository };
+}
+
+async function postgresPatch(request: NextRequest, repository: PlatformAdminRepository) {
+  const body = await request.json().catch(() => ({}));
+  const departmentId = typeof body.departmentId === "string" ? body.departmentId.trim() : "";
+  const featureCode = typeof body.featureCode === "string" ? body.featureCode.trim() : "";
+  if (!departmentId || !featureCode || typeof body.isEnabled !== "boolean") {
+    return NextResponse.json({ error: "departmentId, featureCode, and isEnabled are required." }, { status: 400 });
+  }
+  const isEnabled = body.isEnabled as boolean;
+  const reason = typeof body.reason === "string" ? body.reason.trim() || undefined : undefined;
+  try {
+    await repository.setEntitlement({ departmentId, featureCode, isEnabled, reason });
+  } catch (error) {
+    const code = error instanceof PlatformAdminOperationError ? error.code : undefined;
+    if (code === "P0002" || code === "22P02") return NextResponse.json({ error: "Department or feature was not found." }, { status: 404 });
+    return NextResponse.json({ error: "Platform entitlement could not be updated." }, { status: code === "42501" ? 403 : 500 });
+  }
+  return NextResponse.json({ ok: true, departmentId, featureCode, isEnabled }, { headers: { "Cache-Control": "no-store" } });
+}
 
 async function resolveSuperAdmin() {
   const result = await resolveServerAccess();
@@ -41,6 +77,20 @@ async function resolveSuperAdmin() {
 }
 
 export async function GET() {
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    const platform = await resolvePostgresSuperAdmin();
+    if (!platform.ok) return platform.response;
+    try {
+      const data = await platform.repository.listEntitlements();
+      return NextResponse.json(
+        { departments: data.departments, features: data.features, entitlements: data.entitlements },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    } catch {
+      return NextResponse.json({ error: "Platform entitlements could not be loaded." }, { status: 500 });
+    }
+  }
+
   const access = await resolveSuperAdmin();
 
   if (!access.ok) {
@@ -66,6 +116,11 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+    const platform = await resolvePostgresSuperAdmin();
+    return platform.ok ? postgresPatch(request, platform.repository) : platform.response;
+  }
+
   const access = await resolveSuperAdmin();
 
   if (!access.ok) {
