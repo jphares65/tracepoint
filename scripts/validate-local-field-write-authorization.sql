@@ -111,7 +111,13 @@ begin
  begin update public.fleet_vehicles set unit_number='B2-RENAMED' where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Inspector renamed a vehicle'; exception when insufficient_privilege then null; end;
  begin update public.fleet_vehicles set status='Retired' where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Inspector retired a vehicle'; exception when insufficient_privilege then null; end;
  begin update public.fleet_vehicles set status_override_active=false where id='0b200000-0000-4000-8000-0000000001a2'; raise exception 'Inspector cleared a manual override'; exception when insufficient_privilege then null; end;
- begin update public.fleet_vehicles set status='Out of Service' where id='0b200000-0000-4000-8000-0000000001a2'; raise exception 'Inspector changed an overridden status'; exception when insufficient_privilege then null; end;
+ begin update public.fleet_vehicles set status='Maintenance' where id='0b200000-0000-4000-8000-0000000001a2'; raise exception 'Inspector changed an overridden status'; exception when insufficient_privilege then null; end;
+ begin update public.fleet_vehicles set status_reason='Changed' where id='0b200000-0000-4000-8000-0000000001a2'; raise exception 'Inspector changed the override reason'; exception when insufficient_privilege then null; end;
+ -- A critical defect still takes an overridden vehicle out of service (B4 FLT-01), but never back.
+ update public.fleet_vehicles set status='Out of Service', status_reason='Critical inspection defect' where id='0b200000-0000-4000-8000-0000000001a2';
+ get diagnostics affected = row_count;
+ if affected <> 1 then raise exception 'Inspector could not take an overridden vehicle out of service'; end if;
+ begin update public.fleet_vehicles set status='Available' where id='0b200000-0000-4000-8000-0000000001a2'; raise exception 'Inspector returned an overridden vehicle to Available'; exception when insufficient_privilege then null; end;
  begin update public.fleet_vehicles set current_mileage=10 where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Inspector lowered the odometer'; exception when insufficient_privilege then null; end;
  begin update public.fleet_vehicles set next_service_date=current_date where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Inspector changed service dates'; exception when insufficient_privilege then null; end;
  begin update public.fleet_vehicles set updated_by_user_id='0b200000-0000-4000-8000-0000000000f1' where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Inspector forged the editor'; exception when insufficient_privilege then null; end;

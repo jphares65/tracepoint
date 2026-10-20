@@ -89,6 +89,7 @@ declare
   v_maintainer boolean;
   v_allowed text[] := array['status', 'open_issue_count', 'updated_at', 'updated_by_user_id'];
   v_changed text[];
+  v_takes_out_of_service boolean;
 begin
   if current_user <> 'authenticated'
      or public.has_any_department_permission(old.department_id, array['manage_fleet', 'administer_department']) then
@@ -103,6 +104,13 @@ begin
     v_allowed := v_allowed || array['current_mileage', 'current_hours', 'last_service_date', 'last_service_mileage',
       'last_service_hours', 'next_service_date', 'next_service_mileage', 'next_service_hours'];
   end if;
+  -- A manual override never masks a critical defect: the field workflow may
+  -- still take an overridden Available/Attention vehicle out of service, with
+  -- its reason, but may not make it more available.
+  v_takes_out_of_service := new.status = 'Out of Service' and old.status in ('Available', 'Attention');
+  if v_takes_out_of_service then
+    v_allowed := v_allowed || array['status_reason'];
+  end if;
   select coalesce(array_agg(field.key), array[]::text[]) into v_changed
   from jsonb_each(to_jsonb(new)) field
   where field.value is distinct from to_jsonb(old) -> field.key;
@@ -110,7 +118,7 @@ begin
      or (new.updated_by_user_id is distinct from old.updated_by_user_id
          and new.updated_by_user_id is distinct from tracepoint_auth.subject_id())
      or (new.status is distinct from old.status
-         and (old.status = 'Retired' or old.status_override_active
+         and (old.status = 'Retired' or (old.status_override_active and not v_takes_out_of_service)
               or new.status not in ('Available', 'Attention', 'Maintenance', 'Out of Service')))
      or (not v_maintainer and (new.current_mileage < old.current_mileage or new.current_hours < old.current_hours)) then
     raise exception 'fleet vehicle change forbidden' using errcode = '42501';

@@ -72,3 +72,18 @@ The SQL negatives cover:
   - **040:** `drop trigger fleet_vehicles_field_update_guard on public.fleet_vehicles; drop trigger fleet_vehicle_equipment_field_update_guard on public.fleet_vehicle_equipment; drop function public.guard_fleet_field_vehicle_update(); drop function public.guard_fleet_field_equipment_update(); drop policy audit_events_insert_fleet on public.audit_events; drop policy fleet_work_orders_read_inspectors on public.fleet_work_orders; drop policy fleet_work_orders_insert_inspection_defects on public.fleet_work_orders; drop policy fleet_equipment_update_inspectors on public.fleet_vehicle_equipment; drop policy fleet_vehicles_update_field_workflows on public.fleet_vehicles;`
   - **041:** `drop function public.operate_equipment_self_custody(uuid,uuid,text,text,text); drop policy equipment_assets_select_custody_pool on public.equipment_assets;`
 - Dropping only removes the new grants. Existing manager and administrator access is unaffected.
+
+## Integration amendment (B4 compatibility)
+
+B4 (FLT-01) requires that a manual status override never mask a critical defect. The readiness refresh, running as the inspector, therefore has to move an overridden Available/Attention vehicle to Out of Service. As first written, the 040 guard refused any status change on an overridden vehicle for non-managers. Combined with B4, that would have blocked the critical safety status.
+
+The guard now allows exactly one override-crossing change for field workflows: Available/Attention → Out of Service, together with `status_reason`. Every other status or reason change on an overridden vehicle is still refused, including any move back toward availability.
+
+`validate-local-field-write-authorization.sql` covers the change:
+
+- the allowed transition;
+- refusal of Maintenance, of a reason-only edit, and of a return to Available.
+
+| Check | Original 040 guard | Amended guard |
+|---|---|---|
+| Validator shim (79 + 40 migrations) | **Fails**: "fleet vehicle change forbidden" on the Out of Service transition | Passes |
