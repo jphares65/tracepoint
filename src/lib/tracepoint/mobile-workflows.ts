@@ -44,12 +44,15 @@ export function rangeDayDetailPayload(workspaceValue: unknown, rangeDayId: strin
   return { rangeDay, drills, roster };
 }
 
-export function qrDecision(input: { identifier: string; access: Pick<ServerAccessContext, "permissions" | "enabledFeatures">; vehicle?: Row | null; equipment?: Row | null; firearm?: Row | null }) {
+// vehicleInspectionEligible is the fleet inspection-eligibility rule (fleet-server canSubmitFleetInspection), resolved by the route.
+// Fleet has no module entitlement, so no feature flag applies to vehicles.
+export function qrDecision(input: { identifier: string; access: Pick<ServerAccessContext, "permissions" | "enabledFeatures"> & { vehicleInspectionEligible?: boolean }; vehicle?: Row | null; equipment?: Row | null; firearm?: Row | null }) {
   const identifier = input.identifier.trim();
   if (!identifier || identifier.length > 2048) return { status: "unknown", message: "This QR code is not valid." };
   const permissions = new Set(input.access.permissions);
   const allowed = (...values: string[]) => permissions.has("administer_department") || values.some((value) => permissions.has(value as never));
-  if (input.vehicle) return allowed("perform_fleet_inspections", "view_fleet", "manage_fleet") && input.access.enabledFeatures.includes("fleet")
+  const vehicleEligible = input.access.vehicleInspectionEligible ?? allowed("perform_fleet_inspections", "manage_fleet");
+  if (input.vehicle) return vehicleEligible
     ? { entityType: "vehicle", entityId: text(input.vehicle.id), displayName: `Unit ${text(input.vehicle.unit_number) || "vehicle"}`, workflow: "vehicle_inspection", allowed: true }
     : { status: "denied", message: "You are not authorized to use this vehicle workflow." };
   if (input.equipment) return input.access.enabledFeatures.includes("equipment_readiness")
@@ -77,14 +80,14 @@ export function qrLookupFilter(handle: string, columns: readonly string[]) {
 }
 
 type QrMatch = Row | null;
-type QrAccess = Pick<ServerAccessContext, "userId" | "permissions" | "enabledFeatures">;
+type QrAccess = Pick<ServerAccessContext, "userId" | "permissions" | "enabledFeatures"> & { vehicleInspectionEligible?: boolean };
 // Who may know a record exists, mirroring each table's select policy (firearms_select_scoped, equipment_assets_select_scoped
 // plus the 041 custody pool, fleet_vehicles_select_scoped). In aws-native mode RLS already applies; in bridge mode the
 // service-role client sees every row, so a row the caller could not read is treated exactly like an absent one.
 function qrVisible(access: QrAccess, table: "vehicle" | "equipment" | "firearm", match: Row, heldFirearms: Set<string>) {
   const permissions = new Set<string>(access.permissions);
   const any = (...values: string[]) => permissions.has("administer_department") || values.some((value) => permissions.has(value));
-  if (table === "vehicle") return any("view_command_dashboard", "view_fleet", "manage_fleet", "perform_fleet_inspections", "manage_fleet_maintenance", "manage_fleet_rules");
+  if (table === "vehicle") return any("view_command_dashboard", "view_fleet", "manage_fleet", "perform_fleet_inspections", "manage_fleet_maintenance", "manage_fleet_rules") || access.vehicleInspectionEligible === true;
   if (table === "firearm") return any("manage_firearms", "manage_inspections", "view_command_dashboard") || heldFirearms.has(text(match.id));
   return any("manage_equipment") || (Boolean(access.userId) && text(match.assigned_user_id) === access.userId)
     || (match.lifecycle_status === "active" && !match.assigned_user_id && !match.assigned_vehicle_id && !match.assigned_location && access.enabledFeatures.includes("equipment_readiness"));
