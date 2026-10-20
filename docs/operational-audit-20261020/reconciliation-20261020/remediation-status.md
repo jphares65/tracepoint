@@ -72,3 +72,29 @@ Every branch is cut from `555f061` (`codex/staging-mobile-api-release-20261007`)
 - **B9** equipment holder.
 - **B10** qualification computation and range roles.
 - **B11** admin correctness, which has the remaining ADM items besides ADM-04.
+
+## Update: integration branch
+
+**Branch:** `claude/integration-defects-20261020`. It contains B0, B1, B1a, B2, B3, B4, B5, F1, F2, F3, F4, F5 and DC, with migrations 038–046. Source commits are listed in `docs/remediation/INTEGRATION.md` on that branch.
+
+**CI:** green on a GitHub runner with the real SheetJS package and PostgreSQL (application tests 676/676 at first integration).
+
+**Staging package:** `docs/remediation/STAGING-VERIFICATION.md`. It covers:
+
+- pre-flight checks;
+- migration order and dependencies;
+- rollback for each migration and image, including two image-rollback cautions;
+- acceptance steps S1–S17;
+- an evidence template.
+
+**New defects found during follow-ups, all fixed on the integration branch:**
+
+| ID | Defect |
+|---|---|
+| DC | AWS-native returned `date` columns as JavaScript `Date` objects, so valid certifications evaluated as **expired**. This is likely live in production if production is AWS-native. |
+| NEW-F5-A | Every vehicle QR scan was denied, because the QR decision required a nonexistent `fleet` feature flag. |
+| F1 gap | A non-Administrator holding `manage_users` could deactivate an Administrator through import. |
+
+**Kept separate, not in integration:** `claude/fix-b6-notification-delivery` (app-side notification fixes plus the scheduler entry points). It waits for the infrastructure proposal decision (`docs/remediation/B6-infrastructure-proposal.md` on that branch).
+
+**Next:** [plan-b7-b11.md](plan-b7-b11.md).
