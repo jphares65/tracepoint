@@ -73,3 +73,6 @@ F3 merge notes:
 B6 merge note: `claude/fix-b6-notification-delivery` restructures `src/app/api/notifications/route.ts`, which TV also edits. Expect a conflict when B6 is integrated. Re-run the TV notification tests after resolving it.
 | `claude/fix-b9-separated-custody` | `330ce2042fd12150b469f0d59c635f7bfb241a14` | 049 |
 | `claude/fix-b7-training-records` | `15867d05f52d11a081b35aa0e8a97cf3a407f614` | 050 |
+| `claude/fix-b10-qualification-range-roles` | `6e43ab400910347c4be4bbcaab1e852db1b30d10` | 051 |
+
+B10 merge note: `scripts/validate-clean-bootstrap.mjs` conflicted with B7 (both add an AWS-stage suite after training visibility). Resolved by keeping both, closeout first. Range and TV tests 80/80 on the merged tree; `tsc` clean.

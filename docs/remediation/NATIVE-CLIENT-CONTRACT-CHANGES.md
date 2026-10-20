@@ -301,6 +301,9 @@ Codes used below: **[B]** breaking, **[BC]** behaviour-changing, **[A]** additiv
 | C22 | Inbox `fleet_audit_pending` kind; with B6, more and longer-lived items | Additive (content) | Tolerate unknown `kind` values. Use `href` as given. | **S11** follow-on (F3 step 8: manager inbox in the app); B6: **S6** after its infrastructure is authorized |
 | C23 | Pending invitee first sign-in on mobile still refused (unchanged) | No change (known gap) | Tell the user to complete their first sign-in on the web. | **S1** (do the first sign-in on the web, then the app) |
 | C24 | Unchanged routes: logout, session shape, drill documents, attachments, range-days, evidence | None | None. | **S10**; add an evidence upload as an inspector-only user **(new)** |
+| C25 | Range workspace PUT returns **400** with a message for a new or changed result with an impossible score, time or hit count (B10; numeric strings still accepted) | Behaviour-changing | Show the `error` text; do not retry the same payload. | **S21** (impossible score from the app) |
+| C26 | Scorer-only devices may mark attendance and add present walk-ups on open days; before, 403 (B10) | Additive (permission) | Enable those controls for instructors, or leave them hidden. | **S21** from the app as an Instructor |
+| C27 | Optional result field `firearmTypeSnapshot` (B10). Qualification statuses shown to the app change (closed days only; "Any" drills count; same-day re-shoot) | Additive / behaviour-changing | Ignoring the field is safe; send it if the app wants "Any" drills attributed to the firearm used. Do not cache old statuses. | **S21**, S5 |
 
 **Regression tests for every route:** run **S10** (tenant-negative). Every cross-tenant attempt must still be denied or return `unknown`.
 

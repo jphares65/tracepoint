@@ -89,6 +89,7 @@ All files are idempotent and wrapped in `begin;` and `commit;`.
 | 048 | `training_record_visibility` | TV | Own-row-or-permission read policies on certifications, agency-training attendee/requirement/certificate tables, qualification results, drill results, range roster, remediation recommendations, range packets and qualification attachments | — | 047 is reserved for the separate B6 branch; the gap is allowed by the runner (strictly increasing versions only) |
 | 049 | `equipment_separated_holder` | B9 | Equipment trigger validates the holder only when it changes (items held by separated members can go out of service, be removed or returned; new assignments to inactive members are still refused); removal reason recorded in history; **profiles read policy:** `manage_users`, `manage_equipment` or `administer_department` holders can read a former member's profile in their agency (owner decision pending) | 038 | Apply before or with the image, or separated holders show as "Unnamed Officer" |
 | 050 | `training_closeout_records` | B7 | Closeout refuses Completed/Passed without Present; issue date is the event date in the department zone; records which credentials a closeout superseded (`training_certifications.superseded_by_training_event_id`) so reopen restores exactly those | — | Additive. Before deploy, run the B7 record's upcoming-event drift review query (TRN-02) |
+| 051 | `range_instructor_line_actions` | B10 | Ready-day trigger lets `score_range_days` holders change attendance and add present walk-ups on open days (removal, officer and firearm changes stay planning-only); instructors may insert qualification evidence and its audit row; `attachments_select` lets the officer of an imported result read its evidence | 042, 048 | **Before applying:** run `scripts/qualification-status-snapshot.sql` and `scripts/qualification-status-diff.mjs` (B10 record) and record per-agency status changes. Close out completed range days first, or open-day passes stop counting |
 
 **After applying**, run `migrate-db.ps1 staging -Action status` again. Expected: no pending files, no drift.
 
@@ -104,7 +105,7 @@ All files are idempotent and wrapped in `begin;` and `commit;`.
 2. The script already enforces ECS steady state, healthy ALB targets, `/api/health` 200 and the exact image digest, and rolls back automatically on a deployment-safe smoke failure.
 3. Record the new task-definition revision and image digest.
 
-## 4. Acceptance tests (S1–S10, plus supplementary S11–S16)
+## 4. Acceptance tests (S1–S10, plus supplementary S11–S21)
 
 Run every step **before** (current staging image and schema) and **after** (migrations and new image). A step passes only when the "after" result matches the expected result.
 
@@ -130,6 +131,7 @@ Run every step **before** (current staging image and schema) and **after** (migr
 | S18 | As a plain officer, through the API and the pages: list certifications, open an agency-training roster, `/api/qualifications`, the range workspace GET and another officer's evidence download. Repeat as `manage_certifications`, `manage_training`, a range scorer and `view_command_dashboard`. | Officer sees only their own records (the workspace response has `recordScope: "own"`), and another officer's evidence returns 403/404. Each permitted role sees what the TV record's mapping table lists. An officer's workspace PUT still returns 403 and erases nothing. | TRN-26, RNG-28 |
 | S19 | Deactivate a synthetic officer who holds equipment and a firearm. As an equipment manager, view the asset list, the per-officer view and the CSV export, then mark one item out of service and remove another, each with a reason. Try to assign a new item to the deactivated officer. As an armorer, view the firearm list. | Items show "Name (inactive)", never "Unassigned". Out of service and removal succeed and require a reason, and the history closes with the reason. A new assignment is refused. The armorer sees "Name (inactive)", or "Unknown User" if they hold `manage_firearms` only (known limitation). Deactivation removes no assignment. | EQP-01, EQP-04, EQP-12, ARM-08 (display) |
 | S20 | Agency training, in a tenant whose timezone differs from the tester's browser (full steps in the B7 record, "S19-B7"). Create an 18:00 event and edit it three times; closeout attendance rules; Complete Event blocked while edits are unsaved; reopen restores the superseded credential; roster with a deactivated officer; certification edit rules. | Time stays 18:00 department time. A no-show cannot be Completed. Closeout issues the credential dated the local event date. Reopen restores the earlier credential. The roster saves with the inactive officer, and their recorded row cannot be removed. A closeout-issued credential's issue date and officer cannot be changed. | TRN-02, 03, 04, 11, 12, 18, 27, 29, 30 |
+| S21 | Range, as an Instructor holding only `score_range_days` (full steps in the B10 record, "Staging" step 4): mark Present on a scheduled and an open day; add a walk-up from Scoring; upload a target photo on a saved result and on an imported record's evidence (as a range manager); save a score above the drill maximum; save a Points drill toggled Incomplete. Compare two officers flagged by the pre-apply diff report. | Attendance and walk-up save; removal, Add Officer and firearm selection stay disabled. Photo upload returns 201 and lists. An impossible score is refused (400, "Save failed: Score … is above the maximum …"). Incomplete is stored as incomplete. Statuses match the diff report's "after": only Completed/Locked days count, "Any" drills count, a same-day re-shoot clears Failed. S5 and S10 still pass. | RNG-07, 09, 10, 12, 14, 15, 24 |
 
 ## 5. Rollback
 
@@ -152,6 +154,7 @@ The migrations are additive and were designed to stay in place under the previou
 | 044 | Re-run the `010`/`039` function bodies as a new migration (F1 record) | |
 | 045 | New migration restoring the 040 definitions, then drop the 045 objects (F2 record) | |
 | 046 | New migration: drop `fleet_vehicles_safety_hold_clearance_guard` and its function, and re-run 043's `enqueue_fleet_inspection_audit` and three outbox function definitions (F3, F6a records). The columns and baseline audit rows can stay, inert. | Vehicles held under the new rule keep their status until changed |
+| 051 | New migration: re-run 042's `protect_pilot_range_workspace_mutation()` body, drop `attachments_insert_qualification_evidence` and `audit_events_insert_qualification_evidence`, recreate 048's `attachments_select` (B10 record) | Statuses revert with the image; stored `firearmTypeSnapshot` is inert |
 | Whole database | Restore the §1 snapshot to a new instance and repoint (last resort) | Loses staging changes made after the snapshot |
 
 ## 6. Evidence template
@@ -164,6 +167,7 @@ The migrations are additive and were designed to stay in place under the previou
 | S18 | | | | | | | |
 | S19 | | | | | | | |
 | S20 | | | | | | | |
+| S21 | | | | | | | |
 | S1 … S16 | | | | | | | |
 
 ## 7. Known open items: not covered or not yet decided
