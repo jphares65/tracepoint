@@ -85,3 +85,6 @@ B11 merge note: clean merge on top of B8. On the merged tree: `tsc` 0 errors; ap
 | `claude/fix-adm07-invited-reset` | `9a7a2346b842bc1fd22446675a03531fd616904c` | — |
 
 ADM-07 merge note: clean merge on top of B11. It replaces B11 S23 step 3 with "S23-3 (revised)" in the ADM-07 record.
+| `claude/fix-dc2-timestamp-contract` | `2f4d675895d8c810a89407cf8a32acd7ef6115e3` | — |
+
+DC2 merge note: clean merge on top of ADM-07. The parser change also applies to every earlier batch: re-run S5 (range save concurrency) and S19 (custody history ordering) after DC2.
