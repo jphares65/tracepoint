@@ -55,11 +55,12 @@ test("QR lookup compares only UUID handles to uuid id columns", () => {
 test("QR lookup SQL never binds a non-UUID handle to an id comparison", async () => {
   const value = qrClient({ firearms: [{ id: record, asset_number: "FA-0001" }] });
   const result = await lookupQrRecords(value.admin, department, { handle: "FA-0001", kind: null }, adminAccess);
-  assert.deepEqual(result, { vehicle: null, equipment: null, firearm: { id: record, asset_number: "FA-0001" } });
+  assert.deepEqual(result, { vehicle: null, equipment: null, firearm: { id: record, asset_number: "FA-0001" }, firearmCustodyEligible: false });
   assert.equal(value.statements.length, 3);
   for (const statement of value.statements) {
     assert.doesNotMatch(statement.text, /t\."id" =/);
-    assert.match(statement.text, / limit 2$/);
+    // No limit: a row the caller cannot see must never crowd out one they can.
+    assert.doesNotMatch(statement.text, / limit /);
     assert.deepEqual(statement.values?.slice(-2), ["FA-0001", "FA-0001"]);
   }
   const uuidLookup = qrClient();
@@ -69,13 +70,13 @@ test("QR lookup SQL never binds a non-UUID handle to an id comparison", async ()
 
 test("QR lookup honours the label kind and reports duplicate matches as ambiguous", async () => {
   const labelled = qrClient({ fleet_vehicles: [{ id: record, unit_number: "12" }] });
-  assert.deepEqual(await lookupQrRecords(labelled.admin, department, { handle: record, kind: "vehicle" }, adminAccess), { vehicle: { id: record, unit_number: "12" }, equipment: null, firearm: null });
+  assert.deepEqual(await lookupQrRecords(labelled.admin, department, { handle: record, kind: "vehicle" }, adminAccess), { vehicle: { id: record, unit_number: "12" }, equipment: null, firearm: null, firearmCustodyEligible: false });
   assert.deepEqual(labelled.statements.map((statement) => /from public\."([a-z_]+)"/.exec(statement.text)?.[1]), ["fleet_vehicles"]);
   const duplicated = qrClient({ equipment_assets: [{ id: "a" }, { id: "b" }] });
   assert.deepEqual(await lookupQrRecords(duplicated.admin, department, { handle: "SN-1", kind: null }, adminAccess), { failure: "ambiguous" });
 });
 
-async function resolveAs(client: ReturnType<typeof qrClient>, handle: string, caller: { userId: string; permissions: string[]; enabledFeatures: string[] }) {
+async function resolveAs(client: ReturnType<typeof qrClient>, handle: string, caller: { userId: string; permissions: string[]; enabledFeatures: string[]; restrictedFirearmCustody?: boolean }) {
   const access = { ...caller, permissions: caller.permissions as never[] };
   const records = await lookupQrRecords(client.admin, department, { handle, kind: null }, access);
   return "failure" in records ? records : qrDecision({ identifier: handle, access, ...records });
@@ -90,9 +91,9 @@ test("QR resolution answers an unreadable in-agency firearm exactly like a missi
   // Read permission without custody permission: the caller may know the firearm exists, so the restriction is stated, without its ID.
   assert.deepEqual(await resolveAs(qrClient(firearms), "SN-1", member("manage_inspections")), { status: "denied", message: "You are not authorized to use firearm custody." });
   // The officer holding the firearm can read it (firearms_select_scoped), so the restriction is stated too.
-  assert.deepEqual(await resolveAs(qrClient({ ...firearms, firearm_assignments: [{ firearm_id: record }] }), "SN-1", member()), { status: "denied", message: "You are not authorized to use firearm custody." });
+  assert.deepEqual(await resolveAs(qrClient({ ...firearms, firearm_assignments: [{ firearm_id: record, assigned_to_user_id: officer }] }), "SN-1", member()), { status: "denied", message: "You are not authorized to use firearm custody." });
   assert.deepEqual(await resolveAs(qrClient(firearms), "SN-1", member("firearm_custody.check_out")), notFound);
-  assert.deepEqual(await resolveAs(qrClient(firearms), "SN-1", member("manage_firearms")), { entityType: "firearm", entityId: record, workflow: "firearm_custody", allowed: true });
+  assert.deepEqual(await resolveAs(qrClient(firearms), "SN-1", member("manage_firearms")), { entityType: "firearm", entityId: record, workflow: "firearm_custody", allowed: true, displayName: "Firearm", matchedField: "serial_number", matchedValue: "SN-1" });
 });
 
 test("QR resolution answers another agency's record exactly like a missing one", async () => {
@@ -118,9 +119,9 @@ test("QR ambiguity is reported only over records the caller can read and never s
   const hidden = { department_id: department, serial_number: "SN-1" };
   assert.deepEqual(await resolveAs(qrClient({ firearms: [{ id: "a", ...hidden }, { id: "b", ...hidden }] }), "SN-1", member()), notFound);
   assert.deepEqual(await resolveAs(qrClient({ firearms: [{ id: "a", ...hidden }, { id: "b", ...hidden }] }), "SN-1", member("manage_firearms")), { failure: "ambiguous" });
-  // One readable and one unreadable match: the readable one is never picked, since another record shares the code.
+  // One readable and one unreadable match resolves the readable one (owner decision F6b): hidden rows never change the answer.
   const pool = { ...hidden, lifecycle_status: "active", assigned_user_id: null };
-  assert.deepEqual(await resolveAs(qrClient({ equipment_assets: [{ id: "a", ...pool }, { id: "b", ...pool, assigned_user_id: "30000000-0000-4000-8000-000000000009" }] }), "SN-1", member()), { failure: "ambiguous" });
+  assert.equal((await resolveAs(qrClient({ equipment_assets: [{ id: "a", ...pool }, { id: "b", ...pool, assigned_user_id: "30000000-0000-4000-8000-000000000009" }] }), "SN-1", member()) as { entityId?: string }).entityId, "a");
   const route = await readFile("src/app/api/mobile/qr/resolve/route.ts", "utf8");
   assert.match(route, /records\.failure === "ambiguous"\s*\? NextResponse\.json\(\{ status: "unknown", message: "This code matches more than one record\. Scan the TracePoint label for this item instead\." \}, \{ status: 409/);
   assert.match(route, /lookupQrRecords\(admin, departmentId, parsed, access\)/);
@@ -145,4 +146,86 @@ test("vehicle QR decisions follow the fleet inspection-eligibility rule", async 
   const route = await readFile("src/app/api/mobile/qr/resolve/route.ts", "utf8");
   assert.match(route, /admin\.rpc\("can_submit_fleet_inspection", \{ p_department_id: departmentId \}\)/);
   assert.match(route, /canSubmitFleetInspection\(resolved\.context, rules\.data\)/);
+});
+
+async function resolveTraced(rowsByTable: Record<string, Record<string, unknown>[]>, handle: string, caller: { userId: string; permissions: string[]; enabledFeatures: string[]; restrictedFirearmCustody?: boolean }) {
+  const client = qrClient(rowsByTable);
+  return { response: await resolveAs(client, handle, caller), statements: client.statements.map((statement) => statement.text) };
+}
+const otherOfficer = "30000000-0000-4000-8000-000000000009";
+
+test("QR responses are identical whether or not a hidden record shares the handle", async () => {
+  const pool = { id: "a", department_id: department, serial_number: "SN-1", lifecycle_status: "active", assigned_user_id: null };
+  const heldByOther = (id: string) => ({ ...pool, id, assigned_user_id: otherOfficer });
+  const held = { id: "f", department_id: department, asset_number: "FA-1", serial_number: "X-1" };
+  const cases: Array<[string, Record<string, Record<string, unknown>[]>, Record<string, Record<string, unknown>[]>, string, ReturnType<typeof member>]> = [
+    ["equipment, one hidden duplicate", { equipment_assets: [pool] }, { equipment_assets: [pool, heldByOther("b")] }, "SN-1", member()],
+    ["equipment, hidden rows that would fill a two-row page", { equipment_assets: [pool] }, { equipment_assets: [heldByOther("b"), heldByOther("c"), pool] }, "SN-1", member()],
+    ["firearm held by the caller, hidden firearm with the same asset number", { firearms: [held], firearm_assignments: [{ firearm_id: "f", assigned_to_user_id: officer }] }, { firearms: [held, { ...held, id: "g", serial_number: "X-2" }], firearm_assignments: [{ firearm_id: "f", assigned_to_user_id: officer }] }, "FA-1", member()],
+    ["only hidden matches versus none", {}, { firearms: [held, { ...held, id: "g" }], equipment_assets: [heldByOther("b")] }, "FA-1", member()],
+  ];
+  for (const [name, without, withHidden, handle, caller] of cases) {
+    const plain = await resolveTraced(without, handle, caller), hidden = await resolveTraced(withHidden, handle, caller);
+    assert.deepEqual(hidden.response, plain.response, name);
+    assert.deepEqual(hidden.statements, plain.statements, `${name}: the same statements run`);
+  }
+  assert.deepEqual((await resolveTraced(cases[3][2], "FA-1", member())).response, notFound);
+});
+
+test("QR handles that match more than one visible record are ambiguous", async () => {
+  const pool = { department_id: department, serial_number: "SN-1", lifecycle_status: "active", assigned_user_id: null };
+  assert.deepEqual(await resolveAs(qrClient({ equipment_assets: [{ id: "a", ...pool }, { id: "b", ...pool }] }), "SN-1", member()), { failure: "ambiguous" });
+  const firearm = { department_id: department, serial_number: "SN-1" };
+  assert.deepEqual(await resolveAs(qrClient({ firearms: [{ id: "a", ...firearm }, { id: "b", ...firearm, serial_number: "X", asset_number: "SN-1" }] }), "SN-1", member("manage_firearms")), { failure: "ambiguous" });
+});
+
+test("QR resolution follows the restricted firearm custody operator rule (031) on AWS-native", async () => {
+  const firearm = { id: record, department_id: department, serial_number: "SN-1", asset_number: "FA-1", make: "Glock", model: "17" };
+  const restriction = (type: string, extra: Record<string, unknown> = {}) => ({ firearm_id: record, department_id: department, restriction_type: type, effective_start: new Date(Date.now() - 60_000), expires_at: null, ...extra });
+  const assignedTo = (user: string) => [{ firearm_id: record, department_id: department, assigned_to_user_id: user }];
+  const aws = (...permissions: string[]) => ({ ...member(...permissions), restrictedFirearmCustody: true });
+  const allowed = { entityType: "firearm", entityId: record, workflow: "firearm_custody", allowed: true, displayName: "Glock 17", matchedField: "serial_number", matchedValue: "SN-1" };
+  const dutyOnly = { firearms: [firearm], firearm_assignments: assignedTo(otherOfficer), firearm_possession_restrictions: [restriction("duty_only")] };
+  // manage_restricted_firearm_custody may check another officer's Duty Only firearm in or out, so it resolves.
+  assert.deepEqual(await resolveAs(qrClient(dutyOnly), "SN-1", aws("manage_restricted_firearm_custody")), allowed);
+  assert.deepEqual(await resolveAs(qrClient(dutyOnly), record, aws("manage_restricted_firearm_custody")), { entityType: "firearm", entityId: record, workflow: "firearm_custody", allowed: true });
+  // The assignee operates their own Duty Only firearm.
+  assert.deepEqual(await resolveAs(qrClient({ ...dutyOnly, firearm_assignments: assignedTo(officer) }), "SN-1", aws()), allowed);
+  // Without that authority the same firearm answers exactly like a missing one.
+  assert.deepEqual(await resolveAs(qrClient(dutyOnly), "SN-1", aws()), notFound);
+  assert.deepEqual(await resolveAs(qrClient(dutyOnly), "SN-1", aws("firearm_custody.check_out")), notFound);
+  // The custody function refuses these, so they are not offered either.
+  for (const rows of [
+    { ...dutyOnly, firearm_possession_restrictions: [restriction("no_carry")] },
+    { ...dutyOnly, firearm_possession_restrictions: [restriction("duty_only", { effective_start: new Date(Date.now() + 86_400_000) })] },
+    { ...dutyOnly, firearm_possession_restrictions: [restriction("duty_only", { expires_at: new Date(Date.now() - 1_000) })] },
+    { ...dutyOnly, firearm_assignments: [] },
+  ]) assert.deepEqual(await resolveAs(qrClient(rows), "SN-1", aws("manage_restricted_firearm_custody")), notFound);
+  // A reader without custody authority still gets the ID-free denial.
+  assert.deepEqual(await resolveAs(qrClient(dutyOnly), "SN-1", aws("manage_inspections")), { status: "denied", message: "You are not authorized to use firearm custody." });
+  // Another agency's restricted firearm stays unknown.
+  const other = "20000000-0000-4000-8000-000000000002";
+  const foreign = { firearms: [{ ...firearm, department_id: other }], firearm_assignments: [{ ...assignedTo(otherOfficer)[0], department_id: other }], firearm_possession_restrictions: [restriction("duty_only", { department_id: other })] };
+  assert.deepEqual(await resolveAs(qrClient(foreign), "SN-1", aws("manage_restricted_firearm_custody")), notFound);
+  // Bridge mode has no restricted custody tables (Supabase lineage), so they are never queried there.
+  const bridge = await resolveTraced(dutyOnly, "SN-1", member("manage_restricted_firearm_custody"));
+  assert.deepEqual(bridge.response, notFound);
+  assert.ok(!bridge.statements.some((statement) => statement.includes("firearm_possession_restrictions")));
+  const route = await readFile("src/app/api/mobile/qr/resolve/route.ts", "utf8");
+  assert.match(route, /restrictedFirearmCustody: awsNative/);
+});
+
+test("QR confirmation fields name only the matched identifier, and only on an allowed match", async () => {
+  const vehicle = { id: record, department_id: department, unit_number: "12", vin: "1HGCM82633A004352", status: "active" };
+  assert.deepEqual(await resolveAs(qrClient({ fleet_vehicles: [vehicle] }), "1HGCM82633A004352", member("perform_fleet_inspections")), { entityType: "vehicle", entityId: record, displayName: "Unit 12", workflow: "vehicle_inspection", allowed: true, matchedField: "vin", matchedValue: "1HGCM82633A004352" });
+  assert.deepEqual(await resolveAs(qrClient({ fleet_vehicles: [vehicle] }), record, member("perform_fleet_inspections")), { entityType: "vehicle", entityId: record, displayName: "Unit 12", workflow: "vehicle_inspection", allowed: true });
+  const asset = { id: record, department_id: department, manufacturer: "Motorola", model: "APX", serial_number: "RAD-1", asset_number: "EQ-1", lifecycle_status: "active", assigned_user_id: officer, assigned_location: "Locker 4" };
+  assert.deepEqual(await resolveAs(qrClient({ equipment_assets: [asset] }), "EQ-1", member()), { entityType: "equipment", entityId: record, displayName: "Motorola APX", workflow: "equipment_custody", allowed: true, matchedField: "asset_number", matchedValue: "EQ-1" });
+  const firearm = { id: record, department_id: department, serial_number: "SN-1", asset_number: "FA-1", make: "Glock", model: "17" };
+  assert.deepEqual(await resolveAs(qrClient({ firearms: [firearm] }), "FA-1", member("manage_firearms")), { entityType: "firearm", entityId: record, workflow: "firearm_custody", allowed: true, displayName: "Glock 17", matchedField: "asset_number", matchedValue: "FA-1" });
+  assert.deepEqual(await resolveAs(qrClient({ firearms: [firearm] }), record, member("manage_firearms")), { entityType: "firearm", entityId: record, workflow: "firearm_custody", allowed: true });
+  // Denied and unknown answers carry no record detail.
+  assert.deepEqual(await resolveAs(qrClient({ firearms: [firearm] }), "FA-1", member("manage_inspections")), { status: "denied", message: "You are not authorized to use firearm custody." });
+  assert.deepEqual(await resolveAs(qrClient({ fleet_vehicles: [vehicle] }), "12", member("view_command_dashboard")), { status: "denied", message: "You are not authorized to use this vehicle workflow." });
+  assert.deepEqual(await resolveAs(qrClient({ firearms: [firearm] }), "FA-1", member()), notFound);
 });

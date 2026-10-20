@@ -13,7 +13,8 @@ export async function POST(request: Request) {
   // Vehicle access follows the inspection-eligibility rule: on AWS-native the database rule (045) is authoritative,
   // because RLS may hide fleet_rules from the caller; in bridge mode the service-role client reads the rules.
   let vehicleInspectionEligible: boolean;
-  if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {
+  const awsNative = process.env.TRACEPOINT_DATA_PROVIDER === "postgres";
+  if (awsNative) {
     const eligible = await admin.rpc("can_submit_fleet_inspection", { p_department_id: departmentId });
     if (eligible.error) return NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
     vehicleInspectionEligible = eligible.data === true;
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
     if (rules.error) return NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
     vehicleInspectionEligible = canSubmitFleetInspection(resolved.context, rules.data);
   }
-  const access = { ...context, vehicleInspectionEligible };
+  // Restricted firearm custody (database/aws 031) exists only on AWS-native; the lookup mirrors its operator rule.
+  const access = { ...context, vehicleInspectionEligible, restrictedFirearmCustody: awsNative };
   // QR values are opaque inputs. Candidate identifiers are resolved only inside the authorized tenant query.
   const records = await lookupQrRecords(admin, departmentId, parsed, access);
   if ("failure" in records) return records.failure === "ambiguous"
