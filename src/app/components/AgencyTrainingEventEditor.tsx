@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { isoToZonedLocal, zonedLocalToIso } from "@/lib/agency-training/event-time";
 
 type TrainingStatus =
   | "draft"
@@ -52,6 +53,8 @@ export type EditableTrainingEvent = {
   endsAt: string | null;
   defaultHours: number | null;
   status: TrainingStatus;
+  certificationTypeId?: string | null;
+  certificationValidDays?: number | null;
   certificateEnabled: boolean;
   certificateTitle: string | null;
   lessonPlanRequired: boolean;
@@ -82,10 +85,14 @@ type Course = {
   defaultLocation: string | null;
   defaultHours: number | null;
   lessonPlanRequired: boolean;
+  certificationTypeId: string | null;
+  certificationValidDays: number | null;
   certificateEnabled: boolean;
   certificateTitle: string | null;
   usageCount: number;
 };
+
+type CertificationTypeOption = { id: string; name: string };
 
 type Draft = {
   title: string;
@@ -100,6 +107,8 @@ type Draft = {
   defaultHours: string;
   status: TrainingStatus;
   lessonPlanRequired: boolean;
+  certificationTypeId: string;
+  certificationValidDays: string;
   certificateEnabled: boolean;
   certificateTitle: string;
   instructorMode: "internal" | "external";
@@ -112,14 +121,8 @@ type Draft = {
   saveToLibrary: boolean;
 };
 
-function localDateTimeValue(value: string | Date | null | undefined) {
-  const date = value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) return "";
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function initialDraft(event?: EditableTrainingEvent | null): Draft {
+// Event times are department wall-clock times; the API interprets them in the same zone.
+function initialDraft(timeZone: string, event?: EditableTrainingEvent | null): Draft {
   if (event) {
     return {
       title: event.title,
@@ -129,11 +132,13 @@ function initialDraft(event?: EditableTrainingEvent | null): Draft {
       description: event.description ?? "",
       topics: event.topics.join(", "),
       location: event.location ?? "",
-      startsAt: localDateTimeValue(event.startsAt),
-      endsAt: localDateTimeValue(event.endsAt),
+      startsAt: isoToZonedLocal(event.startsAt, timeZone),
+      endsAt: isoToZonedLocal(event.endsAt, timeZone),
       defaultHours: event.defaultHours?.toString() ?? "",
       status: event.status,
       lessonPlanRequired: event.lessonPlanRequired,
+      certificationTypeId: event.certificationTypeId ?? "",
+      certificationValidDays: event.certificationValidDays?.toString() ?? "",
       certificateEnabled: event.certificateEnabled,
       certificateTitle: event.certificateTitle ?? "",
       instructorMode: event.leadInstructorUserId ? "internal" : "external",
@@ -157,10 +162,9 @@ function initialDraft(event?: EditableTrainingEvent | null): Draft {
     };
   }
 
-  const start = new Date();
-  start.setMinutes(0, 0, 0);
-  start.setHours(start.getHours() + 1);
-  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  const startsAt = `${isoToZonedLocal(new Date(Date.now() + 60 * 60 * 1000), timeZone).slice(0, 13)}:00`;
+  const start = zonedLocalToIso(startsAt, timeZone);
+  const endsAt = start ? isoToZonedLocal(new Date(new Date(start).getTime() + 2 * 60 * 60 * 1000), timeZone) : "";
   return {
     title: "",
     courseId: "",
@@ -169,11 +173,13 @@ function initialDraft(event?: EditableTrainingEvent | null): Draft {
     description: "",
     topics: "",
     location: "",
-    startsAt: localDateTimeValue(start),
-    endsAt: localDateTimeValue(end),
+    startsAt,
+    endsAt,
     defaultHours: "",
     status: "draft",
     lessonPlanRequired: false,
+    certificationTypeId: "",
+    certificationValidDays: "",
     certificateEnabled: false,
     certificateTitle: "",
     instructorMode: "internal",
@@ -201,16 +207,19 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 export default function AgencyTrainingEventEditor({
   event,
+  timeZone,
   onClose,
   onSaved,
 }: {
   event?: EditableTrainingEvent | null;
+  timeZone: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const editing = Boolean(event);
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(event));
+  const [draft, setDraft] = useState<Draft>(() => initialDraft(timeZone, event));
   const [courses, setCourses] = useState<Course[]>([]);
+  const [certificationTypes, setCertificationTypes] = useState<CertificationTypeOption[]>([]);
   const [instructors, setInstructors] = useState<InstructorOption[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingInstructors, setLoadingInstructors] = useState(true);
@@ -235,6 +244,20 @@ export default function AgencyTrainingEventEditor({
       .finally(() => {
         if (active) setLoadingCourses(false);
       });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    // Without the Certifications feature the list is empty; a linked type is kept as is.
+    void fetch("/api/training/certification-types", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as { items?: CertificationTypeOption[] };
+        if (active && response.ok && Array.isArray(payload.items)) setCertificationTypes(payload.items);
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
@@ -351,6 +374,8 @@ export default function AgencyTrainingEventEditor({
       location: course.defaultLocation ?? current.location,
       defaultHours: course.defaultHours?.toString() ?? "",
       lessonPlanRequired: course.lessonPlanRequired,
+      certificationTypeId: course.certificationTypeId ?? "",
+      certificationValidDays: course.certificationValidDays?.toString() ?? "",
       certificateEnabled: course.certificateEnabled,
       certificateTitle: course.certificateTitle ?? "",
       saveToLibrary: false,
@@ -380,6 +405,8 @@ export default function AgencyTrainingEventEditor({
             defaultLocation: draft.location,
             defaultHours: draft.defaultHours,
             lessonPlanRequired: draft.lessonPlanRequired,
+            certificationTypeId: draft.certificationTypeId,
+            certificationValidDays: draft.certificationValidDays,
             certificateEnabled: draft.certificateEnabled,
             certificateTitle: draft.certificateTitle,
           }),
@@ -412,6 +439,8 @@ export default function AgencyTrainingEventEditor({
             defaultHours: draft.defaultHours,
             status: draft.status,
             lessonPlanRequired: draft.lessonPlanRequired,
+            certificationTypeId: draft.certificationTypeId,
+            certificationValidDays: draft.certificationValidDays,
             certificateEnabled: draft.certificateEnabled,
             certificateTitle: draft.certificateTitle,
             instructorUserId:
@@ -521,8 +550,8 @@ export default function AgencyTrainingEventEditor({
 
             <label><FieldLabel>Training type</FieldLabel><select value={draft.trainingType} onChange={(e) => setDraft((current) => ({ ...current, trainingType: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"><option>In-Service</option><option>Policy</option><option>Defensive Tactics</option><option>CPR / First Aid</option><option>Tactical</option><option>Remedial</option><option>External Course</option><option>Other</option></select></label>
             <label><FieldLabel>Status</FieldLabel><select value={draft.status} onChange={(e) => setDraft((current) => ({ ...current, status: e.target.value as TrainingStatus }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="in_progress">In Progress</option><option value="cancelled">Cancelled</option></select></label>
-            <label><FieldLabel>Starts</FieldLabel><input required type="datetime-local" value={draft.startsAt} onChange={(e) => setDraft((current) => ({ ...current, startsAt: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
-            <label><FieldLabel>Ends</FieldLabel><input type="datetime-local" value={draft.endsAt} onChange={(e) => setDraft((current) => ({ ...current, endsAt: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
+            <label><FieldLabel>Starts ({timeZone})</FieldLabel><input required type="datetime-local" value={draft.startsAt} onChange={(e) => setDraft((current) => ({ ...current, startsAt: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
+            <label><FieldLabel>Ends ({timeZone})</FieldLabel><input type="datetime-local" value={draft.endsAt} onChange={(e) => setDraft((current) => ({ ...current, endsAt: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
             <label><FieldLabel>Location</FieldLabel><input value={draft.location} onChange={(e) => setDraft((current) => ({ ...current, location: e.target.value }))} placeholder="Training room or outside location" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
             <label><FieldLabel>Default hours</FieldLabel><input type="number" min="0" step="0.25" value={draft.defaultHours} onChange={(e) => setDraft((current) => ({ ...current, defaultHours: e.target.value }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
             <label><FieldLabel>Category</FieldLabel><input value={draft.category} onChange={(e) => setDraft((current) => ({ ...current, category: e.target.value }))} placeholder="Annual, mandated, specialized..." className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>
@@ -700,6 +729,7 @@ export default function AgencyTrainingEventEditor({
               </div>
             </div>
 
+            <label className="md:col-span-2"><FieldLabel>Certification issued at closeout</FieldLabel><select value={draft.certificationTypeId} onChange={(e) => setDraft((current) => ({ ...current, certificationTypeId: e.target.value, certificationValidDays: "" }))} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-blue-500"><option value="">None</option>{draft.certificationTypeId && !certificationTypes.some((type) => type.id === draft.certificationTypeId) ? <option value={draft.certificationTypeId}>Linked certification type</option> : null}{certificationTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</select></label>
             <label className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/40 p-4"><input type="checkbox" checked={draft.lessonPlanRequired} onChange={(e) => setDraft((current) => ({ ...current, lessonPlanRequired: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-blue-600" /><span><strong className="block text-xs text-white">Require lesson plan</strong><span className="mt-1 block text-[10px] text-slate-500">Required before closeout.</span></span></label>
             <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"><label className="flex items-start gap-3"><input type="checkbox" checked={draft.certificateEnabled} onChange={(e) => setDraft((current) => ({ ...current, certificateEnabled: e.target.checked }))} className="mt-0.5 h-4 w-4 accent-blue-600" /><span><strong className="block text-xs text-white">Generate certificates</strong><span className="mt-1 block text-[10px] text-slate-500">For qualifying attendees.</span></span></label>{draft.certificateEnabled ? <input value={draft.certificateTitle} onChange={(e) => setDraft((current) => ({ ...current, certificateTitle: e.target.value }))} placeholder="Certificate title" className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500" /> : null}</div>
           </div>
