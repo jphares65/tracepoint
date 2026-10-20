@@ -77,17 +77,38 @@ export function qrLookupFilter(handle: string, columns: readonly string[]) {
 }
 
 type QrMatch = Row | null;
+type QrAccess = Pick<ServerAccessContext, "userId" | "permissions" | "enabledFeatures">;
+// Who may know a record exists, mirroring each table's select policy (firearms_select_scoped, equipment_assets_select_scoped
+// plus the 041 custody pool, fleet_vehicles_select_scoped). In aws-native mode RLS already applies; in bridge mode the
+// service-role client sees every row, so a row the caller could not read is treated exactly like an absent one.
+function qrVisible(access: QrAccess, table: "vehicle" | "equipment" | "firearm", match: Row, heldFirearms: Set<string>) {
+  const permissions = new Set<string>(access.permissions);
+  const any = (...values: string[]) => permissions.has("administer_department") || values.some((value) => permissions.has(value));
+  if (table === "vehicle") return any("view_command_dashboard", "view_fleet", "manage_fleet", "perform_fleet_inspections", "manage_fleet_maintenance", "manage_fleet_rules");
+  if (table === "firearm") return any("manage_firearms", "manage_inspections", "view_command_dashboard") || heldFirearms.has(text(match.id));
+  return any("manage_equipment") || (Boolean(access.userId) && text(match.assigned_user_id) === access.userId)
+    || (match.lifecycle_status === "active" && !match.assigned_user_id && !match.assigned_vehicle_id && !match.assigned_location && access.enabledFeatures.includes("equipment_readiness"));
+}
+
 // A handle that matches more than one row in a table is reported as ambiguous instead of guessing a record.
-export async function lookupQrRecords(admin: ServerAccessContext["admin"], departmentId: string, parsed: { handle: string; kind: TracePointQrKind | null }): Promise<{ vehicle: QrMatch; equipment: QrMatch; firearm: QrMatch } | { failure: "error" | "ambiguous" }> {
+export async function lookupQrRecords(admin: ServerAccessContext["admin"], departmentId: string, parsed: { handle: string; kind: TracePointQrKind | null }, access: QrAccess): Promise<{ vehicle: QrMatch; equipment: QrMatch; firearm: QrMatch } | { failure: "error" | "ambiguous" }> {
   const { handle, kind } = parsed;
   const skip = Promise.resolve({ data: [], error: null });
   const [vehicle, equipment, firearm] = await Promise.all([
     !kind || kind === "vehicle" ? admin.from("fleet_vehicles").select("id,unit_number,vin,status").eq("department_id", departmentId).or(qrLookupFilter(handle, ["unit_number", "vin"])).limit(2) : skip,
-    !kind || kind === "equipment" ? admin.from("equipment_assets").select("id,manufacturer,model,serial_number,asset_number,lifecycle_status").eq("department_id", departmentId).neq("lifecycle_status", "removed").or(qrLookupFilter(handle, ["asset_number", "serial_number"])).limit(2) : skip,
+    !kind || kind === "equipment" ? admin.from("equipment_assets").select("id,manufacturer,model,serial_number,asset_number,lifecycle_status,assigned_user_id,assigned_vehicle_id,assigned_location").eq("department_id", departmentId).neq("lifecycle_status", "removed").or(qrLookupFilter(handle, ["asset_number", "serial_number"])).limit(2) : skip,
     !kind ? admin.from("firearms").select("id,serial_number,asset_number,is_active").eq("department_id", departmentId).eq("is_active", true).or(qrLookupFilter(handle, ["asset_number", "serial_number"])).limit(2) : skip,
   ]) as Array<{ data: unknown; error: unknown }>;
   if (vehicle.error || equipment.error || firearm.error) return { failure: "error" };
   const matches = [vehicle, equipment, firearm].map((result) => rows(result.data));
-  if (matches.some((match) => match.length > 1)) return { failure: "ambiguous" };
-  return { vehicle: matches[0][0] ?? null, equipment: matches[1][0] ?? null, firearm: matches[2][0] ?? null };
+  const heldFirearms = new Set<string>();
+  if (matches[2].length && access.userId && !qrVisible(access, "firearm", {}, heldFirearms)) {
+    const held = await admin.from("firearm_assignments").select("firearm_id").eq("department_id", departmentId).eq("assigned_to_user_id", access.userId).is("returned_at", null).in("firearm_id", matches[2].map((match) => text(match.id))) as { data: unknown; error: unknown };
+    if (held.error) return { failure: "error" };
+    for (const assignment of rows(held.data)) heldFirearms.add(text(assignment.firearm_id));
+  }
+  // Ambiguity is reported only when the caller can see at least one of the matches; the 409 body names no record.
+  const visible = (["vehicle", "equipment", "firearm"] as const).map((table, index) => matches[index].filter((match) => qrVisible(access, table, match, heldFirearms)));
+  if (visible.some((match, index) => match.length > 0 && matches[index].length > 1)) return { failure: "ambiguous" };
+  return { vehicle: visible[0][0] ?? null, equipment: visible[1][0] ?? null, firearm: visible[2][0] ?? null };
 }
