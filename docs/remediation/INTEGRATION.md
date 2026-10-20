@@ -79,3 +79,6 @@ B10 merge note: `scripts/validate-clean-bootstrap.mjs` conflicted with B7 (both 
 | `claude/fix-b8-armory-integrity` | `06d397da9d4c8f0240d81c48e0220c818c437c2b` | 052 |
 
 B8 merge note: clean merge (cut from the integration head `9ba56a3`).
+| `claude/fix-b11-admin-correctness` | `b8b3475e29ecc8e5f3f69a91680ab1badd3f9173` | — |
+
+B11 merge note: clean merge on top of B8. On the merged tree: `tsc` 0 errors; application tests 724/728 (the 4 are the sandbox `xlsx` stub); scripts 350/351 (SheetJS round trip). B11 left 33 armory/firearm backup files for after B8; `scripts/repository-hygiene.test.mjs` excludes exactly those paths until they are removed.
