@@ -1,4 +1,5 @@
 import type { ServerAccessContext } from "./server-access";
+import { parseTracePointQrValue, type TracePointQrKind } from "./qr-identifiers.ts";
 
 type Row = Record<string, unknown>;
 const row = (value: unknown): Row => value && typeof value === "object" ? value as Row : {};
@@ -58,4 +59,35 @@ export function qrDecision(input: { identifier: string; access: Pick<ServerAcces
     ? { entityType: "firearm", entityId: text(input.firearm.id), workflow: "firearm_custody", allowed: true }
     : { status: "denied", message: "You are not authorized to use firearm custody." };
   return { status: "unknown", message: "This QR code is unknown, inactive, or unavailable." };
+}
+
+const qrHandle = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Accepts an opaque handle (record ID, unit/asset number, serial, VIN) or the printed label value tracepoint://{kind}/{id}.
+export function parseQrIdentifier(value: string): { handle: string; kind: TracePointQrKind | null } | null {
+  const label = parseTracePointQrValue(value);
+  const handle = label ? label.id : value;
+  return qrHandle.test(handle) ? { handle, kind: label?.kind ?? null } : null;
+}
+
+// The id columns are uuid, so comparing them to any other value raises 22P02; only UUID handles are compared to id.
+export function qrLookupFilter(handle: string, columns: readonly string[]) {
+  return [...(uuid.test(handle) ? ["id"] : []), ...columns].map((column) => `${column}.eq.${handle}`).join(",");
+}
+
+type QrMatch = Row | null;
+// A handle that matches more than one row in a table is reported as ambiguous instead of guessing a record.
+export async function lookupQrRecords(admin: ServerAccessContext["admin"], departmentId: string, parsed: { handle: string; kind: TracePointQrKind | null }): Promise<{ vehicle: QrMatch; equipment: QrMatch; firearm: QrMatch } | { failure: "error" | "ambiguous" }> {
+  const { handle, kind } = parsed;
+  const skip = Promise.resolve({ data: [], error: null });
+  const [vehicle, equipment, firearm] = await Promise.all([
+    !kind || kind === "vehicle" ? admin.from("fleet_vehicles").select("id,unit_number,vin,status").eq("department_id", departmentId).or(qrLookupFilter(handle, ["unit_number", "vin"])).limit(2) : skip,
+    !kind || kind === "equipment" ? admin.from("equipment_assets").select("id,manufacturer,model,serial_number,asset_number,lifecycle_status").eq("department_id", departmentId).neq("lifecycle_status", "removed").or(qrLookupFilter(handle, ["asset_number", "serial_number"])).limit(2) : skip,
+    !kind ? admin.from("firearms").select("id,serial_number,asset_number,is_active").eq("department_id", departmentId).eq("is_active", true).or(qrLookupFilter(handle, ["asset_number", "serial_number"])).limit(2) : skip,
+  ]) as Array<{ data: unknown; error: unknown }>;
+  if (vehicle.error || equipment.error || firearm.error) return { failure: "error" };
+  const matches = [vehicle, equipment, firearm].map((result) => rows(result.data));
+  if (matches.some((match) => match.length > 1)) return { failure: "ambiguous" };
+  return { vehicle: matches[0][0] ?? null, equipment: matches[1][0] ?? null, firearm: matches[2][0] ?? null };
 }

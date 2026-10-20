@@ -9,6 +9,7 @@ test("mobile custody lookup is agency-scoped and exposes a limited asset view", 
 
   assert.match(route, /\.eq\("department_id", context\.departmentId\)/);
   assert.match(route, /normalizeIdentifier\(value\) === identifier/);
+  assert.match(route, /normalizeIdentifier\(label\?\.kind === "equipment" \? label\.id : scanned\)/);
   assert.match(route, /\.\.\.publicAsset\(item, context\.user\.id\), history/);
   assert.doesNotMatch(
     route.slice(route.indexOf("function publicAsset")),
