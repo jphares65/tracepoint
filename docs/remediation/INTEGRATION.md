@@ -68,3 +68,6 @@ F3 merge notes:
 | `claude/fix-date-contract` | `cec3235baeb62f4740c0361ccb8765f8f43bdabd` | — |
 | `claude/fix-f6a-fleet-safety-decisions` | `51d6e0e1bebfa74edbacb54d66515e6700d41698` | 046 (edited in place; unapplied anywhere) |
 | `claude/fix-f6b-qr-decisions` | `c57b6799c4bffbd0cd33900b87c0417236660512` | — |
+| `claude/fix-tv-training-visibility` | `3f8f5e28983fbed085a0abc040fa02b912d22b95` | 048 |
+
+B6 merge note: `claude/fix-b6-notification-delivery` restructures `src/app/api/notifications/route.ts`, which TV also edits. Expect a conflict when B6 is integrated. Re-run the TV notification tests after resolving it.
