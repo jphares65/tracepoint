@@ -1,3 +1,4 @@
+import { calendarDate } from "./calendar-date";
 import type { FieldGeometry } from "./template-core";
 
 export type QualificationRecord = { id: string; date: string; courseName?: string; result?: string; score?: number; instructor?: string; firearmType?: string };
@@ -7,7 +8,7 @@ export type StructuredCell = { geometry: FieldGeometry; row: number; column: num
 export type StructuredResolution = { values: { geometry: FieldGeometry; value: string; page: number; record: number }[]; warnings: string[]; requiresReview: boolean };
 
 export function orderedStructuredCells(cells: StructuredCell[]) { return [...cells].sort((a, b) => (a.page ?? 1) - (b.page ?? 1) || a.row - b.row || a.column - b.column || a.geometry.y - b.geometry.y || a.geometry.x - b.geometry.x); }
-export function formatQualificationDate(value: string, format: "MM/DD/YYYY" | "MM/DD/YY" | "YYYY-MM-DD" = "MM/DD/YYYY") { const date = new Date(`${value}T00:00:00Z`); if (Number.isNaN(date.getTime())) return ""; const year = String(date.getUTCFullYear()), month = String(date.getUTCMonth() + 1).padStart(2, "0"), day = String(date.getUTCDate()).padStart(2, "0"); return format === "YYYY-MM-DD" ? `${year}-${month}-${day}` : `${month}/${day}/${format === "MM/DD/YY" ? year.slice(-2) : year}`; }
+export function formatQualificationDate(value: string, format: "MM/DD/YYYY" | "MM/DD/YY" | "YYYY-MM-DD" = "MM/DD/YYYY") { const date = calendarDate(value); if (!date) return ""; const [year, month, day] = date.split("-") as [string, string, string]; return format === "YYYY-MM-DD" ? `${year}-${month}-${day}` : `${month}/${day}/${format === "MM/DD/YY" ? year.slice(-2) : year}`; }
 function field(record: QualificationRecord, target: StructuredBinding["columnMappings"][number]["target"], format?: "MM/DD/YYYY" | "MM/DD/YY" | "YYYY-MM-DD") { if (target === "date") return formatQualificationDate(record.date, format); if (target === "course_name") return record.courseName ?? ""; if (target === "result") return record.result ?? ""; if (target === "score") return record.score == null ? "" : String(record.score); return record.instructor ?? ""; }
 
 /**

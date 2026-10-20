@@ -37,3 +37,4 @@ test("a binding whose cells cannot hold whole records is refused when it is save
   assert.throws(() => validateStructuredBinding({ ...input, columnMappings: [] }), /at least one mapped column/);
   assert.doesNotThrow(() => validateStructuredBinding({ ...input, fillMode: "rows", columnMappings: [{ target: "date" }, { target: "score" }] }));
 });
+test("qualification rows from node-postgres carry calendar dates, not Date objects", () => assert.equal(qualificationRecordFromDocumentRow({ id: "q", qualification_date: new Date(2026, 8, 14) }).date, "2026-09-14"));

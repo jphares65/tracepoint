@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { analyzeDocumentContext } from "@/lib/agency-documents/context-analysis";
 import { requiredSelections } from "@/lib/agency-documents/field-values";
-import { formatDate } from "@/lib/agency-documents/field-values";
+import { qualificationPickerItem, type QualificationPickerRow } from "@/lib/agency-documents/context-picker";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 function clean(value: string | null) { return value?.trim() ?? ""; }
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     if (!UUID.test(personId)) return NextResponse.json({ analysis, items: [] });
     const rows = await admin.from("qualification_results").select("id,qualification_date,score,passed,historical_course_name").eq("department_id", departmentId).eq("officer_user_id", personId).order("qualification_date", { ascending: false }).limit(50);
     if (rows.error) return NextResponse.json({ error: "Qualifications could not be loaded." }, { status: 500 });
-    return NextResponse.json({ analysis, items: (rows.data ?? []).map((row: { id: string; qualification_date?: string; score?: number | string; passed?: boolean; historical_course_name?: string }) => ({ id: row.id, label: formatDate(row.qualification_date) || "Undated", detail: [row.historical_course_name, row.score !== undefined && row.score !== null ? `Score ${row.score}` : "", row.passed === true ? "Pass" : row.passed === false ? "Fail" : ""].filter(Boolean).join(" · ") })) });
+    return NextResponse.json({ analysis, items: ((rows.data ?? []) as QualificationPickerRow[]).map(qualificationPickerItem) });
   }
   return NextResponse.json({ analysis });
 }

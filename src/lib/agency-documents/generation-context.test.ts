@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { types as pgTypes } from "pg";
+import { resolveFieldValues } from "./field-values";
 import { GenerationContextError, loadGenerationSources, todayInZone, type GenerationDatabase } from "./generation-context";
 
 const DEPT = "11111111-1111-4111-8111-111111111111", OTHER = "22222222-2222-4222-8222-222222222222";
@@ -7,6 +9,9 @@ const OFFICER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", OFFICER2 = "bbbbbbbb-bbb
 const FIREARM = "dddddddd-dddd-4ddd-8ddd-dddddddddddd", ARCHIVED = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", QUAL = "ffffffff-ffff-4fff-8fff-ffffffffffff", QUAL2 = "99999999-9999-4999-8999-999999999999";
 
 type Row = Record<string, unknown>;
+/** node-postgres (the AWS-native runtime) returns DATE columns as Date objects, not text. */
+const pgDate = (text: string) => pgTypes.getTypeParser(1082)(text) as Date;
+const AWS_QUAL = "88888888-8888-4888-8888-888888888888";
 const tables: Record<string, Row[]> = {
   departments: [{ id: DEPT, name: "Lakeview Township Police Department", short_name: "Lakeview PD", timezone: "America/New_York" }, { id: OTHER, name: "Other PD", short_name: null, timezone: "America/Chicago" }],
   department_memberships: [
@@ -22,6 +27,7 @@ const tables: Record<string, Row[]> = {
   firearm_assignments: [{ department_id: DEPT, firearm_id: FIREARM, assigned_to_user_id: OFFICER, returned_at: null }],
   qualification_results: [
     { id: QUAL, department_id: DEPT, officer_user_id: OFFICER, qualification_date: "2026-03-14", score: "287.00", passed: true, qualification_course_id: "abababab-abab-4bab-8bab-abababababab", instructor_user_id: INSTRUCTOR, historical_course_name: null, historical_instructor_name: null },
+    { id: AWS_QUAL, department_id: DEPT, officer_user_id: OFFICER, qualification_date: pgDate("2026-09-14"), score: 287, passed: true, qualification_course_id: null, instructor_user_id: null, historical_course_name: "Day Handgun", historical_instructor_name: "T. Brooks" },
     { id: QUAL2, department_id: DEPT, officer_user_id: OFFICER2, qualification_date: "2025-03-14", score: 250, passed: false, qualification_course_id: null, instructor_user_id: null, historical_course_name: "Legacy Night Course", historical_instructor_name: "R. Former" },
   ],
   qualification_courses: [{ id: "abababab-abab-4bab-8bab-abababababab", department_id: DEPT, name: "Day Handgun Course" }],
@@ -86,4 +92,13 @@ test("the generation date follows the agency's time zone", () => {
   const lateNight = new Date("2026-10-19T02:30:00Z"); // 10:30 PM on Oct 18 in New York
   assert.equal(todayInZone("America/New_York", lateNight), "2026-10-18");
   assert.equal(todayInZone("UTC", lateNight), "2026-10-19");
+});
+
+test("a qualification date returned as a Date by node-postgres fills as the same calendar day", async () => {
+  const sources = await loadGenerationSources(fakeDb(), DEPT, { personId: OFFICER, qualificationId: AWS_QUAL }, preparer, { today: "2026-10-19" });
+  assert.equal(sources.qualification?.date, "2026-09-14");
+  const g = { x: 0.1, y: 0.1, width: 0.3, height: 0.03 };
+  const result = resolveFieldValues([{ id: "date", pageNumber: 1, fieldType: "tracepoint_data", canonicalKey: "qualification.date", geometry: g }, { id: "long", pageNumber: 1, fieldType: "tracepoint_data", canonicalKey: "qualification.date", geometry: g, formatting: { dateFormat: "Month D, YYYY" } }], sources);
+  assert.equal(result.ready, true, JSON.stringify(result.missing));
+  assert.deepEqual(result.fields.map((field) => field.value), ["09/14/2026", "September 14, 2026"]);
 });

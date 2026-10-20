@@ -6,3 +6,4 @@ const firearm={id:"f",make:"Glock",model:"45",serial_number:"ABC",caliber:"9mm",
 test("resolves person, firearm, and qualification values",()=>{assert.equal(personValues(person)["person.badge_number"],"123");assert.equal(firearmValues(firearm,"John Smith")["firearm.serial_number"],"ABC");assert.equal(qualificationValues({id:"q",score:92,passed:true})["qualification.result"],"Pass")});
 test("only one current firearm is inferred",()=>{assert.equal(inferFirearmFromPerson("p",[firearm])?.id,"f");assert.equal(inferFirearmFromPerson("p",[firearm,{...firearm,id:"f2"}]),null)});
 test("firearm infers only its valid assigned person",()=>{assert.equal(inferPersonFromFirearm(firearm,[person])?.id,"p");assert.equal(inferPersonFromFirearm(firearm,[{...person,is_active:false}]),null)});
+test("a qualification date returned as a Date keeps its calendar day",()=>{assert.equal(qualificationValues({id:"q",qualification_date:new Date(2026,8,14)})["qualification.date"],"2026-09-14")});

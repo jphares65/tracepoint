@@ -1,3 +1,4 @@
+import { calendarDate } from "./calendar-date";
 import type { QualificationRecord } from "./structured-binding";
 
 export const DOCUMENT_QUALIFICATION_FIELDS = "id,officer_user_id,qualification_date,score,passed,historical_course_name,historical_instructor_name,historical_qualification_type";
@@ -5,7 +6,8 @@ export const DOCUMENT_QUALIFICATION_FIELDS = "id,officer_user_id,qualification_d
 export type DocumentQualificationRow = {
   id: string;
   officer_user_id: string;
-  qualification_date: string;
+  /** Text from Supabase; a Date from node-postgres on the AWS-native runtime. */
+  qualification_date: string | Date | null;
   score: number | string | null;
   passed: boolean | null;
   historical_course_name: string | null;
@@ -32,7 +34,7 @@ export class DocumentQualificationHistoryRepositoryConfigurationError extends Er
 export function qualificationRecordFromHistoryRow(row: DocumentQualificationRow): QualificationRecord {
   return {
     id: row.id,
-    date: row.qualification_date,
+    date: calendarDate(row.qualification_date) ?? "",
     ...(row.historical_course_name ? { courseName: row.historical_course_name } : {}),
     ...(row.passed === null ? {} : { result: row.passed ? "Pass" : "Fail" }),
     ...(row.score === null ? {} : { score: Number(row.score) }),

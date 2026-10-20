@@ -1,3 +1,4 @@
+import { calendarDate } from "./calendar-date";
 import type { AgencySource, FirearmSource, GenerationSources, PersonSource, PreparerSource, QualificationSource } from "./field-values";
 
 /**
@@ -75,7 +76,7 @@ export async function loadGenerationSources(db: GenerationDatabase, departmentId
     let instructorName = text(row.data.historical_instructor_name);
     const instructorId = uuid(row.data.instructor_user_id);
     if (instructorId) instructorName = (await member(db, departmentId, instructorId))?.fullName || instructorName;
-    qualification = { id: String(row.data.id), date: text(row.data.qualification_date), score: row.data.score === null || row.data.score === undefined ? null : (row.data.score as number | string), passed: typeof row.data.passed === "boolean" ? row.data.passed : null, courseName, instructorName };
+    qualification = { id: String(row.data.id), date: calendarDate(row.data.qualification_date), score: row.data.score === null || row.data.score === undefined ? null : (row.data.score as number | string), passed: typeof row.data.passed === "boolean" ? row.data.passed : null, courseName, instructorName };
   }
 
   return { person, firearm, qualification, agency, preparer, reportYear: reportYear ?? null, today };

@@ -37,3 +37,4 @@ test("overflow always needs a decision, whatever the overflow setting", () => {
   assert.equal(result.requiresReview, true);
   assert.match(result.warnings[0]!, /room for 2; 1 will not be printed/);
 });
+test("a serialized timestamp of a date-only value formats as its written day", () => { assert.equal(formatQualificationDate("2026-09-14T00:00:00.000Z"), "09/14/2026"); assert.equal(formatQualificationDate("2026-02-30"), ""); assert.equal(formatQualificationDate(""), ""); });
