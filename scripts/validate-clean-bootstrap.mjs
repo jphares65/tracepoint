@@ -493,7 +493,15 @@ try {
         and has_function_privilege('authenticated', to_regprocedure('public.deliver_fleet_audit_outbox(uuid,jsonb)'), 'execute')
         and not has_table_privilege('authenticated', to_regclass('public.fleet_audit_outbox'), 'insert,update,delete'),
         false
-      ) as fleet_audit_outbox_privileges
+      ) as fleet_audit_outbox_privileges,
+      pg_get_functiondef('public.enqueue_fleet_inspection_audit()'::regprocedure) not like '%status_automation_enabled%'
+        and pg_get_functiondef('public.enqueue_fleet_inspection_audit()'::regprocedure) not like '%critical_issue_out_of_service%' as fleet_critical_inspection_hold_ignores_automation_settings,
+      exists (
+        select 1 from pg_trigger
+        where tgname = 'fleet_vehicles_safety_hold_clearance_guard'
+          and tgrelid = 'public.fleet_vehicles'::regclass and tgenabled <> 'D'
+      )
+        and pg_get_functiondef('public.guard_fleet_safety_hold_clearance()'::regprocedure) like '%critical work order is open%' as fleet_safety_hold_clearance_refused_with_open_critical_work
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);

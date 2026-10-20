@@ -128,7 +128,7 @@ export default function FleetRulesPanel() {
           <section className="grid gap-3">
             <Toggle
               label="Automatic vehicle status"
-              detail="Evaluate open work, critical issues, and critical missing equipment after every change."
+              detail="Evaluate open work, critical issues, and critical missing equipment after every change. Critical safety holds always apply."
               value={rules.status_automation_enabled}
               onChange={(v) =>
                 setRules({ ...rules, status_automation_enabled: v })
@@ -136,7 +136,7 @@ export default function FleetRulesPanel() {
             />
             <Toggle
               label="Critical issues remove vehicles from service"
-              detail="Critical defects and availability-affecting work automatically produce Out of Service status."
+              detail="Critical defects and availability-affecting work always hold a vehicle Out of Service, whatever these settings."
               value={rules.critical_issue_out_of_service}
               onChange={(v) =>
                 setRules({ ...rules, critical_issue_out_of_service: v })
