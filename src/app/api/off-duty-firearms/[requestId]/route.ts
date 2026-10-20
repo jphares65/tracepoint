@@ -505,6 +505,12 @@ export async function PATCH(
       );
     }
 
+    if (String(existing.officer_user_id) === context.userId) {
+      return permissionDeniedResponse(
+        "You cannot decide your own off-duty firearm request. Another reviewer must review it.",
+      );
+    }
+
     if (existing.request_status !== "Pending Command Review") {
       return NextResponse.json(
         {

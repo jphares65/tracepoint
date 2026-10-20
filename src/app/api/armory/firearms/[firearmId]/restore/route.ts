@@ -82,11 +82,10 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
     const { data: restored, error: restoreError } =
       await context.db
         .from("firearms")
+        // The archive disposition (when, by whom, why) stays on the record;
+        // it is shown only while the firearm is archived.
         .update({
           is_active: true,
-          archived_at: null,
-          archived_by_user_id: null,
-          archive_reason: null,
         })
         .eq("id", firearmId)
         .eq("department_id", context.departmentId)

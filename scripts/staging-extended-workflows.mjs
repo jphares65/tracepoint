@@ -47,7 +47,7 @@ export async function exerciseExtendedWorkflows({context,browser,baseURL,check})
    const assignment='/api/armory/firearms/'+id+'/assignments';
    assert.equal((await context.request.post(assignment,{data:{assignedToUserId:process.env.TRACEPOINT_ACCEPTANCE_FOREIGN_USER_ID}})).status(),400);
    assert.equal((await context.request.post(assignment,{data:{assignedToUserId:process.env.TRACEPOINT_ACCEPTANCE_OFFICER_ID,magazinesIssued:0}})).status(),200);
-   const inspection=await context.request.post('/api/armory/inspections',{data:{firearmId:id,inspectionType:'Routine',result:'Pass',inspectionDate:today,checklist:[{label:'Disposable function check',status:'Pass'}]}});assert.equal(inspection.status(),200);
+   const inspection=await context.request.post('/api/armory/inspections',{data:{firearmId:id,inspectionType:'Routine',result:'Passed',inspectionDate:today,checklist:[{label:'Disposable function check',status:'Pass'}]}});assert.equal(inspection.status(),200);
    assert.equal((await context.request.patch(assignment,{data:{magazinesReturned:0}})).status(),200);
   });
   await check('certification creation and foreign-member denial',async()=>{

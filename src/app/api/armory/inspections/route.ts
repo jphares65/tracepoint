@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { createArmoryReadRepository } from "@/lib/armory/read-repository";
 import {
+  changeFirearmStatus,
+  inspectionPayloadError,
+  inspectionStatusNote,
+  inspectionTargetStatus,
+  type InspectionResult,
+} from "@/lib/armory/firearm-status-change";
+import {
   accessFailureResponse,
   hasAnyServerPermission,
   permissionDeniedResponse,
@@ -33,21 +40,13 @@ type InspectionPayload = {
   roundCount?: string;
   opticBatteryStatus?: string;
   cleaningCondition?: string;
-  result: "Passed" | "Failed" | "Needs Maintenance" | "Removed from Service";
+  result: InspectionResult;
   serviceRecommendation?: string;
   followUpDate?: string | null;
   correctiveAction?: string;
   notes?: string;
   checklist?: ChecklistItemPayload[];
 };
-
-function getStatusForInspectionResult(result: InspectionPayload["result"]) {
-  if (result === "Failed") return "Inspection Required";
-  if (result === "Needs Maintenance") return "Maintenance";
-  if (result === "Removed from Service") return "Out of Service";
-
-  return null;
-}
 
 export async function GET() {
   try {
@@ -132,9 +131,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!body.result) {
+    const payloadError = inspectionPayloadError(body);
+
+    if (payloadError) {
       return NextResponse.json(
-        { error: "result is required." },
+        { error: payloadError },
         { status: 400 },
       );
     }
@@ -228,23 +229,34 @@ export async function POST(request: Request) {
       }
     }
 
-    const nextStatus = getStatusForInspectionResult(body.result);
+    const nextStatus = await inspectionTargetStatus(supabase, {
+      departmentId: context.departmentId,
+      firearmId: body.firearmId,
+      currentStatus: firearm.condition_status,
+      result: body.result,
+      serviceRecommendation: body.serviceRecommendation,
+    });
 
-    if (nextStatus && nextStatus !== firearm.condition_status) {
-      const { error: statusError } = await supabase
-        .from("firearms")
-        .update({
-          condition_status: nextStatus,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", body.firearmId);
+    if (nextStatus) {
+      try {
+        const changed = await changeFirearmStatus(supabase, {
+          departmentId: context.departmentId,
+          firearmId: body.firearmId,
+          userId: context.userId,
+          fromStatus: firearm.condition_status,
+          toStatus: nextStatus,
+          notes: inspectionStatusNote(body.result, inspection.id),
+        });
 
-      if (statusError) {
+        if (!changed) {
+          throw new Error("the firearm record changed.");
+        }
+      } catch (statusError) {
         return NextResponse.json(
           {
             error:
               "Inspection was saved, but firearm status could not be updated: " +
-              statusError.message,
+              (statusError instanceof Error ? statusError.message : "unknown error"),
           },
           { status: 500 },
         );

@@ -70,6 +70,9 @@ export type AmmoActivity = {
   unitCost: number | null;
   totalCost: number | null;
   createdAt: string;
+  // Stamped by the server from the signed-in account.
+  recordedByUserId?: string | null;
+  recordedByName?: string | null;
 };
 
 export type AmmoReconciliation = {
@@ -80,6 +83,8 @@ export type AmmoReconciliation = {
   variance: number;
   notes: string;
   completedAt: string;
+  countedByUserId?: string | null;
+  countedByName?: string | null;
 };
 
 export type AmmoSettings = {
@@ -291,6 +296,8 @@ function normalizeV2(value: Partial<AmmoWorkspaceV2>): AmmoWorkspaceV2 {
               ? null
               : asMoney(item.totalCost),
           createdAt: safeIso(item.createdAt, now),
+          recordedByUserId: cleanText(item.recordedByUserId) || null,
+          recordedByName: cleanText(item.recordedByName) || null,
         }))
       : [],
     reconciliations: Array.isArray(value.reconciliations)
@@ -305,6 +312,8 @@ function normalizeV2(value: Partial<AmmoWorkspaceV2>): AmmoWorkspaceV2 {
               : 0,
           notes: cleanText(item.notes),
           completedAt: safeIso(item.completedAt, now),
+          countedByUserId: cleanText(item.countedByUserId) || null,
+          countedByName: cleanText(item.countedByName) || null,
         }))
       : [],
     settings: {
