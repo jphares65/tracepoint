@@ -22,7 +22,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 75;
+const expectedMigrationCount = 79;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = await localPostgresPort();
@@ -138,7 +138,7 @@ try {
         where schemaname = 'public' and tablename = 'certification_types'
           and policyname = 'department members can view certification types'
       ) as certification_type_policy
-      ,(select count(*) = 21 from public.permissions) as permission_catalog_complete
+      ,(select count(*) = 24 from public.permissions) as permission_catalog_complete
       ,exists (
         select 1 from pg_trigger
         where tgname = 'protect_final_administrator_role' and not tgisinternal
@@ -450,7 +450,34 @@ try {
     }
   }
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission and retirement matrices passed; disposable database removed.`);
+  // Deployed environments run the AWS-native ledger on top of this lineage, so
+  // prove it applies cleanly and keeps the invariants its fixes depend on.
+  const awsMigrationsDir = path.resolve("database/aws");
+  const awsMigrationFiles = (await readdir(awsMigrationsDir))
+    .filter((file) => /^\d{3}_[a-z0-9_]+\.sql$/.test(file))
+    .sort();
+  for (const file of awsMigrationFiles) {
+    const sql = (await readFile(path.join(awsMigrationsDir, file), "utf8")).replace(/^﻿/, "");
+    try {
+      await client.query(sql);
+    } catch (error) {
+      await client.query("rollback").catch(() => {});
+      throw new Error(`AWS-native migration failed in ${file}: ${error.message}`, { cause: error });
+    }
+  }
+  const awsChecks = (await client.query(`
+    select
+      exists (
+        select 1 from pg_constraint
+        where conname = 'equipment_assets_lifecycle_status_check'
+          and pg_get_constraintdef(oid) like '%out_of_service%'
+      ) as equipment_out_of_service_allowed,
+      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable
+  `)).rows[0];
+  const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
+  if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
+
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {
