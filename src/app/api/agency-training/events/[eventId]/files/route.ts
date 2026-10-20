@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { createObjectStore } from "@/lib/storage/object-store";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
+import { ownRows } from "@/lib/tracepoint/training-record-visibility";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
 const MANAGE = ["manage_training"] as const;
@@ -20,11 +21,14 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
   const data = await createAgencyTrainingReadRepository(context.admin, context.departmentId).getFiles({ departmentId: context.departmentId, eventId });
   if (!data) return NextResponse.json({ error: "Training event not found." }, { status: 404 });
   const names = new Map(data.profiles.map((row: any) => [String(row.id), row.full_name]));
+  // Other attendees' certificates need manage_training, as their download does.
+  const canManage = hasAnyServerPermission(context, MANAGE);
+  const certificates = canManage ? data.certificates : ownRows(data.certificates, context.userId, ["user_id"]);
   return NextResponse.json({
     status: data.event.status,
     files: data.files,
-    certificates: data.certificates.map((row: any) => ({ ...row, fullName: names.get(String(row.user_id)) ?? "Department Member" })),
-    canManage: hasAnyServerPermission(context, MANAGE),
+    certificates: certificates.map((row: any) => ({ ...row, fullName: names.get(String(row.user_id)) ?? "Department Member" })),
+    canManage,
   }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Training files could not be loaded." }, { status: 500 }); }
 }

@@ -16,6 +16,11 @@ import {
   STALE_RANGE_WORKSPACE_ERROR,
   withRangeResultRevisions,
 } from "@/lib/range/workspace-mutation";
+import {
+  canViewDepartmentRecords,
+  ownRangeWorkspace,
+  RANGE_RECORD_PERMISSIONS,
+} from "@/lib/tracepoint/training-record-visibility";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -77,13 +82,16 @@ export async function GET() {
 
   try {
     const data = await createRangeReadRepository(admin, departmentId).getWorkspace(departmentId);
+    // Without a range-record permission the caller sees only their own rows.
+    const departmentRecords = canViewDepartmentRecords(resolved.context.permissions, RANGE_RECORD_PERMISSIONS);
 
     return NextResponse.json({
       departmentId,
       userId: resolved.context.userId,
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
       canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
-      workspace: data.workspace,
+      recordScope: departmentRecords ? "department" : "own",
+      workspace: departmentRecords ? data.workspace : ownRangeWorkspace(data.workspace, resolved.context.userId),
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
       updatedByUserId: data.updatedByUserId,

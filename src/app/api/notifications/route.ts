@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { collectFleetNotifications } from "@/lib/tracepoint/fleet-notifications";
 import { collectAgencyTrainingNotifications } from "@/lib/tracepoint/agency-training-notifications";
+import { CERTIFICATION_SUMMARY_PERMISSIONS } from "@/lib/tracepoint/training-record-visibility";
 
 import {
   hasAnyServerPermission,
@@ -180,12 +181,19 @@ async function getContext() {
     ],
   );
 
+  // Other officers' certification records need a certification responsibility.
+  const canViewDepartmentCertifications = hasAnyServerPermission(
+    accessContext,
+    CERTIFICATION_SUMMARY_PERMISSIONS,
+  );
+
   return {
     ...accessContext,
     canManageArmory,
     canViewAmmunition,
     canManageRange,
     canViewDepartmentReadiness,
+    canViewDepartmentCertifications,
   } as const;
 }
 
@@ -365,7 +373,7 @@ function collectRange(payload: any, context: any): GeneratedAlert[] {
 async function collectCertificationReadiness(
   context: any,
 ): Promise<GeneratedAlert[]> {
-  const data = await createNotificationReadRepository(context.admin, context.departmentId, context.user.id).getCertificationReadiness(context.departmentId, context.user.id, context.canViewDepartmentReadiness);
+  const data = await createNotificationReadRepository(context.admin, context.departmentId, context.user.id).getCertificationReadiness(context.departmentId, context.user.id, context.canViewDepartmentCertifications);
   const memberships = data.memberships;
   const typesResult = { data: data.certificationTypes };
   const requirementsResult = { data: data.requirements };

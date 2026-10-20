@@ -8,6 +8,7 @@ import {
 } from "@/lib/tracepoint/server-access";
 import { createObjectStore } from "@/lib/storage/object-store";
 import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
+import { ownRows, QUALIFICATION_EVIDENCE_PERMISSIONS } from "@/lib/tracepoint/training-record-visibility";
 
 type RouteContext = { params: Promise<{ resultId: string }> };
 
@@ -60,8 +61,14 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
 
   const repository = createEvidenceReadRepository(admin, departmentId);
   try {
-  if (!(await repository.qualificationExists(departmentId, resultId))) {
+  const result = await repository.qualificationResult(departmentId, resultId);
+  if (!result) {
     return NextResponse.json({ error: "Qualification result not found." }, { status: 404 });
+  }
+  // Target evidence is the result's officer's record, as for its download.
+  if (!hasAnyServerPermission(resolved.context, QUALIFICATION_EVIDENCE_PERMISSIONS) &&
+    !ownRows([result], resolved.context.userId, ["officerId", "officerUserId", "officer_user_id", "officer_id"]).length) {
+    return permissionDeniedResponse("You may view only your own qualification evidence.");
   }
 
   const attachments = await repository.listQualificationEvidence(departmentId, resultId);

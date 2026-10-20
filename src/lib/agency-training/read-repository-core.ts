@@ -117,9 +117,16 @@ export class TenantBoundAgencyTrainingReadRepository {
     return rows(await this.source.listRequirements(input.departmentId));
   }
 
-  async listEvents(input: { departmentId: string }) {
+  // attendeeUserId limits each event's attendance counts to that attendee.
+  async listEvents(input: { departmentId: string; attendeeUserId?: string }) {
     this.authorize(input.departmentId);
-    return rows(await this.source.listEvents(input.departmentId)).map(mapAgencyTrainingEvent);
+    const events = rows(await this.source.listEvents(input.departmentId));
+    if (input.attendeeUserId === undefined) return events.map(mapAgencyTrainingEvent);
+    return events.map((event) => mapAgencyTrainingEvent({
+      ...event,
+      agency_training_attendees: (Array.isArray(event.agency_training_attendees) ? event.agency_training_attendees as AgencyTrainingRow[] : [])
+        .filter((attendee) => String(attendee.user_id ?? "") === input.attendeeUserId),
+    }));
   }
 
   async getReport(input: { departmentId: string; eventId: string }) { this.authorize(input.departmentId); const event = record(await this.source.getEvent(input.departmentId, input.eventId, "*")); if (!event) return null; const attendees = rows(await this.source.listAttendees(input.departmentId, input.eventId, "*")); const ids = attendees.map((row) => String(row.user_id)); const profiles = ids.length ? rows(await this.source.listProfiles(ids)) : []; return { event, attendees, profiles }; }
