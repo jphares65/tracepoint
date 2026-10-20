@@ -479,7 +479,18 @@ try {
       has_function_privilege('tracepoint_runtime', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute')
         and not has_function_privilege('authenticated', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute') as first_login_activation_runtime_only,
       pg_get_functiondef('public.protect_pilot_range_workspace_mutation()'::regprocedure) not like '%= ''ready''%'
-        and pg_get_functiondef('public.protect_range_day_drill_history()'::regprocedure) not like '%= ''ready''%' as range_packet_ready_not_final
+        and pg_get_functiondef('public.protect_range_day_drill_history()'::regprocedure) not like '%= ''ready''%' as range_packet_ready_not_final,
+      exists (
+        select 1 from pg_trigger
+        where tgname = 'fleet_vehicle_inspections_audit_outbox'
+          and tgrelid = 'public.fleet_vehicle_inspections'::regclass and tgenabled <> 'D'
+      ) as fleet_inspection_audit_outbox_trigger,
+      coalesce(
+        not has_function_privilege('authenticated', to_regprocedure('public.fleet_audit_outbox_deliver_internal(uuid,uuid)'), 'execute')
+        and has_function_privilege('authenticated', to_regprocedure('public.deliver_fleet_audit_outbox(uuid,jsonb)'), 'execute')
+        and not has_table_privilege('authenticated', to_regclass('public.fleet_audit_outbox'), 'insert,update,delete'),
+        false
+      ) as fleet_audit_outbox_privileges
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);

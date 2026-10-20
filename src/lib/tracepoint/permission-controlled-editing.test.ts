@@ -13,7 +13,7 @@ test("fleet direct API edits require manage_fleet, preserve row identity, scope 
   assert.match(patch, /canManageFleet\(resolved, rules\)/);
   assert.match(patch, /\.eq\("department_id", resolved\.departmentId\)/);
   assert.match(patch, /\.eq\("id", id\)/);
-  assert.match(patch, /action: "fleet_vehicle_updated"/);
+  assert.match(patch, /action: (?:correction \? "fleet_odometer_corrected" : )?"fleet_vehicle_updated"/);
   assert.match(patch, /previous: existing/);
   assert.match(patch, /current: data/);
   assert.doesNotMatch(patch, /fleet_vehicle_inspections[\s\S]*(?:delete|update)/);
