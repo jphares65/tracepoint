@@ -24,3 +24,28 @@ Base: `claude/fix-b0-proof-foundation` (`a39d263`), which sits on `codex/staging
 ## CI
 
 `application-quality.yml` also runs on pushes to `claude/integration-**`, so this branch is exercised on a GitHub runner with the real SheetJS package and non-root PostgreSQL. Results are recorded below as they arrive.
+
+### CI run 1: commit `d5b8ea8`, workflow run 39472400263, job 118799542038 (GitHub `ubuntu-latest`, Node 24): **all steps passed**
+
+The runner installed the real SheetJS package through `npm ci` and ran PostgreSQL non-root through `embedded-postgres`.
+
+| Step | Result |
+|---|---|
+| `node --test scripts/*.test.mjs` | 360/360 pass, 0 skipped |
+| `node scripts/run-application-tests.mjs` | **676/676 pass**, 0 fail, 0 skipped, 0 cancelled. No "Test files that ran no tests" line. |
+| `npm test --prefix infra` | 38/38 pass |
+| `npx tsc --noEmit` | clean |
+| `npm run db:validate-bootstrap` | "Local armory workflows and tenant isolation passed." and "Clean bootstrap passed: 79 ordered migrations and 43 AWS-native migrations; permission and retirement matrices passed" |
+| `npx next build` | compiled, 90/90 pages |
+
+Every test name in the following files has a matching ✔ line in the log. The database-backed ones take about 0.8–0.9 s each against real PostgreSQL.
+
+- `ai-importer/workbook.test.ts` (8/8, real SheetJS). These are the four sandbox xlsx failures.
+- `postgres-mapping` (2/2)
+- `first-login-activation` (8/8)
+- `cognito-membership-lifecycle-sql` (4/4)
+- `fleet-audit-outbox-native` (5/5)
+- `custody-native-schema` (2/2)
+- `inventory-native-schema` (3/3)
+
+The four xlsx failures and the "ran no tests" exclusions recorded during local development were environment limitations of the development sandbox. They do not occur in CI.
