@@ -153,7 +153,7 @@ The migrations are additive and were designed to stay in place under the previou
 
 | Item | Rollback | Caution |
 |---|---|---|
-| Image (any batch) | Previous task-definition revision | — |
+| Image (any batch) | Previous task-definition revision | Below B8a, first apply the forward migration in the 052, 053 row, or firearm status changes and rifle actions fail on AWS |
 | B3 under the old image | — | The old web code drops `resultRevisions` on its next pilot save. **Before** an image rollback, export `pilot_range_workspaces.workspace->'resultRevisions'` for the synthetic tenants, and freeze range edits until re-upgrade. |
 | B1/B1a/F1 under the old image | — | 039 fixes the import lifecycle, but the old image's import ignores the Active safeguards. **Pause personnel imports** while rolled back. |
 | B4 under the old image | — | 043's trigger keeps queuing audit entries and holding critical vehicles Out of Service (the safe direction). Pending entries reconcile after re-upgrade (ops SQL in the B4 record). |
