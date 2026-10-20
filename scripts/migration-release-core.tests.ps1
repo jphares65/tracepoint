@@ -153,6 +153,12 @@ if ('arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntime
 if ($revisionCheck.Clauses[0].Item2.Extent.Text -notmatch '^\{\s*throw ') { throw 'The pre-release revision check must stop the release.' }
 $publishCall = $releaseAst.Extent.Text.IndexOf("'publish-tracepoint-staging-image.ps1'")
 if ($publishCall -lt 0 -or $revisionCheck.Extent.StartOffset -ge $publishCall) { throw 'The pre-release revision check must run before the image is published.' }
+# A rerun reuses the immutable image only when its exact tag already exists; otherwise it builds. The digest is then
+# read from that tag either way, and deploy-app.ps1 re-checks the scan and digest.
+$publishGuards = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -ceq '$publishedImages.Count -eq 0' }, $true))
+if ($publishGuards.Count -ne 1 -or -not $publishGuards[0].Clauses[0].Item2.Extent.Text.Contains("'publish-tracepoint-staging-image.ps1'") -or $null -eq $publishGuards[0].ElseClause -or $publishGuards[0].ElseClause.Extent.Text.Contains('Invoke-ReleaseScript')) { throw 'The image is built only when its immutable tag does not exist yet.' }
+if (-not $releaseAst.Extent.Text.Contains("'ecr','batch-get-image','--repository-name','tracepoint-staging','--image-ids',`"imageTag=`$imageTag`"")) { throw 'The reuse check must look up the exact reviewed image tag.' }
+if ($releaseAst.Extent.Text.IndexOf("'ecr','describe-images'", [StringComparison]::Ordinal) -lt $publishGuards[0].Extent.EndOffset) { throw 'The image digest must be read after the build-or-reuse step.' }
 # Only 046 may be applied, after an exact typed confirmation, and its ledger row must then carry this release.
 $releaseText = $releaseAst.Extent.Text
 if ($releaseText -notmatch [regex]::Escape("`$expectedPending = @('046_agency_documents_module_toggle.sql')")) { throw 'Release pending set must be exactly 046.' }

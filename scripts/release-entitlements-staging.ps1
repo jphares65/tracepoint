@@ -162,9 +162,17 @@ try {
     if ($previousTaskDefinition -notmatch ':187$') { throw "Expected the reviewed pre-release staging task revision 187; found '$previousTaskDefinition'." }
     $null = Assert-RdsPitr
 
-    Write-Host "Building and scanning application image for $ApplicationCommit; no ECS service update occurs in this step."
-    Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'publish-tracepoint-staging-image.ps1') -ScriptArguments @('-Commit',$ApplicationCommit,'-Wait') | Out-Null
     $imageTag = Get-ReviewedImageTag -Environment staging -Commit $ApplicationCommit
+    # Tags are immutable, so a rerun of a release whose build already succeeded (for example after an AWS call failed
+    # before the database apply) cannot push the tag again; it reuses that image. deploy-app.ps1 still requires a
+    # clean scan and the exact digest recorded below.
+    $publishedImages = @((Invoke-AwsRead @('ecr','batch-get-image','--repository-name','tracepoint-staging','--image-ids',"imageTag=$imageTag")).images)
+    if ($publishedImages.Count -eq 0) {
+        Write-Host "Building and scanning application image for $ApplicationCommit; no ECS service update occurs in this step."
+        Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'publish-tracepoint-staging-image.ps1') -ScriptArguments @('-Commit',$ApplicationCommit,'-Wait') | Out-Null
+    } else {
+        Write-Host "Reusing the immutable image $imageTag already built for $ApplicationCommit; no build or ECS change in this step."
+    }
     $image = @((Invoke-AwsRead @('ecr','describe-images','--repository-name','tracepoint-staging','--image-ids',"imageTag=$imageTag")).imageDetails) | Select-Object -First 1
     if ($null -eq $image -or @($image.imageTags) -cnotcontains $imageTag) { throw 'Reviewed application image was not published with its exact immutable tag.' }
     $imageDigest = [string]$image.imageDigest
