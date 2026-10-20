@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bell, Check, Clock3, ExternalLink, Loader2, RefreshCw, Settings, ShieldAlert } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
+import { notificationCanBeAcknowledged } from "@/lib/notifications/acknowledge-policy";
 
 type Item = {
   id: string;
@@ -12,6 +13,7 @@ type Item = {
   href: string;
   priority: "Critical" | "High" | "Normal";
   source: string;
+  kind?: string;
   createdAt?: string | null;
   acknowledgedAt?: string | null;
   snoozedUntil?: string | null;
@@ -185,7 +187,7 @@ export default function NotificationsPage() {
           <div className="space-y-3">
             {visible.map((item) => (
               <article key={item.id} className={`rounded-3xl border p-5 ${style(item.priority)}`}>
-                <div className="flex items-start gap-3"><Icon priority={item.priority} /><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-bold text-white">{item.title}</h2><span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-500">{item.source}</span></div><p className="mt-2 text-sm text-slate-400">{item.detail}</p><div className="mt-4 flex flex-wrap gap-2"><Link href={item.href} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Open<ExternalLink size={14} /></Link>{filter === "Open" ? <><button disabled={saving} onClick={() => void act("acknowledge", item)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-700 px-3 py-2 text-sm text-emerald-300"><Check size={14} />Acknowledge</button><button disabled={saving} onClick={() => void act("snooze", item)} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300"><Clock3 size={14} />Snooze 1 Day</button></> : <button disabled={saving} onClick={() => void act(filter === "Snoozed" ? "unsnooze" : "reopen", item)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300">Return to Inbox</button>}</div></div></div>
+                <div className="flex items-start gap-3"><Icon priority={item.priority} /><div className="flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-bold text-white">{item.title}</h2><span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-500">{item.source}</span></div><p className="mt-2 text-sm text-slate-400">{item.detail}</p><div className="mt-4 flex flex-wrap gap-2"><Link href={item.href} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white">Open<ExternalLink size={14} /></Link>{filter === "Open" ? <>{notificationCanBeAcknowledged(item.kind) ? <button disabled={saving} onClick={() => void act("acknowledge", item)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-700 px-3 py-2 text-sm text-emerald-300"><Check size={14} />Acknowledge</button> : null}<button disabled={saving} onClick={() => void act("snooze", item)} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300"><Clock3 size={14} />Snooze 1 Day</button></> : <button disabled={saving} onClick={() => void act(filter === "Snoozed" ? "unsnooze" : "reopen", item)} className="rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300">Return to Inbox</button>}</div></div></div>
               </article>
             ))}
           </div>

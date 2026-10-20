@@ -13,6 +13,9 @@ import {
 } from "@/lib/tracepoint/off-duty-qualification-readiness";
 import { createOffDutyReadRepository } from "@/lib/off-duty-firearms/read-repository";
 
+// Re-notifying an existing event key updates and reopens it (TRN-19).
+const NOTIFICATION_EVENT_KEY = "department_id,user_id,notification_key";
+
 function cleanText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -388,12 +391,14 @@ async function createCommandNotifications(
     first_seen_at: now,
     last_seen_at: now,
     resolved_at: null,
+    acknowledged_at: null,
+    snoozed_until: null,
     updated_at: now,
   }));
 
   const { error } = await context.admin
     .from("notification_events")
-    .upsert(notifications);
+    .upsert(notifications, { onConflict: NOTIFICATION_EVENT_KEY });
 
   if (error) throw new Error(error.message);
 }

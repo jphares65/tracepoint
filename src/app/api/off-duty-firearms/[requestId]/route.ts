@@ -12,6 +12,9 @@ import {
   getOfficerQualificationReadiness,
 } from "@/lib/tracepoint/off-duty-qualification-readiness";
 
+// Re-notifying an existing event key updates and reopens it (TRN-19).
+const NOTIFICATION_EVENT_KEY = "department_id,user_id,notification_key";
+
 type RouteContext = {
   params: Promise<{ requestId: string }>;
 };
@@ -242,8 +245,10 @@ async function createOfficerNotification(
       first_seen_at: now,
       last_seen_at: now,
       resolved_at: null,
+      acknowledged_at: null,
+      snoozed_until: null,
       updated_at: now,
-    });
+    }, { onConflict: NOTIFICATION_EVENT_KEY });
 
   if (error) throw new Error(error.message);
 }
@@ -330,12 +335,14 @@ async function createCommandNotifications(
     first_seen_at: now,
     last_seen_at: now,
     resolved_at: null,
+    acknowledged_at: null,
+    snoozed_until: null,
     updated_at: now,
   }));
 
   const { error } = await context.admin
     .from("notification_events")
-    .upsert(rows);
+    .upsert(rows, { onConflict: NOTIFICATION_EVENT_KEY });
 
   if (error) throw new Error(error.message);
 }

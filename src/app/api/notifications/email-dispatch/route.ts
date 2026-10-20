@@ -6,6 +6,8 @@ import {
 } from "@/lib/email/provider";
 
 import { deliverOutboxMessage } from "@/lib/email/outbox-delivery";
+import { notificationRecipientCheck } from "@/lib/notifications/dispatch-recipient";
+import { authorizedNotificationJob } from "@/lib/notifications/job-authorization";
 
 type QueueRow = {
   id: string;
@@ -196,14 +198,7 @@ async function retryRows(admin: DispatchClient, rows: QueueRow[], message: strin
 }
 
 export async function POST(request: NextRequest) {
-  const secret =
-    process.env.NOTIFICATION_DISPATCH_SECRET ||
-    process.env.CRON_SECRET;
-
-  if (
-    !secret ||
-    request.headers.get("authorization") !== `Bearer ${secret}`
-  ) {
+  if (!authorizedNotificationJob(request.headers.get("authorization"))) {
     return NextResponse.json(
       { error: "Unauthorized." },
       { status: 401 },
@@ -230,11 +225,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const admin = (process.env.TRACEPOINT_DATA_PROVIDER === "postgres"
-    ? (await import("@/lib/database/postgres-data-client")).PostgresDataClient.forNotificationDispatch(
-        (await import("@/lib/database/postgres-pool")).getPostgresPool(),
-      )
+  const pool = process.env.TRACEPOINT_DATA_PROVIDER === "postgres"
+    ? (await import("@/lib/database/postgres-pool")).getPostgresPool()
+    : null;
+  const admin = (pool
+    ? (await import("@/lib/database/postgres-data-client")).PostgresDataClient.forNotificationDispatch(pool)
     : (await import("@/lib/supabase/admin")).createAdminClient()) as DispatchClient;
+  const recipientActive = notificationRecipientCheck(pool, admin);
   const now = new Date().toISOString();
 
   const { data: candidates, error: queueError } = await admin
@@ -303,6 +300,27 @@ export async function POST(request: NextRequest) {
 
   for (const groupRows of groups.values()) {
     const first = groupRows[0];
+    let active: boolean;
+    try { active = await recipientActive(first.department_id, first.user_id); }
+    catch {
+      await retryRows(admin, groupRows, "Recipient membership lookup failed before sending.");
+      failedGroups += 1;
+      continue;
+    }
+    if (!active) {
+      await admin
+        .from("notification_email_queue")
+        .update({
+          status: "Cancelled",
+          last_error: "Recipient is no longer an active member.",
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", groupRows.map((row) => row.id))
+        .eq("status", "Processing");
+      cancelledItems += groupRows.length;
+      continue;
+    }
+
     const notificationKeys = Array.from(
       new Set(groupRows.map((row) => row.notification_key)),
     );

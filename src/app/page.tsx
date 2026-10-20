@@ -22,6 +22,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDateTime } from "@/lib/format/date";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { notificationCanBeAcknowledged } from "@/lib/notifications/acknowledge-policy";
 
 type Priority = "Critical" | "High" | "Normal";
 
@@ -150,20 +151,6 @@ function priorityCard(priority: Priority) {
   }
   return "border-slate-800 bg-slate-950/45";
 }
-function isConditionBasedReadiness(item: NotificationItem) {
-  return [
-    "required_certification_missing",
-    "required_certification_expired",
-    "required_certification_due_soon",
-    "required_equipment_missing",
-    "required_equipment_expired",
-    "equipment_inspection_overdue",
-    "required_equipment_out_of_service",
-    "equipment_expiration_due_soon",
-    "equipment_inspection_due_soon",
-  ].includes(item.kind);
-}
-
 function PriorityIcon({ priority }: { priority: Priority }) {
   if (priority === "Critical") {
     return <ShieldAlert size={17} className="text-red-300" />;
@@ -645,7 +632,7 @@ export default function OfficerHomePage() {
                             Open
                             <ChevronRight size={13} />
                           </Link>
-                                                    {!isConditionBasedReadiness(item) ? (
+                                                    {notificationCanBeAcknowledged(item.kind) ? (
                             <button
                               type="button"
                               onClick={() =>

@@ -20,10 +20,34 @@ export type ReconciledExistingNotification = {
   source?: string | null;
 };
 
+// One fingerprint per alert condition (TRN-10): the entity key, kind, severity
+// and condition date. Detail text such as "expires in 16 days" changes daily
+// and must not reset snoozes or queue a new email.
 export function notificationFingerprint(
   item: ReconciledGeneratedNotification,
 ) {
-  return JSON.stringify(item);
+  return JSON.stringify({
+    v: 2,
+    key: item.key,
+    source: item.source,
+    kind: item.kind,
+    title: item.title,
+    priority: item.priority,
+    createdAt: item.createdAt || null,
+  });
+}
+
+// Rows written before v2 stored the whole alert; compare them by condition so
+// the upgrade itself neither resets snoozes nor re-sends email.
+function priorCondition(fingerprint: unknown) {
+  const value = String(fingerprint);
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && parsed.v !== 2 && typeof parsed.key === "string") {
+      return notificationFingerprint(parsed);
+    }
+  } catch {}
+  return value;
 }
 
 export function buildNotificationEventReconciliationRow({
@@ -39,10 +63,11 @@ export function buildNotificationEventReconciliationRow({
   prior?: ReconciledExistingNotification;
   now: string;
 }) {
-  const fingerprint = notificationFingerprint(item);
+  const condition = notificationFingerprint(item);
   const changed = Boolean(
-    prior && String(prior.fingerprint) !== fingerprint,
+    prior && priorCondition(prior.fingerprint) !== condition,
   );
+  const fingerprint = prior && !changed ? String(prior.fingerprint) : condition;
 
   return {
     fingerprint,

@@ -51,7 +51,7 @@ test("all current qualification readiness consumers apply the agency component r
   const [qualifications, performance, notifications, offDuty] = await Promise.all([
     readFile("src/app/qualifications/page.tsx", "utf8"),
     readFile("src/app/api/pilot/performance-summary/route.ts", "utf8"),
-    readFile("src/app/api/notifications/route.ts", "utf8"),
+    readFile("src/lib/notifications/user-notification-generator.ts", "utf8"),
     readFile("src/lib/tracepoint/off-duty-qualification-readiness.ts", "utf8"),
   ]);
   assert.match(qualifications, /evaluateCanonicalQualificationReadiness/);
