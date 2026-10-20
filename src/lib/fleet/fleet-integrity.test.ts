@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 
-// Handler-level tests for the fleet integrity fixes (FLT-01, FLT-02, FLT-08, FLT-09)
-// and the inspection audit outbox and odometer corrections.
+// Handler-level tests for the fleet integrity fixes (FLT-01, FLT-02, FLT-08, FLT-09),
+// the inspection audit outbox, odometer corrections and the F3 critical safety hold.
 // The route handlers run unchanged against an in-memory data client; only the
 // session resolver and the server-only marker are replaced (route modules load
 // as CommonJS under tsx, so the stubs are placed in the require cache).
@@ -33,6 +33,9 @@ function createDb(tables: Record<string, Row[]>, fail: (table: string, op: strin
       eq(column: string, value: any) { filters.push((row) => String(row[column]) === String(value)); return builder; },
       neq(column: string, value: any) { filters.push((row) => row[column] !== value); return builder; },
       gte(column: string, value: any) { filters.push((row) => String(row[column]) >= String(value)); return builder; },
+      gt(column: string, value: any) { filters.push((row) => Number(row[column]) > Number(value)); return builder; },
+      lt(column: string, value: any) { filters.push((row) => String(row[column]) < String(value)); return builder; },
+      is(column: string, value: any) { filters.push((row) => (row[column] ?? null) === value); return builder; },
       in(column: string, values: any[]) { filters.push((row) => values.includes(row[column])); return builder; },
       not(column: string, operator: string, value: any) { const values = String(value).replace(/[()"]/g, "").split(","); filters.push((row) => !values.includes(row[column])); void operator; return builder; },
       or() { return builder; },
@@ -114,6 +117,7 @@ async function load() {
     workOrders: await import("../../app/api/fleet/vehicles/[vehicleId]/work-orders/route.ts"),
     vehicleRoute: await import("../../app/api/fleet/vehicles/[vehicleId]/route.ts"),
     listRoute: await import("../../app/api/fleet/vehicles/route.ts"),
+    notifications: await import("../tracepoint/fleet-notifications.ts"),
   };
 }
 
@@ -321,4 +325,105 @@ test("Odometer corrections: lowering needs a correction reason and is audited; i
   assert.equal(corrected.details.mileage_correction.previous_hours, 100);
   assert.equal((await list({ currentMileage: "2100", reason: "new reading" })).status, 200);
   assert.equal((db.tables.audit_events.at(-1) as Row).action, "fleet_vehicle_updated");
+});
+
+// F3: a critical safety hold is released by a later inspection without critical defects or by an
+// audited fleet-manager clearance, never by closing or cancelling the critical work order.
+const heldOrder = (over: Row = {}) => ({ ...criticalOrder, created_at: "2026-10-01T08:00:00.000Z", ...over });
+
+test("F3 completing or cancelling the critical work order keeps the safety hold until a passing inspection", async () => {
+  const { json, workOrders, inspections } = await load();
+  for (const status of ["Completed", "Cancelled"]) {
+    const db = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder()]));
+    db.tables.fleet_vehicle_inspections.push({ id: "insp-critical", department_id: "dept-1", vehicle_id: V, critical_defect_count: 1, created_at: "2026-10-01T07:59:00.000Z" });
+    signIn(db, ["manage_fleet_maintenance"]);
+    const response = await workOrders.PATCH(json(`/api/fleet/vehicles/${V}/work-orders`, "PATCH", { id: "wo-critical", reason: "repaired", status }), params({ vehicleId: V }));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.readiness.status, "Out of Service", `${status} alone does not release`);
+    assert.match(body.readiness.safetyHold.reason, /Critical work order "Brakes" recorded on 2026-10-01\. .*later inspection records no critical defects or a fleet manager clears the hold/);
+    assert.equal(db.tables.fleet_vehicles[0].status, "Out of Service");
+    asInspector(db);
+    const passed = await inspect(inspections, json, checklist());
+    assert.equal(passed.status, 201);
+    assert.equal(passed.body.readiness.status, "Available", "a later inspection without critical defects releases the hold");
+    assert.equal(passed.body.readiness.safetyHold, null);
+  }
+});
+
+test("F3 a fleet manager clears a safety hold only with a reason; the clearance is audited and readiness recalculated", async () => {
+  const { json, vehicleRoute } = await load();
+  const db = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder({ status: "Completed" })]));
+  const clear = (body: Row) => vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", body), params({ vehicleId: V }));
+  for (const permissions of [["manage_fleet_maintenance"], ["perform_fleet_inspections"], ["manage_fleet_rules"]]) {
+    signIn(db, permissions);
+    assert.equal((await clear({ clearSafetyHold: true, clearanceReason: "looks fine" })).status, 403, `${permissions} cannot clear`);
+  }
+  signIn(db, MANAGER);
+  for (const clearanceReason of [undefined, "", "   "]) {
+    const response = await clear({ clearSafetyHold: true, clearanceReason, reason: "general reason is not a clearance reason" });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /reason for clearing the safety hold/);
+  }
+  assert.equal(db.tables.fleet_vehicles[0].safety_hold_cleared_at, undefined);
+  assert.equal(db.tables.audit_events.length, 0);
+
+  // An audit failure reverses the clearance.
+  const down = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder({ status: "Completed" })]), (t, o) => t === "audit_events" && o === "insert" ? "audit store unavailable" : null);
+  signIn(down, MANAGER);
+  const failed = await clear({ clearSafetyHold: true, clearanceReason: "brakes replaced and road tested" });
+  assert.equal(failed.status, 500);
+  assert.match((await failed.json()).error, /safety hold was not cleared/);
+  assert.equal(down.tables.fleet_vehicles[0].safety_hold_cleared_at, null);
+  assert.equal(down.tables.fleet_vehicles[0].status, "Out of Service");
+
+  signIn(db, MANAGER);
+  const response = await clear({ clearSafetyHold: true, clearanceReason: "brakes replaced and road tested" });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.readiness.status, "Available");
+  assert.equal(db.tables.fleet_vehicles[0].status, "Available");
+  assert.equal(db.tables.fleet_vehicles[0].status_override_active, false, "the clearance sets no manual status");
+  assert.deepEqual([db.tables.fleet_vehicles[0].safety_hold_cleared_by, db.tables.fleet_vehicles[0].safety_hold_clearance_reason], ["user-1", "brakes replaced and road tested"]);
+  assert.equal(db.tables.audit_events.length, 1);
+  assert.equal(db.tables.audit_events[0].action, "fleet_safety_hold_cleared");
+  assert.equal(db.tables.audit_events[0].actor_user_id, "user-1");
+  assert.equal(db.tables.audit_events[0].details.reason, "brakes replaced and road tested");
+  assert.equal(db.tables.audit_events[0].details.hold.since, "2026-10-01T08:00:00.000Z");
+  assert.equal((await clear({ clearSafetyHold: true, clearanceReason: "again" })).status, 409, "nothing left to clear");
+});
+
+test("F3 an open critical work order still holds the vehicle after a clearance", async () => {
+  const { json, vehicleRoute } = await load();
+  const db = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder()]));
+  signIn(db, MANAGER);
+  const response = await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { clearSafetyHold: true, clearanceReason: "manager reviewed" }), params({ vehicleId: V }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.readiness.status, "Out of Service");
+  assert.equal(body.readiness.safetyHold, null, "the recorded hold is cleared");
+  assert.equal(db.tables.fleet_vehicles[0].status, "Out of Service", "the open critical work order still holds");
+  assert.equal(db.tables.audit_events[0].action, "fleet_safety_hold_cleared");
+});
+
+test("F3 inspection audit entries pending for more than 24 hours alert fleet managers only", async () => {
+  const { notifications } = await load();
+  const ago = (hours: number) => new Date(Date.now() - hours * 3600000).toISOString();
+  const db = createDb({ ...fleet([vehicle()]), fleet_audit_outbox: [
+    { id: "o1", department_id: "dept-1", created_at: ago(50), delivered_at: null, attempts: 4, last_error: "new row violates check constraint" },
+    { id: "o2", department_id: "dept-1", created_at: ago(30), delivered_at: null, attempts: 0, last_error: null },
+    { id: "o3", department_id: "dept-1", created_at: ago(2), delivered_at: null, attempts: 1, last_error: "timeout" },
+    { id: "o4", department_id: "dept-1", created_at: ago(90), delivered_at: ago(80), attempts: 2, last_error: null },
+    { id: "o5", department_id: "dept-2", created_at: ago(90), delivered_at: null, attempts: 0, last_error: null },
+  ] });
+  const alerts = async (permissions: string[]) => (await notifications.collectFleetNotifications({ admin: db, departmentId: "dept-1", user: { id: "user-1" }, permissions, roleCodes: [], isSuperAdmin: false })).filter((alert: Row) => alert.kind === "fleet_audit_pending");
+  for (const permissions of [["manage_fleet"], ["administer_department"]]) {
+    const [alert, ...rest] = await alerts(permissions);
+    assert.equal(rest.length, 0);
+    assert.equal(alert.title, "2 inspection audit entries not recorded");
+    assert.match(alert.detail, /more than 24 hours; the oldest since \d{4}-\d{2}-\d{2} \(2 days\)\. Delivery is failing: new row violates check constraint\./);
+    assert.equal(alert.source, "Fleet");
+    assert.equal(alert.priority, "High");
+  }
+  for (const permissions of [["manage_fleet_maintenance"], ["manage_fleet_rules"], ["perform_fleet_inspections"], []]) assert.deepEqual(await alerts(permissions), [], `${permissions} sees no audit queue alert`);
 });

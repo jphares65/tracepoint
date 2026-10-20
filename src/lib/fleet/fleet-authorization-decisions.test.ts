@@ -30,6 +30,7 @@ function createDb(tables: Record<string, Row[]>) {
       eq(column: string, value: any) { filters.push((row) => String(row[column]) === String(value)); return builder; },
       neq(column: string, value: any) { filters.push((row) => row[column] !== value); return builder; },
       gte(column: string, value: any) { filters.push((row) => String(row[column]) >= String(value)); return builder; },
+      gt(column: string, value: any) { filters.push((row) => Number(row[column]) > Number(value)); return builder; },
       in(column: string, values: any[]) { filters.push((row) => values.includes(row[column])); return builder; },
       is(column: string, value: any) { filters.push((row) => (row[column] ?? null) === value); return builder; },
       not(column: string, operator: string, value: any) { const values = String(value).replace(/[()"]/g, "").split(","); filters.push((row) => !values.includes(row[column])); void operator; return builder; },

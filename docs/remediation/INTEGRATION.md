@@ -57,3 +57,10 @@ The four xlsx failures and the "ran no tests" exclusions recorded during local d
 | `claude/fix-f1-account-import-decisions` | `ddcfc58acf8af3203227ae12774af24d1c554ab0` | 044 |
 | `claude/fix-f4-qr-disclosure` | `2edaba653ff2bf4e821fa159aadce295566c9b29` | — |
 | `claude/fix-f2-fleet-authorization-decisions` | `3de7ee73a65946d7808f2afcb54d6a5481a7afa8` | 045 |
+| `claude/fix-f3-fleet-safety-hold` | `96e86b393ab0dde26650dfd338e2c9ed26d81658` | 046 |
+
+F3 merge notes:
+
+- There was a textual conflict in the `src/app/api/fleet/vehicles/[vehicleId]/route.ts` import line. It was resolved by taking the union: F2's `canViewFleetCosts` and F3's `findSafetyHold`.
+- One test-fixture gap was fixed. F3's `findSafetyHold` uses `.gt()`, which F2's mock data client in `fleet-authorization-decisions.test.ts` did not implement, so F2's 4 route tests failed. The mock gained `gt`, in the same form as `fleet-integrity.test.ts`. After the fix, all 136 fleet and tracepoint tests pass.
+- Migration 046 does not redefine F2's `guard_fleet_field_vehicle_update`, so 045's eligibility rule is preserved. F3 also verified its route harness with 045 applied before 046 (124/124 migrations).
