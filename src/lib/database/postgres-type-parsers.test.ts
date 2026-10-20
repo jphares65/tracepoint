@@ -15,3 +15,8 @@ test("unsafe PostgreSQL numbers fail instead of losing precision", () => {
     /exceeds the TracePoint number contract/,
   );
 });
+
+test("PostgreSQL date fields preserve the provider calendar-date text contract", () => {
+  assert.equal(postgresRuntimeTypes.getTypeParser(1082)("2028-03-01"), "2028-03-01");
+  assert.equal(postgresRuntimeTypes.getTypeParser(1082)("infinity"), "infinity");
+});
