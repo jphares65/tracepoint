@@ -2,6 +2,8 @@
 
 Base: `claude/integration-defects-20261020` (B0–B5) @ `d5b8ea8`. This batch implements the owner's decisions on B4's critical-inspection handling and the inspection audit outbox (`043`). B4 is in `docs/remediation/B4-fleet-integrity.md`. Migration: `database/aws/046_fleet_safety_hold_clearance.sql`.
 
+> **Superseded in part by F6a** (`F6a-fleet-safety-decisions.md`): the owner chose option (b) for the automation settings, a conservative audited baseline, and no clearance while a critical work order is open. 046 was edited in place. The *Owner decision needed* section below is resolved there.
+
 The owner approved B4's four outbox deviations, subject to testing; the tests below cover them. Nothing here is deployed.
 
 ## Owner decisions and how they are met

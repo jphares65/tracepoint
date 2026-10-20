@@ -393,17 +393,67 @@ test("F3 a fleet manager clears a safety hold only with a reason; the clearance 
   assert.equal((await clear({ clearSafetyHold: true, clearanceReason: "again" })).status, 409, "nothing left to clear");
 });
 
-test("F3 an open critical work order still holds the vehicle after a clearance", async () => {
-  const { json, vehicleRoute } = await load();
+test("F6a a safety hold cannot be cleared while a critical work order is open; once it is closed the clearance is allowed", async () => {
+  const { json, vehicleRoute, workOrders } = await load();
   const db = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder()]));
   signIn(db, MANAGER);
-  const response = await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { clearSafetyHold: true, clearanceReason: "manager reviewed" }), params({ vehicleId: V }));
+  const clear = () => vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { clearSafetyHold: true, clearanceReason: "manager reviewed" }), params({ vehicleId: V }));
+  const blocked = await clear();
+  assert.equal(blocked.status, 409);
+  assert.match((await blocked.json()).error, /cannot be cleared while a critical work order is open \("Brakes"\)\. Complete or cancel it first/);
+  assert.equal(db.tables.fleet_vehicles[0].safety_hold_cleared_at, undefined, "nothing is written");
+  assert.equal(db.tables.audit_events.length, 0, "nothing is audited");
+  const affecting = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder({ priority: "High", status: "In Progress" })]));
+  signIn(affecting, MANAGER);
+  assert.equal((await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { clearSafetyHold: true, clearanceReason: "x" }), params({ vehicleId: V }))).status, 409, "an open availability-affecting work order also blocks");
+
+  signIn(db, ["manage_fleet_maintenance"]);
+  const completed = await workOrders.PATCH(json(`/api/fleet/vehicles/${V}/work-orders`, "PATCH", { id: "wo-critical", reason: "repaired", status: "Completed" }), params({ vehicleId: V }));
+  assert.equal((await completed.json()).readiness.status, "Out of Service", "closing the work order alone does not release the hold");
+  signIn(db, MANAGER);
+  const response = await clear();
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(body.readiness.status, "Out of Service");
-  assert.equal(body.readiness.safetyHold, null, "the recorded hold is cleared");
-  assert.equal(db.tables.fleet_vehicles[0].status, "Out of Service", "the open critical work order still holds");
-  assert.equal(db.tables.audit_events[0].action, "fleet_safety_hold_cleared");
+  assert.equal(body.readiness.status, "Available");
+  assert.equal(body.readiness.safetyHold, null);
+  assert.equal(db.tables.audit_events.at(-1)?.action, "fleet_safety_hold_cleared");
+  assert.equal(db.tables.audit_events.at(-1)?.details.reason, "manager reviewed");
+});
+
+test("F6a critical safety holds apply whatever the agency's automation settings; other automation still follows them", async () => {
+  const { json, server, vehicleRoute } = await load();
+  const ctx = (db: any) => ({ admin: db, departmentId: "dept-1" });
+  const off = [{ department_id: "dept-1", status_automation_enabled: false, critical_issue_out_of_service: false }];
+  for (const rules of [off, [{ department_id: "dept-1", status_automation_enabled: true, critical_issue_out_of_service: false }]]) {
+    const label = JSON.stringify(rules[0]);
+    // A recorded hold (the critical work order is completed) and an open critical work order.
+    for (const order of [heldOrder({ status: "Completed" }), heldOrder()]) {
+      const db = createDb({ ...fleet([vehicle({ status: "Available" })], [order]), fleet_rules: rules });
+      const readiness = await server.refreshFleetVehicle(ctx(db), V);
+      assert.equal(readiness.status, "Out of Service", `${label} ${order.status}`);
+      assert.equal(db.tables.fleet_vehicles[0].status, "Out of Service");
+      assert.match(String(readiness.safetyHold?.reason), /Critical work order "Brakes" recorded on 2026-10-01/, `${label} ${order.status}`);
+    }
+    const inspected = createDb({ ...fleet([vehicle({ status: "Attention" })]), fleet_rules: rules });
+    inspected.tables.fleet_vehicle_inspections.push({ id: "insp-critical", department_id: "dept-1", vehicle_id: V, critical_defect_count: 1, created_at: "2026-10-02T08:00:00.000Z" });
+    assert.equal((await server.refreshFleetVehicle(ctx(inspected), V)).safetyHold?.source, "inspection", label);
+    assert.equal(inspected.tables.fleet_vehicles[0].status, "Out of Service", label);
+    signIn(inspected, MANAGER);
+    const detail = await (await vehicleRoute.GET(json(`/api/fleet/vehicles/${V}`, "GET", undefined), params({ vehicleId: V }))).json();
+    assert.equal(detail.safetyHold?.source, "inspection", `${label}: the detail page shows the hold`);
+  }
+  // With automation off, non-critical automation stays off, and a stricter manual status is kept.
+  for (const [status, expected] of [["Available", "Available"], ["Maintenance", "Maintenance"]]) {
+    const db = createDb({ ...fleet([vehicle({ status })], [heldOrder({ priority: "High", affects_availability: false, status: "In Progress" })]), fleet_rules: off });
+    assert.equal((await server.refreshFleetVehicle(ctx(db), V)).status, expected, `non-critical work, ${status}`);
+  }
+  const maintenance = createDb({ ...fleet([vehicle({ status: "Maintenance" })], [heldOrder()]), fleet_rules: off });
+  assert.equal((await server.refreshFleetVehicle(ctx(maintenance), V)).status, "Maintenance", "a manager-set Maintenance is kept");
+  // A passing inspection still releases a recorded hold with automation off; the vehicle's status is then the manager's to set.
+  const released = createDb({ ...fleet([vehicle({ status: "Out of Service" })], [heldOrder({ status: "Completed" })]), fleet_rules: off });
+  released.tables.fleet_vehicle_inspections.push({ id: "insp-pass", department_id: "dept-1", vehicle_id: V, critical_defect_count: 0, created_at: "2026-10-03T08:00:00.000Z" });
+  const readiness = await server.refreshFleetVehicle(ctx(released), V);
+  assert.deepEqual([readiness.status, readiness.safetyHold], ["Out of Service", null]);
 });
 
 test("F3 inspection audit entries pending for more than 24 hours alert fleet managers only", async () => {

@@ -106,9 +106,8 @@ export type FleetSafetyHold = { since: string; source: "inspection" | "work_orde
 
 // A critical condition (an inspection with a critical defect, or a Critical or availability-affecting work order) holds the
 // vehicle, even after that work order is completed or cancelled, until a later inspection records no critical defects or a
-// fleet manager clears the hold (database/aws/046). Applies only where the agency's automation takes critical issues out of service.
-export async function findSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, rules: FleetRow, vehicle: FleetRow): Promise<FleetSafetyHold | null> {
-  if (rules?.status_automation_enabled === false || rules?.critical_issue_out_of_service === false) return null;
+// fleet manager clears the hold (database/aws/046). It applies whatever the agency's automation and notification settings.
+export async function findSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, vehicle: FleetRow): Promise<FleetSafetyHold | null> {
   const scoped = (table: string, columns: string) => context.admin.from(table).select(columns).eq("department_id", context.departmentId).eq("vehicle_id", vehicleId);
   const latest = (query: ReturnType<typeof scoped>) => query.order("created_at", { ascending: false }).limit(1).maybeSingle();
   const results: Array<{ data: FleetRow; error?: { message: string } | null }> = await Promise.all([
@@ -151,13 +150,19 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const vehicle = vehicleResult.data;
   const criticalIssue = work.some((item: any) => item.priority === "Critical" || item.affects_availability === true);
   const criticalEquipment = equipment.some((item: any) => item.is_critical && ["Missing", "Out of Service"].includes(item.status));
-  // Open critical work always holds; a recorded critical condition holds until verified or cleared.
-  const safetyHold = await findSafetyHold(context, vehicleId, rules, vehicle);
-  const outOfService = (rules.critical_issue_out_of_service !== false && (criticalIssue || safetyHold !== null)) || (rules.critical_equipment_out_of_service !== false && criticalEquipment);
+  // Open critical work always holds; a recorded critical condition holds until verified or cleared. Both apply whatever
+  // the automation settings, which govern only the rest of the readiness rules.
+  const safetyHold = await findSafetyHold(context, vehicleId, vehicle);
+  const criticalHold = criticalIssue || safetyHold !== null;
+  const outOfService = criticalHold || (rules.critical_equipment_out_of_service !== false && criticalEquipment);
   const openIssueCount = work.length;
 
   let status = vehicle?.status ?? "Available";
-  if (rules.status_automation_enabled !== false && status !== "Retired") {
+  if (rules.status_automation_enabled === false) {
+    // As with a manual override: an Available/Attention vehicle with a critical hold is taken out of service, nothing else changes.
+    if (criticalHold && ["Available", "Attention"].includes(status)) status = "Out of Service";
+  }
+  else if (status !== "Retired") {
     if (vehicle?.status_override_active === true) {
       // A manual override never masks a critical condition: an overridden Available/Attention vehicle is still taken out of service.
       // Manager-set Maintenance, Out of Service and Retired are left alone, and the override stays active.
@@ -172,6 +177,13 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const { error: updateError } = await context.admin.from("fleet_vehicles").update({ status, open_issue_count: openIssueCount, updated_at: new Date().toISOString() }).eq("department_id", context.departmentId).eq("id", vehicleId);
   if (updateError) throw new Error(`Vehicle readiness could not be refreshed: ${updateError.message}`);
   return { status, openIssueCount, safetyHold };
+}
+
+// Open Critical or availability-affecting work orders; while any exists a safety hold cannot be cleared (database/aws/046).
+export async function findOpenCriticalWorkOrders(context: Parameters<typeof auditFleet>[0], vehicleId: string): Promise<Array<{ id: string; title: string; created_at: string }>> {
+  const { data, error } = await context.admin.from("fleet_work_orders").select("id,title,priority,affects_availability,created_at").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).not("status", "in", '("Completed","Cancelled")');
+  if (error) throw new Error(`Open critical work orders could not be checked: ${error.message}`);
+  return (data ?? []).filter((item: FleetRow) => item?.priority === "Critical" || item?.affects_availability === true).map((item: FleetRow) => ({ id: String(item?.id), title: String(item?.title ?? ""), created_at: String(item?.created_at ?? "") }));
 }
 
 type FleetContext = Parameters<typeof auditFleet>[0];

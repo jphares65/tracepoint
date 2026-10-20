@@ -3,10 +3,10 @@ begin;
 -- A critical safety hold (critical inspection defect or Critical/availability
 -- work order) is released only by a later inspection without critical defects
 -- or by an audited fleet-manager clearance, never by closing the work order
--- (src/lib/tracepoint/fleet-server.ts findSafetyHold). The latest clearance is
--- kept on the vehicle; its history is in audit_events. The inspection audit
--- outbox also keeps the defect work order, so reconciliation records it.
--- Idempotent.
+-- (src/lib/tracepoint/fleet-server.ts findSafetyHold). It applies whatever the
+-- agency's automation settings. The latest clearance is kept on the vehicle;
+-- its history is in audit_events. The inspection audit outbox also keeps the
+-- defect work order, so reconciliation records it. Idempotent.
 
 do $$
 begin
@@ -16,35 +16,88 @@ begin
       add column safety_hold_cleared_at timestamptz,
       add column safety_hold_cleared_by uuid,
       add column safety_hold_clearance_reason text;
-    -- Baseline, first application only: vehicles the previous rules already
-    -- released (no open critical work order, no critical inspection still
-    -- waiting for its defect work order) are not re-held for conditions
-    -- recorded before this migration.
-    update public.fleet_vehicles v
-    set safety_hold_cleared_at = now(),
-      safety_hold_clearance_reason = 'Baseline at migration 046: critical conditions recorded earlier were already resolved under the previous readiness rules.'
-    where not exists (
+    -- Baseline, first application only. A vehicle is marked cleared only on
+    -- recorded evidence that its latest critical condition was resolved: a later
+    -- inspection without critical defects, and no critical work order still
+    -- open. A closed or cancelled work order alone is not evidence. Each
+    -- clearance is audited with its evidence.
+    with conditions as (
+      select v.id, v.department_id, c.source, c.condition_id, c.created_at
+      from public.fleet_vehicles v
+      cross join lateral (
+        select * from (
+          select 'inspection' as source, i.id as condition_id, i.created_at from public.fleet_vehicle_inspections i
+          where i.department_id = v.department_id and i.vehicle_id = v.id and i.critical_defect_count > 0
+          union all
+          select 'work_order', w.id, w.created_at from public.fleet_work_orders w
+          where w.department_id = v.department_id and w.vehicle_id = v.id and (w.priority = 'Critical' or w.affects_availability)
+        ) recorded order by created_at desc limit 1) c
+      where not exists (
         select 1 from public.fleet_work_orders w
         where w.department_id = v.department_id and w.vehicle_id = v.id
           and w.status not in ('Completed', 'Cancelled')
           and (w.priority = 'Critical' or w.affects_availability))
-      and not exists (
-        select 1 from (
-          select i.created_at, i.critical_defect_count from public.fleet_vehicle_inspections i
-          where i.department_id = v.department_id and i.vehicle_id = v.id
-          order by i.created_at desc limit 1) latest
-        where latest.critical_defect_count > 0
-          and not exists (select 1 from public.fleet_work_orders w
-            where w.department_id = v.department_id and w.vehicle_id = v.id
-              and w.record_type = 'Inspection' and w.created_at >= latest.created_at));
+    ), evidence as (
+      select c.*, e.id as inspection_id, e.created_at as inspected_at
+      from conditions c
+      cross join lateral (
+        select i.id, i.created_at from public.fleet_vehicle_inspections i
+        where i.department_id = c.department_id and i.vehicle_id = c.id
+          and i.critical_defect_count = 0 and i.created_at > c.created_at
+        order by i.created_at desc limit 1) e
+    ), cleared as (
+      update public.fleet_vehicles v
+      set safety_hold_cleared_at = now(),
+        safety_hold_clearance_reason = 'Baseline at migration 046: an inspection on ' || to_char(e.inspected_at at time zone 'UTC', 'YYYY-MM-DD')
+          || ' recorded no critical defects after the latest critical condition, and no critical work order is open.'
+      from evidence e
+      where v.id = e.id
+      returning v.id, v.department_id, v.safety_hold_clearance_reason, e.source, e.condition_id, e.created_at as condition_at, e.inspection_id, e.inspected_at
+    )
+    insert into public.audit_events(department_id, actor_user_id, action, entity_type, entity_id, summary, details)
+    select department_id, null, 'fleet_safety_hold_cleared', 'fleet_vehicle', id,
+      'Safety hold marked cleared by migration 046 (system): a later inspection recorded no critical defects.',
+      jsonb_build_object('baseline', '046', 'reason', safety_hold_clearance_reason,
+        'hold', jsonb_build_object('since', condition_at, 'source', source, 'record_id', condition_id),
+        'evidence', jsonb_build_object('inspection_id', inspection_id, 'inspected_at', inspected_at, 'open_critical_work_orders', 0))
+    from cleared;
   end if;
 end;
 $$;
 
+-- A critical inspection takes an Available/Attention vehicle out of service in
+-- its own transaction, whatever the agency's automation settings (as 043
+-- otherwise).
+create or replace function public.enqueue_fleet_inspection_audit()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, tracepoint_auth
+as $$
+begin
+  insert into public.fleet_audit_outbox(department_id, inspection_id, vehicle_id, actor_user_id, action, entity_type, entity_id, details)
+  values (new.department_id, new.id, new.vehicle_id, coalesce(new.inspector_user_id, tracepoint_auth.subject_id()),
+    'fleet_vehicle_inspected', 'fleet_vehicle', new.vehicle_id, jsonb_build_object('inspection', to_jsonb(new)))
+  on conflict (inspection_id) do nothing;
+
+  if new.critical_defect_count > 0 then
+    update public.fleet_vehicles
+    set status = 'Out of Service',
+      status_reason = 'Critical defect recorded by a vehicle inspection; review before returning to service.',
+      updated_at = now()
+    where id = new.vehicle_id and department_id = new.department_id and status in ('Available', 'Attention');
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.enqueue_fleet_inspection_audit() from public, anon, authenticated, service_role;
+
 -- Only fleet managers and administrators may change the clearance. A new
--- clearance is stamped by the database and must name the subject and a reason;
--- moving it earlier or removing it only restores holds (used to reverse a
--- clearance whose audit entry failed).
+-- clearance is stamped by the database, must name the subject and a reason, and
+-- is refused while a Critical or availability-affecting work order of the
+-- vehicle is open; moving it earlier or removing it only restores holds (used
+-- to reverse a clearance whose audit entry failed).
 create or replace function public.guard_fleet_safety_hold_clearance()
 returns trigger
 language plpgsql
@@ -65,6 +118,12 @@ begin
     if new.safety_hold_cleared_by is distinct from tracepoint_auth.subject_id()
        or nullif(btrim(coalesce(new.safety_hold_clearance_reason, '')), '') is null then
       raise exception 'a safety hold clearance needs the clearing user and a reason' using errcode = '22023';
+    end if;
+    if exists (select 1 from public.fleet_work_orders w
+               where w.department_id = old.department_id and w.vehicle_id = old.id
+                 and w.status not in ('Completed', 'Cancelled')
+                 and (w.priority = 'Critical' or w.affects_availability)) then
+      raise exception 'a safety hold cannot be cleared while a critical work order is open' using errcode = '55000';
     end if;
     new.safety_hold_cleared_at := now();
   end if;

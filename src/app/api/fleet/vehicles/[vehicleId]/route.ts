@@ -5,7 +5,7 @@ import {
   createObjectStore,
 } from "@/lib/storage/object-store";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewFleetCosts, canViewNetworkDetails, findSafetyHold, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewFleetCosts, canViewNetworkDetails, findOpenCriticalWorkOrders, findSafetyHold, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
   if (!detail) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
   let safetyHold;
-  try { safetyHold = await findSafetyHold(context, vehicleId, detail.rules, detail.vehicle); }
+  try { safetyHold = await findSafetyHold(context, vehicleId, detail.vehicle); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
 
   const documentResult = await context.admin.from("attachments")
@@ -165,25 +165,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 // An explicit, audited fleet-manager clearance of a critical safety hold. It sets no status:
-// readiness is recalculated, and open critical work orders still hold the vehicle.
+// readiness is recalculated. It is refused while a critical work order is still open.
 async function clearSafetyHold(context: Extract<Awaited<ReturnType<typeof resolveServerAccess>>, { ok: true }>["context"], vehicleId: string, clearanceReason: string) {
   if (!clearanceReason) return NextResponse.json({ error: "Enter a reason for clearing the safety hold." }, { status: 400 });
-  const [rulesResult, vehicleResult] = await Promise.all([
-    context.admin.from("fleet_rules").select("*").eq("department_id", context.departmentId).maybeSingle(),
-    context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle(),
-  ]);
-  const loadError = rulesResult.error ?? vehicleResult.error;
+  const vehicleResult = await context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
   const previous = vehicleResult.data;
-  if (loadError || !previous) return NextResponse.json({ error: loadError?.message ?? "Vehicle was not found." }, { status: loadError ? 500 : 404 });
-  let hold;
-  try { hold = await findSafetyHold(context, vehicleId, rulesResult.data ?? {}, previous); }
+  if (vehicleResult.error || !previous) return NextResponse.json({ error: vehicleResult.error?.message ?? "Vehicle was not found." }, { status: vehicleResult.error ? 500 : 404 });
+  let hold, openCritical;
+  try { [hold, openCritical] = await Promise.all([findSafetyHold(context, vehicleId, previous), findOpenCriticalWorkOrders(context, vehicleId)]); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "The safety hold could not be checked." }, { status: 500 }); }
-  if (!hold) return NextResponse.json({ error: "This vehicle has no safety hold to clear. Open critical work orders keep a vehicle out of service until they are closed." }, { status: 409 });
+  if (openCritical.length) return NextResponse.json({ error: `The safety hold cannot be cleared while a critical work order is open (${openCritical.map((item) => `"${item.title}"`).join(", ")}). Complete or cancel it first.` }, { status: 409 });
+  if (!hold) return NextResponse.json({ error: "This vehicle has no safety hold to clear." }, { status: 409 });
 
   const prior = { safety_hold_cleared_at: previous.safety_hold_cleared_at ?? null, safety_hold_cleared_by: previous.safety_hold_cleared_by ?? null, safety_hold_clearance_reason: previous.safety_hold_clearance_reason ?? null };
   const { data, error } = await context.admin.from("fleet_vehicles")
     .update({ safety_hold_cleared_at: new Date().toISOString(), safety_hold_cleared_by: context.user.id, safety_hold_clearance_reason: clearanceReason, updated_by_user_id: context.user.id, updated_at: new Date().toISOString() })
     .eq("department_id", context.departmentId).eq("id", vehicleId).select("*").single();
+  if ((error as { code?: string } | null)?.code === "55000") return NextResponse.json({ error: "The safety hold cannot be cleared while a critical work order is open. Complete or cancel it first." }, { status: 409 });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   try { await auditFleet(context, "fleet_safety_hold_cleared", "fleet_vehicle", vehicleId, { reason: clearanceReason, hold, cleared_at: data.safety_hold_cleared_at, previous_clearance: prior }); }
   catch (auditError) {
