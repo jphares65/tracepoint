@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
 import { provisionExistingCognitoUser } from "@/lib/authentication/cognito-existing-user-migration";
 import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
+import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
 
 type ActivationRequest = {
@@ -36,14 +37,20 @@ export async function POST(request: NextRequest) {
       if (!access.ok) return accessFailureResponse(access);
       if (access.context.departmentId !== departmentId) return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
       if (!hasServerPermission(access.context, "manage_users")) return NextResponse.json({ error: "You do not have permission to activate users." }, { status: 403 });
-      const [membershipResult, profileResult, identityResult] = await Promise.all([
+      const [membershipResult, profileResult] = await Promise.all([
         access.context.admin.from("department_memberships").select("user_id,activation_status,is_active").eq("department_id", departmentId).eq("user_id", userId).maybeSingle(),
         access.context.admin.from("profiles").select("email,full_name").eq("id", userId).maybeSingle(),
-        access.context.admin.from("authentication_identity_links").select("state").eq("tracepoint_user_id", userId).eq("provider", "cognito").maybeSingle(),
       ]);
-      if (membershipResult.error || profileResult.error || identityResult.error) throw new Error("Activation account lookup failed.");
+      if (membershipResult.error || profileResult.error) throw new Error("Activation account lookup failed.");
       const membership = membershipResult.data;
       if (!membership) return NextResponse.json({ error: "Department membership was not found." }, { status: 404 });
+      // Identity links are not readable by the request role; read the state only
+      // after the tenant-scoped membership lookup has confirmed the target.
+      const identityRows = (await getPostgresPool().query(
+        "select state from public.authentication_identity_links where tracepoint_user_id=$1 and provider='cognito'", [userId],
+      )).rows as Array<{ state?: unknown }>;
+      if (identityRows.length > 1) throw new Error("Activation account lookup failed.");
+      const identityResult = { data: identityRows[0] };
       if (!membership.is_active) return NextResponse.json({ error: "Inactive users cannot be activated." }, { status: 400 });
       const email = cleanText(profileResult.data?.email).toLowerCase();
       if (!email) return NextResponse.json({ error: "This user does not have an email address." }, { status: 400 });

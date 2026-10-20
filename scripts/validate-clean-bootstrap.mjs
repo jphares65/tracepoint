@@ -472,7 +472,12 @@ try {
         where conname = 'equipment_assets_lifecycle_status_check'
           and pg_get_constraintdef(oid) like '%out_of_service%'
       ) as equipment_out_of_service_allowed,
-      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable
+      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable,
+      not has_function_privilege('authenticated', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute')
+        and not has_function_privilege('anon', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute')
+        and not has_function_privilege('tracepoint_runtime', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute') as department_self_creation_not_executable,
+      has_function_privilege('tracepoint_runtime', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute')
+        and not has_function_privilege('authenticated', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute') as first_login_activation_runtime_only
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);

@@ -7,7 +7,7 @@ function valid(input:SessionKey){return uuid.test(input.userId)&&uuid.test(input
 // Construct only from the trusted server pool. Registration accepts claims only
 // after signature/client/nonce verification; it is not an authentication API.
 export class PostgresCognitoSessionStore {
- constructor(private readonly pool:Pick<Pool,'query'|'connect'>,private readonly rehearsalFirstLogin=false){}
+ constructor(private readonly pool:Pick<Pool,'query'|'connect'>,private readonly rehearsalFirstLogin=false,private readonly firstLoginActivation=false){}
  readonly isActive:SessionActivityCheck=async input=>{
   if(!valid(input)){shadowCognitoDiagnostic('access_session_key_shape');return false;}
   try{const result=await this.pool.query(`select 1 from public.authentication_access_sessions s
@@ -31,6 +31,13 @@ export class PostgresCognitoSessionStore {
       : 'tracepoint_auth.promote_rehearsal_readington_officer_first_login';
     const promoted=await client.query<{user_id:string}>(`select ${functionName}($1,$2,$3) as user_id`,[input.issuer,input.subject,input.userId]);
     if(promoted.rowCount!==1||promoted.rows[0].user_id!==input.userId)throw Error();
+    mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
+   }
+   // Initial sign-in only: the tokens are verified; the database activates a
+   // pending link only while the user has an active membership.
+   else if(mapping.rowCount!==1&&this.firstLoginActivation){
+    const activated=await client.query<{user_id:string|null}>('select tracepoint_auth.activate_cognito_identity_on_first_login($1,$2,$3) as user_id',[input.issuer,input.subject,input.userId]);
+    if(activated.rows[0]?.user_id!==input.userId){shadowCognitoDiagnostic('access_session_first_login_activation');throw Error();}
     mapping=await client.query("select 1 from public.authentication_identity_links where provider='cognito' and issuer=$1 and subject=$2 and tracepoint_user_id=$3 and state='active' for update",[input.issuer,input.subject,input.userId]);
    }
    if(mapping.rowCount!==1){shadowCognitoDiagnostic('access_session_mapping_lock',{matchCount:mapping.rowCount??0});throw Error();}

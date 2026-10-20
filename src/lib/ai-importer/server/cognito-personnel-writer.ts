@@ -2,7 +2,7 @@ import "server-only";
 
 import { inviteCognitoUser } from "@/lib/authentication/cognito-invite";
 import { setCognitoMembershipActive } from "@/lib/authentication/cognito-membership-lifecycle";
-import { issueActivationEmail } from "@/lib/tracepoint/activation";
+import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import type { PersonnelImportWriter } from "./execution";
 
@@ -54,13 +54,10 @@ export async function writeCognitoPersonnel(
           active: true,
         });
         if (existingIdentity.identity_state === "pending") {
-          await issueActivationEmail({
-            departmentId,
-            userId: String(existingIdentity.user_id),
-            email: String(value.email),
-            fullName,
-            siteUrl,
+          await resendPendingCognitoActivation({
             actorUserId: actorId,
+            departmentId,
+            targetUserId: String(existingIdentity.user_id),
           });
           invitationSent = true;
         }
@@ -121,13 +118,10 @@ export async function writeCognitoPersonnel(
       active: value.active,
     });
     if (value.active && updated.data === "pending") {
-      await issueActivationEmail({
-        departmentId,
-        userId: row.matchId,
-        email: String(value.email),
-        fullName,
-        siteUrl,
+      await resendPendingCognitoActivation({
         actorUserId: actorId,
+        departmentId,
+        targetUserId: row.matchId,
       });
       invitationSent = true;
     }
