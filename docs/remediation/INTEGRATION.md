@@ -82,3 +82,6 @@ B8 merge note: clean merge (cut from the integration head `9ba56a3`).
 | `claude/fix-b11-admin-correctness` | `b8b3475e29ecc8e5f3f69a91680ab1badd3f9173` | — |
 
 B11 merge note: clean merge on top of B8. On the merged tree: `tsc` 0 errors; application tests 724/728 (the 4 are the sandbox `xlsx` stub); scripts 350/351 (SheetJS round trip). B11 left 33 armory/firearm backup files for after B8; `scripts/repository-hygiene.test.mjs` excludes exactly those paths until they are removed.
+| `claude/fix-adm07-invited-reset` | `9a7a2346b842bc1fd22446675a03531fd616904c` | — |
+
+ADM-07 merge note: clean merge on top of B11. It replaces B11 S23 step 3 with "S23-3 (revised)" in the ADM-07 record.
