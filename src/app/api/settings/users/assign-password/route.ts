@@ -7,7 +7,7 @@ import {
 } from "@/lib/tracepoint/server-access";
 import { assignCognitoPassword } from "@/lib/authentication/cognito-password-lifecycle";
 import { cognitoPasswordRejection } from "@/lib/authentication/cognito-admin-core";
-import { COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
+import { COGNITO_PASSWORD_MIN_LENGTH, COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
 
 type AssignPasswordRequest = {
   departmentId?: string;
@@ -38,12 +38,12 @@ export async function POST(request: NextRequest) {
     }
 
     const awsNative = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native";
-    if (awsNative ? !isCognitoCompliantPassword(password) : password.length < 8) {
+    if (awsNative ? !isCognitoCompliantPassword(password) : password.length < COGNITO_PASSWORD_MIN_LENGTH) {
       return NextResponse.json(
         {
           error: awsNative
             ? COGNITO_PASSWORD_REQUIREMENTS
-            : "Password must be at least 8 characters.",
+            : `Password must be at least ${COGNITO_PASSWORD_MIN_LENGTH} characters.`,
         },
         { status: 400 },
       );

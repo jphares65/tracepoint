@@ -238,9 +238,10 @@ export async function POST(request: NextRequest) {
           department_id: departmentId,
           user_id: targetUser.id,
           badge_number: badgeNumber,
-          rank_title: rankTitle || null,
-          unit_name: unitName || null,
-          employee_number: employeeNumber || null,
+          // A blank field keeps the stored value (omitted columns are not written).
+          ...(rankTitle ? { rank_title: rankTitle } : {}),
+          ...(unitName ? { unit_name: unitName } : {}),
+          ...(employeeNumber ? { employee_number: employeeNumber } : {}),
           ...membershipPlan.status,
           activation_status:
             createdAuthUser ||

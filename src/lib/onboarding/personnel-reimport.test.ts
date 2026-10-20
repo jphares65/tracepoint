@@ -109,3 +109,33 @@ test("ADM-04 AI importer (bridge): an update without Active writes no status and
   assert.equal("deactivated_at" in (membership.record ?? {}), false);
   assert.equal(calls.some((call) => call.table === "department_membership_roles"), false);
 });
+
+test("F1 classic route (bridge): blank rank, unit and employee number are not written over stored values", () => {
+  assert.doesNotMatch(route, /rank_title: rankTitle \|\| null,\s*unit_name: unitName \|\| null,\s*employee_number: employeeNumber \|\| null,\s*\.\.\.membershipPlan\.status/);
+  assert.match(route, /badge_number: badgeNumber,[\s\S]*\.\.\.\(rankTitle \? \{ rank_title: rankTitle \} : \{\}\),\s*\.\.\.\(unitName \? \{ unit_name: unitName \} : \{\}\),\s*\.\.\.\(employeeNumber \? \{ employee_number: employeeNumber \} : \{\}\),\s*\.\.\.membershipPlan\.status,/);
+  // Badge number stays required, so it is never blank here.
+  assert.match(route, /if \(!departmentId \|\| !firstName \|\| !lastName \|\| !email \|\| !badgeNumber\)/);
+});
+
+test("F1 AI importer (bridge): an update with blank fields does not write them", async () => {
+  const calls: Array<{ table: string; record?: Record<string, unknown> }> = [];
+  const query = (table: string) => {
+    const chain = {
+      insert() { return chain; },
+      update(record: Record<string, unknown>) { calls.push({ table, record }); return chain; },
+      eq() { return chain; },
+      then(resolve: (value: { data: unknown; error: null }) => unknown) { return Promise.resolve(resolve({ data: null, error: null })); },
+    };
+    return chain;
+  };
+  const payload: ImportPayload = {
+    file: { name: "roster.csv", size: 1, sha256: "e".repeat(64), type: "text/csv", sheetCount: 1 },
+    domain: "personnel", sheetName: "Roster", headerRow: 1, matrix: [["Badge"]], mappings: [],
+  };
+  const row: PreviewRow = { rowNumber: 2, action: "UPDATE", status: "valid", matchId: "user-a", issues: [], changes: [{ field: "fullName", label: "Full name", previous: "Pat", next: "Pat Renamed" }],
+    values: { badgeNumber: "101", fullName: "Pat Renamed", email: "pat@example.test", phone: "", rankTitle: "", unitName: "", employeeNumber: "", active: null } };
+  const result = await executeApprovedImport({ from: query }, payload, "dept-a", "actor-a", [row]);
+  assert.equal(result.failed, 0);
+  assert.deepEqual(calls.find((call) => call.table === "department_memberships")?.record, { badge_number: "101" });
+  assert.equal("phone" in (calls.find((call) => call.table === "profiles")?.record ?? {}), false);
+});

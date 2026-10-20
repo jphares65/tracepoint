@@ -38,3 +38,13 @@ test("NEW-ADM-A: only the initial PKCE callback may activate a pending identity"
   assert.match(transport, /createCognitoSessionEstablisher\(configuration\.verification, initialMapping, initialSessions, refresh\)/);
   assert.match(transport, /createCognitoRefreshRotator\(\s*configuration\.verification,\s*mapping,\s*sessions,/);
 });
+
+test("NEW-ADM-F: outside Support Mode for the agency, the Platform page explains how to send activation instead of offering the button", () => {
+  const page = source("../../app/platform/[departmentId]/page.tsx");
+  const button = source("../../app/platform/[departmentId]/ActivationButton.tsx");
+  assert.match(page, /const requiresSupportMode =\s*process\.env\.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native" &&\s*!\(cookieStore\.get\("tracepoint_support_department_id"\)\?\.value === departmentId &&\s*cookieStore\.get\("tracepoint_department_id"\)\?\.value === departmentId\);/);
+  assert.match(page, /<ActivationButton[\s\S]*requiresSupportMode=\{requiresSupportMode\}/);
+  assert.match(button, /if \(requiresSupportMode\) \{\s*return \([\s\S]*Use Access Agency to enter Support Mode for this agency, then send the activation\.[\s\S]*\);\s*\}[\s\S]*async function sendActivation/);
+  // Guidance only: the activation route's authorization is unchanged.
+  assert.match(activation, /if \(access\.context\.departmentId !== departmentId\) return NextResponse\.json\(\{ error: "The active agency does not match this request\." \}, \{ status: 403 \}\);/);
+});
