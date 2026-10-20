@@ -8,6 +8,7 @@ import {
   Activity,
   BarChart3,
   Boxes,
+  Bell,
   BellRing,
   CalendarRange,
   ChevronDown,
@@ -39,6 +40,7 @@ import {
   type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { hasEnabledFeatures, MODULE_FEATURES } from "@/lib/tracepoint/feature-gates";
 
 type TracePointShellProps = {
   activePage: string;
@@ -52,7 +54,7 @@ type NavigationLeaf = {
   href: string;
   icon?: typeof House;
   requirement?: PermissionRequirement;
-  featureCode?: string;
+  features?: readonly string[];
 };
 
 type NavigationGroup = {
@@ -66,6 +68,7 @@ type NavigationEntry = NavigationLeaf | NavigationGroup;
 
 const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
+  { label: "My Notifications", href: "/notifications", icon: Bell },
   {
     label: "Command",
     icon: Activity,
@@ -73,14 +76,14 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Command Dashboard",
         href: "/command-dashboard",
-        featureCode: "command_dashboard",
+        features: MODULE_FEATURES.commandDashboard,
         icon: Activity,
         requirement: { anyOf: ["view_command_dashboard"] },
       },
       {
         label: "Analytics",
         href: "/analytics",
-        featureCode: "analytics",
+        features: MODULE_FEATURES.analytics,
         icon: BarChart3,
         requirement: { anyOf: ["view_analytics"] },
       },
@@ -100,19 +103,19 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Department Firearms",
         href: "/firearms",
-        featureCode: "firearms",
+        features: MODULE_FEATURES.firearms,
         icon: Crosshair,
       },
       {
         label: "Personally Owned Rifles",
         href: "/firearms/personal-rifles",
-        featureCode: "firearms",
+        features: MODULE_FEATURES.firearms,
         icon: ShieldCheck,
       },
       {
         label: "Maintenance & Inspections",
         href: "/firearms/inspections",
-        featureCode: "firearms",
+        features: MODULE_FEATURES.firearms,
         icon: ShieldCheck,
         requirement: {
           anyOf: [
@@ -125,7 +128,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Ammunition",
         href: "/firearms/ammunition",
-        featureCode: "ammunition",
+        features: MODULE_FEATURES.ammunition,
         icon: Crosshair,
         requirement: {
           anyOf: ["manage_firearms", "view_command_dashboard"],
@@ -134,7 +137,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Reconciliation",
         href: "/firearms/ammunition/reconciliation",
-        featureCode: "ammunition",
+        features: MODULE_FEATURES.ammunition,
         icon: ShieldCheck,
         requirement: {
           anyOf: ["manage_firearms", "view_command_dashboard"],
@@ -149,19 +152,19 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Range Days",
         href: "/range-days",
-        featureCode: "range_training",
+        features: MODULE_FEATURES.rangeTraining,
         icon: CalendarRange,
       },
       {
         label: "Agency Training",
         href: "/agency-training",
-        featureCode: "range_training",
+        features: MODULE_FEATURES.rangeTraining,
         icon: GraduationCap,
       },
       {
         label: "Training Alerts",
         href: "/training-alerts",
-        featureCode: "range_training",
+        features: MODULE_FEATURES.rangeTraining,
         icon: BellRing,
         requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS },
       },
@@ -174,13 +177,13 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Qualifications",
         href: "/qualifications",
-        featureCode: "qualifications",
+        features: MODULE_FEATURES.qualifications,
         icon: ShieldCheck,
       },
       {
         label: "Certifications",
         href: "/training/certifications",
-        featureCode: "certifications",
+        features: MODULE_FEATURES.certifications,
         icon: ShieldCheck,
       },
     ],
@@ -192,7 +195,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Equipment",
         href: "/equipment",
-        featureCode: "equipment_readiness",
+        features: MODULE_FEATURES.equipment,
         icon: Boxes,
       },
       {
@@ -226,7 +229,7 @@ const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Requests & Approvals",
         href: "/off-duty-firearms",
-        featureCode: "off_duty",
+        features: MODULE_FEATURES.offDuty,
         icon: Shield,
       },
     ],
@@ -267,14 +270,9 @@ function getVisibleChildren(
   group: NavigationGroup,
   permissions: TracePointPermission[],
   enabledFeatures: Set<string>,
-  isSuperAdmin: boolean,
 ) {
   return group.children.filter((child) => {
-    if (
-      child.featureCode &&
-      !isSuperAdmin &&
-      !enabledFeatures.has(child.featureCode)
-    ) {
+    if (!hasEnabledFeatures(enabledFeatures, child.features)) {
       return false;
     }
 
@@ -300,9 +298,7 @@ function getNavItems(
 
     if (
       !isNavigationGroup(item) &&
-      item.featureCode &&
-      !isSuperAdmin &&
-      !enabledFeatures.has(item.featureCode)
+      !hasEnabledFeatures(enabledFeatures, item.features)
     ) {
       return false;
     }
@@ -325,7 +321,6 @@ function getNavItems(
         item,
         permissions,
         enabledFeatures,
-        isSuperAdmin,
       ).length > 0
     );
   });
@@ -371,13 +366,11 @@ function groupContainsPath(
   group: NavigationGroup,
   permissions: TracePointPermission[],
   enabledFeatures: Set<string>,
-  isSuperAdmin: boolean,
 ) {
   return getVisibleChildren(
     group,
     permissions,
     enabledFeatures,
-    isSuperAdmin,
   ).some((child) =>
     isActiveRoute(pathname, child.href),
   );
@@ -411,7 +404,6 @@ function NavigationLinks({
         item,
         permissions,
         enabledFeatureSet,
-        isSuperAdmin,
       ),
   )?.label;
   const [openGroups, setOpenGroups] = useState<Set<string>>(
@@ -483,14 +475,12 @@ function NavigationLinks({
             item,
             permissions,
             enabledFeatureSet,
-            isSuperAdmin,
           );
           const active = groupContainsPath(
         pathname,
         item,
         permissions,
         enabledFeatureSet,
-        isSuperAdmin,
       );
           const open = openGroups.has(item.label);
 

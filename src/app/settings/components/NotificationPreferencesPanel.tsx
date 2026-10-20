@@ -63,7 +63,16 @@ function ToggleRow({
   );
 }
 
-export default function NotificationPreferencesPanel() {
+// Every member's own preferences. Rendered in Settings and on the Operational
+// Inbox (/notifications), which every role can open; the Inbox passes its
+// alert sources so per-source Inbox filtering stays editable there.
+export default function NotificationPreferencesPanel({
+  sources = [],
+  onSaved,
+}: {
+  sources?: readonly string[];
+  onSaved?: () => void;
+} = {}) {
   const [preferences, setPreferences] =
     useState<NotificationPreferences>(DEFAULT_PREFERENCES);
   const [loading, setLoading] = useState(true);
@@ -152,6 +161,7 @@ export default function NotificationPreferencesPanel() {
         tone: "success",
         text: "Email notification preferences saved.",
       });
+      onSaved?.();
     } catch (error) {
       setMessage({
         tone: "error",
@@ -346,6 +356,38 @@ export default function NotificationPreferencesPanel() {
           })}
         </div>
       </section>
+
+      {sources.length > 0 ? (
+        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+          <h2 className="text-sm font-semibold text-white">Inbox Sources</h2>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Choose which sources appear in your Operational Inbox.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {sources.map((source) => (
+              <label
+                key={source}
+                className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300"
+              >
+                <input
+                  type="checkbox"
+                  checked={preferences.source_preferences[source] !== false}
+                  onChange={(event) =>
+                    setPreferences((current) => ({
+                      ...current,
+                      source_preferences: {
+                        ...current.source_preferences,
+                        [source]: event.target.checked,
+                      },
+                    }))
+                  }
+                />
+                {source}
+              </label>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 px-4 py-4 sm:px-5">
         <p className="text-sm font-semibold text-amber-100">

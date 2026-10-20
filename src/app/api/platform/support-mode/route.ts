@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { resolvePlatformAdminAccess } from "@/lib/platform/admin-access";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -136,10 +137,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Support mode entry", error, "Support mode could not be validated and audited.");
   }
 
   if (!department) {
@@ -158,10 +156,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (auditError) {
-    return NextResponse.json(
-      { error: `Support mode could not be audited: ${auditError.message}` },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Support mode entry audit", auditError, "Support mode could not be audited.");
   }
 
   const response = NextResponse.json({
@@ -247,11 +242,10 @@ export async function DELETE(request: NextRequest) {
   }
 
   const response = auditErrorMessage
-    ? NextResponse.json(
-        {
-          error: `Support mode was ended, but the exit could not be audited: ${auditErrorMessage}`,
-        },
-        { status: 500 },
+    ? unexpectedErrorResponse(
+        "Support mode exit audit",
+        auditErrorMessage,
+        "Support mode was ended, but the exit could not be audited.",
       )
     : NextResponse.json({ ok: true });
 

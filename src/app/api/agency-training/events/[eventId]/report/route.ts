@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
+import { csvCell } from "@/lib/format/csv";
 type RouteContext = { params: Promise<{ eventId: string }> };
-function csv(value: unknown) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
+function csv(value: unknown) { return csvCell(value, true); }
 export async function GET(_request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);

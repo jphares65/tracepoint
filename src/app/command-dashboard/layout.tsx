@@ -3,9 +3,9 @@ import type { ReactNode } from "react";
 
 import {
   hasAnyServerPermission,
-  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { hasEnabledFeatures, MODULE_FEATURES } from "@/lib/tracepoint/feature-gates";
 
 export default async function CommandDashboardLayout({
   children,
@@ -22,13 +22,7 @@ export default async function CommandDashboardLayout({
     redirect("/unauthorized?from=/command-dashboard");
   }
 
-  const featureError = requireServerFeature(
-    resolved.context,
-    "command_dashboard",
-    "Command Dashboard",
-  );
-
-  if (featureError) {
+  if (!hasEnabledFeatures(resolved.context.enabledFeatures, MODULE_FEATURES.commandDashboard)) {
     redirect("/");
   }
 

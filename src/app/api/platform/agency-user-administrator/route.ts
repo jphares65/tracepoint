@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { PlatformAdminOperationError, resolvePlatformAdminAccess } from "@/lib/platform/admin-access";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 type RequestBody = {
   departmentId?: string;
@@ -35,11 +36,6 @@ export async function POST(request: NextRequest) {
     if (error instanceof PlatformAdminOperationError && error.code === "P0002") {
       return NextResponse.json({ error: "Department membership was not found." }, { status: 404 });
     }
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Administrator role could not be assigned.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return unexpectedErrorResponse("Assign agency administrator", error, "Administrator role could not be assigned.");
   }
 }

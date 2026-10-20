@@ -63,6 +63,12 @@ import {
   buildUpcomingOperationalEvents,
   type UpcomingOperationalEvent,
 } from "@/lib/tracepoint/upcoming-operational-events";
+import {
+  cardLoadFailed,
+  dashboardLoadFailures,
+  readDashboardSource,
+  type CommandDashboardSource,
+} from "@/lib/tracepoint/command-dashboard-sources";
 
 type PilotPersonnel = {
   id: string;
@@ -331,74 +337,86 @@ async function loadDashboardData() {
     fetch("/api/pilot/performance-summary", { cache: "no-store" }),
   ]);
 
-  const personnelPayload = personnelResponse.ok
-    ? ((await personnelResponse.json()) as { personnel?: PilotPersonnel[] })
-    : {};
+  const failedSources = new Set<CommandDashboardSource>();
+  const personnelPayload =
+    (await readDashboardSource<{ personnel?: PilotPersonnel[] }>(
+      "personnel",
+      personnelResponse,
+      failedSources,
+    )) ?? {};
 
-  const firearmsPayload = firearmsResponse.ok
-    ? ((await firearmsResponse.json()) as { firearms?: LiveFirearm[] })
-    : {};
+  const firearmsPayload =
+    (await readDashboardSource<{ firearms?: LiveFirearm[] }>(
+      "firearms",
+      firearmsResponse,
+      failedSources,
+    )) ?? {};
 
-  const workspacePayload = workspaceResponse.ok
-    ? ((await workspaceResponse.json()) as {
-        workspace?: Partial<StoredRangeDayWorkspace> | null;
-      })
-    : {};
+  const workspacePayload =
+    (await readDashboardSource<{
+      workspace?: Partial<StoredRangeDayWorkspace> | null;
+    }>("workspace", workspaceResponse, failedSources)) ?? {};
 
-  const rulesPayload = rulesResponse.ok
-    ? ((await rulesResponse.json()) as {
-        rules?: {
-          analytics_dashboard?: unknown;
-        };
-      })
-    : {};
-  const certificationReadinessPayload =
-    certificationReadinessResponse.ok
-      ? ((await certificationReadinessResponse.json()) as CertificationReadinessPayload)
-      : {
-          summary: {
-            totalRequiredChecks: 0,
-            current: 0,
-            dueSoon: 0,
-            expired: 0,
-            missing: 0,
-            ready: 0,
-            notReady: 0,
-            readinessPercent: 100,
-          },
-          rows: [],
-        };
-
-
-  const performanceSummaryPayload: PerformanceSummaryPayload = performanceSummaryResponse.ok
-    ? ((await performanceSummaryResponse.json()) as PerformanceSummaryPayload)
-    : {
-        metrics: {},
-        qualificationTrends: [],
-        drillTrends: [],
-        broadCategoryTrends: [],
+  const rulesPayload =
+    (await readDashboardSource<{
+      rules?: {
+        analytics_dashboard?: unknown;
       };
+    }>("rules", rulesResponse, failedSources)) ?? {};
+  const certificationReadinessPayload =
+    (await readDashboardSource<CertificationReadinessPayload>(
+      "certifications",
+      certificationReadinessResponse,
+      failedSources,
+    )) ?? {
+      summary: {
+        totalRequiredChecks: 0,
+        current: 0,
+        dueSoon: 0,
+        expired: 0,
+        missing: 0,
+        ready: 0,
+        notReady: 0,
+        readinessPercent: 100,
+      },
+      rows: [],
+    };
+
+
+  const performanceSummaryPayload: PerformanceSummaryPayload =
+    (await readDashboardSource<PerformanceSummaryPayload>(
+      "performance",
+      performanceSummaryResponse,
+      failedSources,
+    )) ?? {
+      metrics: {},
+      qualificationTrends: [],
+      drillTrends: [],
+      broadCategoryTrends: [],
+    };
 
   const equipmentReadinessPayload =
-    equipmentReadinessResponse.ok
-      ? ((await equipmentReadinessResponse.json()) as EquipmentReadinessPayload)
-      : {
-          scope: "department" as const,
-          summary: {
-            totalRequiredChecks: 0,
-            current: 0,
-            dueSoon: 0,
-            expired: 0,
-            inspectionDueSoon: 0,
-            inspectionOverdue: 0,
-            missing: 0,
-            outOfService: 0,
-            ready: 0,
-            notReady: 0,
-            readinessPercent: 100,
-          },
-          rows: [],
-        };
+    (await readDashboardSource<EquipmentReadinessPayload>(
+      "equipment",
+      equipmentReadinessResponse,
+      failedSources,
+    )) ?? {
+      scope: "department" as const,
+      summary: {
+        totalRequiredChecks: 0,
+        current: 0,
+        dueSoon: 0,
+        expired: 0,
+        inspectionDueSoon: 0,
+        inspectionOverdue: 0,
+        missing: 0,
+        outOfService: 0,
+        ready: 0,
+        notReady: 0,
+        readinessPercent: 100,
+      },
+      rows: [],
+    };
   return {
     personnel: Array.isArray(personnelPayload.personnel)
       ? personnelPayload.personnel
@@ -415,6 +433,7 @@ async function loadDashboardData() {
     certificationReadiness: certificationReadinessPayload,
     equipmentReadiness: equipmentReadinessPayload,
     performanceSummary: performanceSummaryPayload,
+    failedSources,
   };
 }
 
@@ -681,6 +700,13 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [failedSources, setFailedSources] = useState<
+    ReadonlySet<CommandDashboardSource>
+  >(new Set());
+  const loadFailures = useMemo(
+    () => dashboardLoadFailures(failedSources, featureSet),
+    [failedSources, featureSet],
+  );
   const [addCardsOpen, setAddCardsOpen] = useState(false);
   const editor = useVisualConfigurationEditor({
     configuration: analyticsDashboard,
@@ -720,6 +746,7 @@ export default function DashboardPage() {
         setCertificationReadiness(data.certificationReadiness);
         setEquipmentReadiness(data.equipmentReadiness);
         setPerformanceSummary(data.performanceSummary);
+        setFailedSources(data.failedSources);
       } catch (error) {
         console.error("Could not load command dashboard.", error);
         if (mounted) {
@@ -1308,6 +1335,36 @@ export default function DashboardPage() {
       : {}),
   };
 
+  (Object.keys(dashboardCards) as CommandDashboardCardKey[]).forEach((key) => {
+    if (!cardLoadFailed(key, loadFailures)) return;
+    dashboardCards[key] = (
+      <PulseCard
+        title={DASHBOARD_CARD_DETAILS[key].title}
+        value="—"
+        label="Data unavailable"
+        detail="This card's data could not be loaded. Refresh the page to try again."
+        icon={AlertTriangle}
+        tone="red"
+      />
+    );
+  });
+
+  const sourceUnavailable = (...sources: CommandDashboardSource[]) =>
+    sources.some((source) => loadFailures.has(source));
+  const unavailableSourceLabels = (
+    [
+      ["personnel", "Personnel", hasQualifications],
+      ["performance", "Qualification and range summary", hasQualifications || hasRangeTraining],
+      ["workspace", "Range records", hasRangeTraining || hasFirearms || hasQualifications],
+      ["certifications", "Certification readiness", hasCertifications],
+      ["equipment", "Equipment readiness", hasEquipment],
+      ["firearms", "Firearms", hasFirearms],
+      ["rules", "Dashboard layout", true],
+    ] as const
+  )
+    .filter(([source, , enabled]) => enabled && loadFailures.has(source))
+    .map(([, label]) => label);
+
   const dashboardSections: Record<CommandDashboardSectionKey, ReactNode> = {
     critical_attention: (
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
@@ -1328,7 +1385,13 @@ export default function DashboardPage() {
         </div>
 
         {attentionItems.length === 0 ? (
-          <EmptyPanel message="No current readiness or performance exceptions were identified in the enabled modules." />
+          <EmptyPanel
+            message={
+              unavailableSourceLabels.length > 0
+                ? "No exceptions were found in the data that loaded, but some sources could not be loaded. This list may be incomplete."
+                : "No current readiness or performance exceptions were identified in the enabled modules."
+            }
+          />
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
             {attentionItems.map((item) => {
@@ -1415,7 +1478,9 @@ export default function DashboardPage() {
               ? [
                   "Range & Training",
                   "/range-days",
-                  `${authoritativeRange.activeRangeDays} active range days`,
+                  sourceUnavailable("performance")
+                    ? "Data unavailable"
+                    : `${authoritativeRange.activeRangeDays} active range days`,
                 ]
               : null,
             hasRangeTraining && commandOperations?.agencyTraining.available
@@ -1429,14 +1494,18 @@ export default function DashboardPage() {
               ? [
                   "Qualifications",
                   "/qualifications",
-                  `${qualificationResults.length} qualification results`,
+                  sourceUnavailable("workspace")
+                    ? "Data unavailable"
+                    : `${qualificationResults.length} qualification results`,
                 ]
               : null,
             hasCertifications
               ? [
                   "Certifications",
                   "/training/certifications",
-                  certificationReadiness.summary.totalRequiredChecks === 0
+                  sourceUnavailable("certifications")
+                    ? "Data unavailable"
+                    : certificationReadiness.summary.totalRequiredChecks === 0
                     ? "No requirements configured"
                     : `${certificationReadiness.summary.notReady} readiness exceptions`,
                 ]
@@ -1445,7 +1514,9 @@ export default function DashboardPage() {
               ? [
                   "Firearms",
                   "/firearms",
-                  `${firearms.length} active firearms`,
+                  sourceUnavailable("firearms")
+                    ? "Data unavailable"
+                    : `${firearms.length} active firearms`,
                 ]
               : null,
             hasFleet && commandOperations?.fleet.available
@@ -1459,7 +1530,9 @@ export default function DashboardPage() {
               ? [
                   "Equipment Readiness",
                   "/equipment",
-                  equipmentReadiness.summary.totalRequiredChecks === 0
+                  sourceUnavailable("equipment")
+                    ? "Data unavailable"
+                    : equipmentReadiness.summary.totalRequiredChecks === 0
                     ? "No requirements configured"
                     : `${equipmentReadiness.summary.notReady} readiness exceptions`,
                 ]
@@ -1468,7 +1541,9 @@ export default function DashboardPage() {
               ? [
                   "Analytics",
                   "/analytics",
-                  `${declining.length} declining trends`,
+                  sourceUnavailable("performance")
+                    ? "Data unavailable"
+                    : `${declining.length} declining trends`,
                 ]
               : null,
           ]
@@ -1679,6 +1754,14 @@ export default function DashboardPage() {
         {loadError && (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] text-red-200">
             {loadError}
+          </div>
+        )}
+
+        {!loadError && unavailableSourceLabels.length > 0 && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-[12px] text-red-200">
+            Some command dashboard data could not be loaded:{" "}
+            {unavailableSourceLabels.join(", ")}. Affected cards show
+            &quot;Data unavailable&quot;. Refresh the page to try again.
           </div>
         )}
 

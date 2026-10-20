@@ -2,9 +2,9 @@
 import type { ReactNode } from "react";
 
 import {
-  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { hasEnabledFeatures, MODULE_FEATURES } from "@/lib/tracepoint/feature-gates";
 
 export default async function OffDutyLayout({
   children,
@@ -17,13 +17,7 @@ export default async function OffDutyLayout({
     redirect("/");
   }
 
-  const featureError = requireServerFeature(
-    resolved.context,
-    "off_duty",
-    "Off-Duty Firearms",
-  );
-
-  if (featureError) {
+  if (!hasEnabledFeatures(resolved.context.enabledFeatures, MODULE_FEATURES.offDuty)) {
     redirect("/");
   }
 

@@ -16,6 +16,7 @@ import {
 } from "@/lib/authentication/production-session-diagnostic";
 import { resolvePostgresAccess, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
+import { hasEnabledFeatures } from "@/lib/tracepoint/feature-gates";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { resolveTenantContext } from "@/lib/tracepoint/tenant-context";
 
@@ -656,7 +657,7 @@ export function hasServerFeature(
   context: ServerAccessContext,
   featureCode: string,
 ) {
-  return context.enabledFeatures.includes(featureCode);
+  return hasEnabledFeatures(context.enabledFeatures, [featureCode]);
 }
 
 export function featureDisabledResponse(

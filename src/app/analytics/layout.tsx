@@ -2,9 +2,9 @@
 import type { ReactNode } from "react";
 
 import {
-  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { hasEnabledFeatures, MODULE_FEATURES } from "@/lib/tracepoint/feature-gates";
 
 export default async function AnalyticsLayout({
   children,
@@ -17,23 +17,7 @@ export default async function AnalyticsLayout({
     redirect("/");
   }
 
-  const analyticsError = requireServerFeature(
-    resolved.context,
-    "analytics",
-    "Analytics",
-  );
-
-  if (analyticsError) {
-    redirect("/");
-  }
-
-  const rangeError = requireServerFeature(
-    resolved.context,
-    "range_training",
-    "Range & Training",
-  );
-
-  if (rangeError) {
+  if (!hasEnabledFeatures(resolved.context.enabledFeatures, MODULE_FEATURES.analytics)) {
     redirect("/");
   }
 
