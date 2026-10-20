@@ -25,3 +25,15 @@ export function equipmentIdentifierConflict(errorCode: string | undefined) {
     ? "An equipment record with this serial or asset number already exists."
     : null;
 }
+
+// Calendar dates (issue, expiration, inspection) are YYYY-MM-DD; blank clears.
+export function equipmentDate(value: unknown, label: string) {
+  if (value === null || value === undefined || (typeof value === "string" && !value.trim())) return null;
+  const valueText = typeof value === "string" ? value.trim() : "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valueText);
+  const date = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+  if (!match || !date || date.toISOString().slice(0, 10) !== valueText) {
+    throw new Error(`${label} must be a valid date (YYYY-MM-DD).`);
+  }
+  return valueText;
+}

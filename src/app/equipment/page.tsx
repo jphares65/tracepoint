@@ -25,7 +25,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate } from "@/lib/format/date";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
-import { groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
+import { equipmentCustodyLabel, equipmentHolderName, groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
 
 type ReadinessStatus =
   | "current"
@@ -158,6 +158,7 @@ type Member = {
   badgeNumber?: string | null;
   rankTitle?: string | null;
   unitName?: string | null;
+  isActive?: boolean;
 };
 
 type EquipmentVehicle = {
@@ -275,6 +276,8 @@ export default function EquipmentPage() {
     useState<EquipmentRequirement[]>([]);
   const [assets, setAssets] = useState<EquipmentAsset[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  // Separated members who still hold equipment; not offered for new assignment.
+  const [inactiveHolders, setInactiveHolders] = useState<Member[]>([]);
   const [vehicles, setVehicles] = useState<EquipmentVehicle[]>([]);
 
   const [canManage, setCanManage] = useState(false);
@@ -350,6 +353,7 @@ const [typeForm, setTypeForm] = useState({
     nextInspectionDate: "",
     notes: "",
     lifecycleStatus: "active" as EquipmentAsset["lifecycle_status"],
+    removalReason: "",
   });
 
   async function loadAll() {
@@ -414,6 +418,7 @@ const [typeForm, setTypeForm] = useState({
         (await assetsResponse.json()) as {
           items?: EquipmentAsset[];
           members?: Member[];
+          inactiveHolders?: Member[];
           vehicles?: EquipmentVehicle[];
           canManage?: boolean;
           canViewDepartment?: boolean;
@@ -428,6 +433,7 @@ const [typeForm, setTypeForm] = useState({
       setAssets(assetsPayload.items ?? []);
 
       setMembers(assetsPayload.members ?? []);
+      setInactiveHolders(assetsPayload.inactiveHolders ?? []);
       setVehicles(assetsPayload.vehicles ?? []);
       setCanViewDepartment(Boolean(assetsPayload.canViewDepartment));
 
@@ -489,12 +495,16 @@ const [typeForm, setTypeForm] = useState({
   const memberMap = useMemo(
     () =>
       new Map(
-        members.map((member) => [
+        [...members, ...inactiveHolders].map((member) => [
           member.userId,
           member,
         ]),
       ),
-    [members],
+    [inactiveHolders, members],
+  );
+  const vehicleMap = useMemo(
+    () => new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])),
+    [vehicles],
   );
   const availableRanks = useMemo(
     () =>
@@ -574,9 +584,10 @@ const filteredReadiness = useMemo(() => {
     >();
 
     const normalizedSearch = search.trim().toLowerCase();
-    const assetsByUser = groupCurrentOfficerAssignments(members, assets);
+    const holders = [...members, ...inactiveHolders];
+    const assetsByUser = groupCurrentOfficerAssignments(holders, assets);
 
-    members.forEach((member) => {
+    holders.forEach((member) => {
       const assignedAssets = assetsByUser.get(member.userId) ?? [];
       const memberText = [member.fullName, member.badgeNumber, member.rankTitle, member.unitName]
         .filter(Boolean).join(" ").toLowerCase();
@@ -592,7 +603,7 @@ const filteredReadiness = useMemo(() => {
       if ((canViewDepartment || assignedAssets.length > 0 || hasMatchingReadiness) && matchesSearch && matchesStatus) {
         groups.set(member.userId, {
           userId: member.userId,
-          officerName: member.fullName,
+          officerName: equipmentHolderName(member),
           badgeNumber: member.badgeNumber,
           rankTitle: member.rankTitle,
           unitName: member.unitName,
@@ -681,7 +692,7 @@ const filteredReadiness = useMemo(() => {
 
       return a.officerName.localeCompare(b.officerName);
     });
-  }, [assets, canViewDepartment, filteredReadiness, members, search, statusFilter, typeMap]);
+  }, [assets, canViewDepartment, filteredReadiness, inactiveHolders, members, search, statusFilter, typeMap]);
 
 
   async function saveType() {
@@ -923,6 +934,7 @@ const filteredReadiness = useMemo(() => {
         nextInspectionDate: "",
         notes: "",
         lifecycleStatus: "active",
+        removalReason: "",
       });
 
       setShowAssetForm(false);
@@ -959,6 +971,7 @@ const filteredReadiness = useMemo(() => {
       nextInspectionDate: asset.next_inspection_date ?? "",
       notes: asset.notes ?? "",
       lifecycleStatus: asset.lifecycle_status,
+      removalReason: "",
     });
     setError("");
     setSuccess("");
@@ -974,10 +987,12 @@ const filteredReadiness = useMemo(() => {
   ) {
     let removalReason = "";
 
-    if (lifecycleStatus === "removed") {
+    if (lifecycleStatus !== "active") {
       removalReason =
         window.prompt(
-          "Enter the reason this equipment is being removed:",
+          lifecycleStatus === "removed"
+            ? "Enter the reason this equipment is being removed:"
+            : "Enter the reason this equipment is out of service:",
         )?.trim() ?? "";
 
       if (!removalReason) return;
@@ -998,7 +1013,7 @@ const filteredReadiness = useMemo(() => {
             id: asset.id,
             lifecycleStatus,
             removalReason:
-              lifecycleStatus === "removed"
+              lifecycleStatus !== "active"
                 ? removalReason
                 : undefined,
           }),
@@ -1109,7 +1124,7 @@ const filteredReadiness = useMemo(() => {
                   type="button"
                   onClick={() => {
                     setEditingAsset(null);
-                    setAssetForm({ equipmentTypeId: "", assignedUserId: "", assignedVehicleId: "", assignedLocation: "", manufacturer: "", model: "", serialNumber: "", assetNumber: "", lotNumber: "", issueDate: "", expirationDate: "", lastInspectionDate: "", nextInspectionDate: "", notes: "", lifecycleStatus: "active" });
+                    setAssetForm({ equipmentTypeId: "", assignedUserId: "", assignedVehicleId: "", assignedLocation: "", manufacturer: "", model: "", serialNumber: "", assetNumber: "", lotNumber: "", issueDate: "", expirationDate: "", lastInspectionDate: "", nextInspectionDate: "", notes: "", lifecycleStatus: "active", removalReason: "" });
                     setShowAssetForm(true);
                   }}
                   className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
@@ -1350,9 +1365,6 @@ const filteredReadiness = useMemo(() => {
                       const member = asset.assigned_user_id
                         ? memberMap.get(asset.assigned_user_id)
                         : undefined;
-                      const vehicle = asset.assigned_vehicle_id
-                        ? vehicles.find((item) => item.id === asset.assigned_vehicle_id)
-                        : undefined;
 
                       const readinessStatus =
                         assetReadinessMap.get(asset.id);
@@ -1374,8 +1386,8 @@ const filteredReadiness = useMemo(() => {
                           </td>
 
                           <td className="px-4 py-3">
-                            <p className="text-xs font-medium text-slate-300">
-                              {member?.fullName ?? (vehicle ? `Vehicle ${vehicle.unit_number}` : asset.assigned_location ?? "Unassigned")}
+                            <p className={`text-xs font-medium ${member?.isActive === false ? "text-red-300" : "text-slate-300"}`}>
+                              {equipmentCustodyLabel(asset, memberMap, vehicleMap)}
                             </p>
                             <p className="mt-1 text-[10px] text-slate-500">
                               {member?.badgeNumber
@@ -2300,6 +2312,14 @@ const filteredReadiness = useMemo(() => {
                     Unassigned
                   </option>
 
+                  {inactiveHolders
+                    .filter((member) => member.userId === editingAsset?.assigned_user_id)
+                    .map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {equipmentHolderName(member)}
+                      </option>
+                    ))}
+
                   {members.map((member) => (
                     <option
                       key={member.userId}
@@ -2481,6 +2501,18 @@ const filteredReadiness = useMemo(() => {
                     {editingAsset?.lifecycle_status === "removed" ? <option value="removed">Removed</option> : null}
                   </select>
                 </label>
+
+                {editingAsset && assetForm.lifecycleStatus !== "active" && assetForm.lifecycleStatus !== editingAsset.lifecycle_status ? (
+                  <label className="space-y-1 text-[10px] text-slate-500">
+                    <span>Reason (required)</span>
+                    <input
+                      value={assetForm.removalReason}
+                      onChange={(event) => setAssetForm({ ...assetForm, removalReason: event.target.value })}
+                      placeholder="Why is this equipment out of service?"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                ) : null}
               </div>
 
               <div className="mt-5 flex justify-end gap-2">

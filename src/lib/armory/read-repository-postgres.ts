@@ -13,6 +13,7 @@ export class PostgresArmoryReadDataSource implements ArmoryReadDataSource {
   listActiveAssignments(departmentId: string, userId?: string) { return this.data.listActiveAssignments(departmentId, userId); }
   listFirearms(departmentId: string, input: { includeArchived: boolean; firearmIds?: string[] }) { return this.data.listFirearms(departmentId, input); }
   listActiveMembers(departmentId: string) { return this.data.listActiveMembers(departmentId); }
+  listInactiveMembers(departmentId: string, userIds: string[]) { return this.data.listInactiveMembers(departmentId, userIds); }
   listProfiles(userIds: string[]) { return this.data.listProfiles(userIds); }
   listInspections(departmentId: string) { return this.data.listInspections(departmentId); }
   async listAuthUsers(userIds: string[]): Promise<ArmoryUsersResult> {

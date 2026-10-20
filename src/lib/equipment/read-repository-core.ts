@@ -5,6 +5,7 @@ export type EquipmentMemberRow = {
   badge_number?: unknown;
   rank_title?: unknown;
   unit_name?: unknown;
+  deactivated_at?: unknown;
 };
 
 export type EquipmentProfileRow = {
@@ -20,6 +21,8 @@ export type EquipmentMember = {
   unitName: unknown;
 };
 
+export type EquipmentInactiveHolder = EquipmentMember & { isActive: false; deactivatedAt: unknown };
+
 export interface EquipmentReadDataSource {
   listTypes(departmentId: string): Promise<EquipmentRow[]>;
   listAssets(input: {
@@ -27,6 +30,7 @@ export interface EquipmentReadDataSource {
     assignedUserId?: string;
   }): Promise<EquipmentRow[]>;
   listActiveMembers(departmentId: string): Promise<EquipmentMemberRow[]>;
+  listInactiveMembers(departmentId: string, userIds: string[]): Promise<EquipmentMemberRow[]>;
   listProfiles(userIds: string[]): Promise<EquipmentProfileRow[]>;
   listRequirements(departmentId: string): Promise<EquipmentRow[]>;
 }
@@ -37,7 +41,7 @@ export interface EquipmentReadRepository {
     departmentId: string;
     userId: string;
     canViewDepartment: boolean;
-  }): Promise<{ items: EquipmentRow[]; members: EquipmentMember[] }>;
+  }): Promise<{ items: EquipmentRow[]; members: EquipmentMember[]; inactiveHolders: EquipmentInactiveHolder[] }>;
   listRequirements(input: { departmentId: string }): Promise<EquipmentRow[]>;
 }
 
@@ -112,22 +116,38 @@ export class TenantBoundEquipmentReadRepository implements EquipmentReadReposito
     });
     const memberRows = await this.source.listActiveMembers(input.departmentId);
     const userIds = memberRows.map((row) => String(row.user_id));
-    const profiles = userIds.length > 0 ? await this.source.listProfiles(userIds) : [];
+    // Holders whose membership is no longer active (separated officers).
+    const activeIds = new Set(userIds);
+    const holderIds = [...new Set(items
+      .filter((item) => item.lifecycle_status !== "removed")
+      .map((item) => text(item.assigned_user_id))
+      .filter((id) => id && !activeIds.has(id)))];
+    const inactiveRows = holderIds.length > 0
+      ? await this.source.listInactiveMembers(input.departmentId, holderIds)
+      : [];
+    const profileIds = [...userIds, ...inactiveRows.map((row) => String(row.user_id))];
+    const profiles = profileIds.length > 0 ? await this.source.listProfiles(profileIds) : [];
     const profileMap = new Map(
       profiles.map((row) => [String(row.id), row.full_name]),
     );
+    const member = (row: EquipmentMemberRow) => ({
+      userId: String(row.user_id),
+      fullName:
+        text(profileMap.get(String(row.user_id))) ||
+        text(row.rank_title) ||
+        "Unnamed Officer",
+      badgeNumber: row.badge_number ?? null,
+      rankTitle: row.rank_title ?? null,
+      unitName: row.unit_name ?? null,
+    });
 
     return {
       items,
-      members: memberRows.map((row) => ({
-        userId: String(row.user_id),
-        fullName:
-          text(profileMap.get(String(row.user_id))) ||
-          text(row.rank_title) ||
-          "Unnamed Officer",
-        badgeNumber: row.badge_number ?? null,
-        rankTitle: row.rank_title ?? null,
-        unitName: row.unit_name ?? null,
+      members: memberRows.map(member),
+      inactiveHolders: inactiveRows.map((row) => ({
+        ...member(row),
+        isActive: false as const,
+        deactivatedAt: row.deactivated_at ?? null,
       })),
     };
   }

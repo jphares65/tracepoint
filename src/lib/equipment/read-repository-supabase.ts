@@ -49,6 +49,13 @@ export class SupabaseEquipmentReadDataSource implements EquipmentReadDataSource 
     return this.result<EquipmentMemberRow[]>(result, "Equipment members could not be loaded.") ?? [];
   }
 
+  async listInactiveMembers(departmentId: string, userIds: string[]) {
+    const result = await this.client.from("department_memberships")
+      .select("user_id,badge_number,rank_title,unit_name,is_active,deactivated_at")
+      .eq("department_id", departmentId).eq("is_active", false).in("user_id", userIds);
+    return this.result<EquipmentMemberRow[]>(result, "Equipment members could not be loaded.") ?? [];
+  }
+
   async listProfiles(userIds: string[]) {
     const result = await this.client.from("profiles").select("id,full_name").in("id", userIds);
     return this.result<EquipmentProfileRow[]>(result, "Equipment member profiles could not be loaded.") ?? [];
