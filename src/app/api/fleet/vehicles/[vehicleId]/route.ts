@@ -5,7 +5,7 @@ import {
   createObjectStore,
 } from "@/lib/storage/object-store";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, findSafetyHold, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try { detail = await createFleetReadRepository(context.admin, context.departmentId).getVehicleDetail({ departmentId: context.departmentId, vehicleId, canViewNetworkDetails: (rules) => canViewNetworkDetails(context, rules) }); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
   if (!detail) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
+  let safetyHold;
+  try { safetyHold = await findSafetyHold(context, vehicleId, detail.rules, detail.vehicle); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
 
   const documentResult = await context.admin.from("attachments")
     .select("id,attachment_type,file_name,mime_type,file_size,description,expiration_date,uploaded_by_user_id,uploaded_at")
@@ -102,6 +105,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       })),
       ...detail.documents,
     ],
+    safetyHold,
     canManage: canManageFleet(context, detail.rules),
     canMaintain: canPerformFleetMaintenance(context, detail.rules),
     canConfigure: canConfigureFleet(context),
@@ -118,6 +122,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { data: rules } = await context.admin.from("fleet_rules").select("fleet_manager_role_codes").eq("department_id", context.departmentId).maybeSingle();
   if (!canManageFleet(context, rules)) return NextResponse.json({ error: "Fleet Manager access is required." }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  if (body.clearSafetyHold === true) return clearSafetyHold(context, vehicleId, text(body.clearanceReason, 1000));
   const reason = text(body.reason, 1000);
   if (!reason) return NextResponse.json({ error: "A reason for the vehicle update is required." }, { status: 400 });
 
@@ -157,4 +162,36 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try { await refreshFleetVehicle(context, vehicleId); }
   catch (refreshError) { return NextResponse.json({ error: `The vehicle update was saved, but its readiness was not recalculated. ${refreshError instanceof Error ? refreshError.message : ""}`.trim() }, { status: 500 }); }
   return NextResponse.json({ ok: true, vehicle: data });
+}
+
+// An explicit, audited fleet-manager clearance of a critical safety hold. It sets no status:
+// readiness is recalculated, and open critical work orders still hold the vehicle.
+async function clearSafetyHold(context: Extract<Awaited<ReturnType<typeof resolveServerAccess>>, { ok: true }>["context"], vehicleId: string, clearanceReason: string) {
+  if (!clearanceReason) return NextResponse.json({ error: "Enter a reason for clearing the safety hold." }, { status: 400 });
+  const [rulesResult, vehicleResult] = await Promise.all([
+    context.admin.from("fleet_rules").select("*").eq("department_id", context.departmentId).maybeSingle(),
+    context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle(),
+  ]);
+  const loadError = rulesResult.error ?? vehicleResult.error;
+  const previous = vehicleResult.data;
+  if (loadError || !previous) return NextResponse.json({ error: loadError?.message ?? "Vehicle was not found." }, { status: loadError ? 500 : 404 });
+  let hold;
+  try { hold = await findSafetyHold(context, vehicleId, rulesResult.data ?? {}, previous); }
+  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "The safety hold could not be checked." }, { status: 500 }); }
+  if (!hold) return NextResponse.json({ error: "This vehicle has no safety hold to clear. Open critical work orders keep a vehicle out of service until they are closed." }, { status: 409 });
+
+  const prior = { safety_hold_cleared_at: previous.safety_hold_cleared_at ?? null, safety_hold_cleared_by: previous.safety_hold_cleared_by ?? null, safety_hold_clearance_reason: previous.safety_hold_clearance_reason ?? null };
+  const { data, error } = await context.admin.from("fleet_vehicles")
+    .update({ safety_hold_cleared_at: new Date().toISOString(), safety_hold_cleared_by: context.user.id, safety_hold_clearance_reason: clearanceReason, updated_by_user_id: context.user.id, updated_at: new Date().toISOString() })
+    .eq("department_id", context.departmentId).eq("id", vehicleId).select("*").single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  try { await auditFleet(context, "fleet_safety_hold_cleared", "fleet_vehicle", vehicleId, { reason: clearanceReason, hold, cleared_at: data.safety_hold_cleared_at, previous_clearance: prior }); }
+  catch (auditError) {
+    await context.admin.from("fleet_vehicles").update(prior).eq("department_id", context.departmentId).eq("id", vehicleId);
+    return NextResponse.json({ error: auditError instanceof Error ? `${auditError.message}; the safety hold was not cleared.` : "Audit failed; the safety hold was not cleared." }, { status: 500 });
+  }
+  let readiness;
+  try { readiness = await refreshFleetVehicle(context, vehicleId); }
+  catch (refreshError) { return NextResponse.json({ error: `The safety hold clearance was saved, but readiness was not recalculated. ${refreshError instanceof Error ? refreshError.message : ""}`.trim() }, { status: 500 }); }
+  return NextResponse.json({ ok: true, vehicle: { ...data, status: readiness.status, open_issue_count: readiness.openIssueCount }, readiness });
 }

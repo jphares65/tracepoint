@@ -78,5 +78,27 @@ export async function collectFleetNotifications(context: any) {
   }
 
   for (const item of equipmentResult.data ?? []) if ((item.is_required || item.is_critical) && ["Missing","Out of Service"].includes(item.status)) { const vehicle: any = vehicles.get(item.vehicle_id); alerts.push({ key: `fleet-equipment-${context.user.id}-${item.id}`, source: "Fleet", kind: "fleet_required_equipment_unavailable", title: `${vehicle ? `Unit ${vehicle.unit_number}: ` : ""}${item.name} ${item.status}`, detail: item.is_critical ? "Critical vehicle equipment requires immediate action." : "Required vehicle equipment requires follow-up.", href: `/fleet-management/${item.vehicle_id}?tab=equipment`, priority: item.is_critical ? "Critical" : "High", createdAt: null }); }
+  // Inspection audit entries still queued (database/aws/043) after a day; only fleet managers and administrators can read the queue.
+  if (context.isSuperAdmin || permissions.includes("administer_department") || permissions.includes("manage_fleet")) {
+    const staleSince = new Date(now - 86400000).toISOString();
+    const outbox = await context.admin.from("fleet_audit_outbox").select("id,created_at,attempts,last_error").eq("department_id", context.departmentId).is("delivered_at", null).lt("created_at", staleSince).order("created_at", { ascending: true }).limit(1000);
+    if (outbox.error && !["42P01", "PGRST205"].includes(String(outbox.error.code ?? ""))) throw new Error(outbox.error.message);
+    const stale: Array<{ created_at: string; last_error: string | null }> = outbox.error ? [] : outbox.data ?? [];
+    if (stale.length) {
+      const queuedAt = new Date(dateValue(stale[0].created_at)).toISOString();
+      const failing = stale.find((entry) => entry.last_error);
+      const days = Math.floor((now - dateValue(queuedAt)) / 86400000);
+      alerts.push({
+        key: `fleet-audit-pending-${context.user.id}`,
+        source: "Fleet",
+        kind: "fleet_audit_pending",
+        title: `${stale.length} inspection audit ${stale.length === 1 ? "entry" : "entries"} not recorded`,
+        detail: `Queued for more than 24 hours; the oldest since ${queuedAt.slice(0, 10)} (${days} ${days === 1 ? "day" : "days"}). ${failing ? `Delivery is failing: ${String(failing.last_error).slice(0, 200)}.` : "Delivery has not been retried yet."} Opening Fleet Management retries delivery; if entries remain, contact support to reconcile the fleet audit queue.`,
+        href: "/fleet-management",
+        priority: "High",
+        createdAt: queuedAt,
+      });
+    }
+  }
   return alerts;
 }

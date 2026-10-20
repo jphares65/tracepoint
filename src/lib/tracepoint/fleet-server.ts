@@ -82,36 +82,61 @@ export async function auditFleet(
   if (error) throw new Error(`Audit record failed: ${error.message}`);
 }
 
+type FleetRow = Record<string, unknown> | null | undefined;
+export type FleetSafetyHold = { since: string; source: "inspection" | "work_order"; reason: string };
+
+// A critical condition (an inspection with a critical defect, or a Critical or availability-affecting work order) holds the
+// vehicle, even after that work order is completed or cancelled, until a later inspection records no critical defects or a
+// fleet manager clears the hold (database/aws/046). Applies only where the agency's automation takes critical issues out of service.
+export async function findSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, rules: FleetRow, vehicle: FleetRow): Promise<FleetSafetyHold | null> {
+  if (rules?.status_automation_enabled === false || rules?.critical_issue_out_of_service === false) return null;
+  const scoped = (table: string, columns: string) => context.admin.from(table).select(columns).eq("department_id", context.departmentId).eq("vehicle_id", vehicleId);
+  const latest = (query: ReturnType<typeof scoped>) => query.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const results: Array<{ data: FleetRow; error?: { message: string } | null }> = await Promise.all([
+    latest(scoped("fleet_vehicle_inspections", "id,created_at").gt("critical_defect_count", 0)),
+    latest(scoped("fleet_work_orders", "id,title,created_at").eq("priority", "Critical")),
+    latest(scoped("fleet_work_orders", "id,title,created_at").eq("affects_availability", true)),
+    latest(scoped("fleet_vehicle_inspections", "id,created_at").eq("critical_defect_count", 0)),
+  ]);
+  const readError = results.find((result) => result.error)?.error;
+  if (readError) throw new Error(`Vehicle safety hold could not be checked: ${readError.message}`);
+  const [inspection, priorityOrder, availabilityOrder, passed] = results.map((result) => result.data);
+  const time = (value: unknown) => value ? new Date(value as string).getTime() : Number.NaN;
+  const conditions = ([[inspection, "inspection"], [priorityOrder, "work_order"], [availabilityOrder, "work_order"]] as const).filter(([row]) => Number.isFinite(time(row?.created_at)));
+  if (!conditions.length) return null;
+  const [start, source] = conditions.reduce((a, b) => time(b[0]?.created_at) > time(a[0]?.created_at) ? b : a);
+  const since = time(start?.created_at);
+  if (time(passed?.created_at) > since || time(vehicle?.safety_hold_cleared_at) > since) return null;
+  const recorded = new Date(since).toISOString().slice(0, 10);
+  return {
+    since: new Date(since).toISOString(),
+    source,
+    reason: `${source === "inspection" ? `Critical defect recorded by the inspection on ${recorded}` : `Critical work order "${String(start?.title ?? "")}" recorded on ${recorded}`}. The vehicle stays out of service until a later inspection records no critical defects or a fleet manager clears the hold.`,
+  };
+}
+
 export async function refreshFleetVehicle(context: any, vehicleId: string) {
-  const [rulesResult, workResult, equipmentResult] = await Promise.all([
+  const [rulesResult, workResult, equipmentResult, vehicleResult] = await Promise.all([
     context.admin.from("fleet_rules").select("*").eq("department_id", context.departmentId).maybeSingle(),
     context.admin.from("fleet_work_orders").select("id,priority,status,affects_availability").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).not("status", "in", '("Completed","Cancelled")'),
     context.admin.from("fleet_vehicle_equipment").select("id,status,is_critical").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).neq("status", "Removed"),
+    // All columns: the clearance columns do not exist before database/aws/046.
+    context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle(),
   ]);
-  const readError = rulesResult.error ?? workResult.error ?? equipmentResult.error;
+  const readError = rulesResult.error ?? workResult.error ?? equipmentResult.error ?? vehicleResult.error;
   if (readError) throw new Error(`Vehicle readiness could not be refreshed: ${readError.message}`);
 
   const rules = rulesResult.data ?? {};
   const work = workResult.data ?? [];
   const equipment = equipmentResult.data ?? [];
+  const vehicle = vehicleResult.data;
   const criticalIssue = work.some((item: any) => item.priority === "Critical" || item.affects_availability === true);
   const criticalEquipment = equipment.some((item: any) => item.is_critical && ["Missing", "Out of Service"].includes(item.status));
-  // A critical inspection whose defect work order was never created is still an unresolved critical defect.
-  let unrecordedCriticalInspection = false;
-  if (rules.inspection_defect_creates_work_order !== false) {
-    const { data: latest, error: inspectionError } = await context.admin.from("fleet_vehicle_inspections").select("id,critical_defect_count,created_at").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (inspectionError) throw new Error(`Vehicle readiness could not be refreshed: ${inspectionError.message}`);
-    if (Number(latest?.critical_defect_count) > 0) {
-      const { data: defectOrders, error: defectError } = await context.admin.from("fleet_work_orders").select("id").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).eq("record_type", "Inspection").gte("created_at", latest.created_at).limit(1);
-      if (defectError) throw new Error(`Vehicle readiness could not be refreshed: ${defectError.message}`);
-      unrecordedCriticalInspection = !defectOrders?.length;
-    }
-  }
-  const outOfService = (rules.critical_issue_out_of_service !== false && (criticalIssue || unrecordedCriticalInspection)) || (rules.critical_equipment_out_of_service !== false && criticalEquipment);
+  // Open critical work always holds; a recorded critical condition holds until verified or cleared.
+  const safetyHold = await findSafetyHold(context, vehicleId, rules, vehicle);
+  const outOfService = (rules.critical_issue_out_of_service !== false && (criticalIssue || safetyHold !== null)) || (rules.critical_equipment_out_of_service !== false && criticalEquipment);
   const openIssueCount = work.length;
 
-  const { data: vehicle, error: vehicleError } = await context.admin.from("fleet_vehicles").select("status,status_override_active").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
-  if (vehicleError) throw new Error(`Vehicle readiness could not be refreshed: ${vehicleError.message}`);
   let status = vehicle?.status ?? "Available";
   if (rules.status_automation_enabled !== false && status !== "Retired") {
     if (vehicle?.status_override_active === true) {
@@ -127,7 +152,7 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
 
   const { error: updateError } = await context.admin.from("fleet_vehicles").update({ status, open_issue_count: openIssueCount, updated_at: new Date().toISOString() }).eq("department_id", context.departmentId).eq("id", vehicleId);
   if (updateError) throw new Error(`Vehicle readiness could not be refreshed: ${updateError.message}`);
-  return { status, openIssueCount };
+  return { status, openIssueCount, safetyHold };
 }
 
 type FleetContext = Parameters<typeof auditFleet>[0];
