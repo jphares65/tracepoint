@@ -5,6 +5,7 @@ import {
   getEquipmentServerContext,
   text,
 } from "@/lib/tracepoint/equipment-server";
+import { parseTracePointQrValue } from "@/lib/tracepoint/qr-identifiers";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,9 @@ export async function GET(request: NextRequest) {
   const context = await getEquipmentServerContext(request);
   if ("error" in context) return context.error;
 
-  const identifier = normalizeIdentifier(request.nextUrl.searchParams.get("identifier"));
+  const scanned = request.nextUrl.searchParams.get("identifier") ?? "";
+  const label = parseTracePointQrValue(scanned);
+  const identifier = normalizeIdentifier(label?.kind === "equipment" ? label.id : scanned);
   if (!identifier) {
     return errorResponse("An equipment ID, asset number, or serial number is required.", 400);
   }
