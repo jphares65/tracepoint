@@ -10,7 +10,12 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
-import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
+import {
+  authorizeRangeWorkspaceMutation,
+  rangeWorkspaceVersionConflict,
+  STALE_RANGE_WORKSPACE_ERROR,
+  withRangeResultRevisions,
+} from "@/lib/range/workspace-mutation";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -120,9 +125,10 @@ export async function PUT(request: NextRequest) {
 
   const body = (await request.json().catch(() => ({}))) as {
     workspace?: unknown;
+    baseUpdatedAt?: unknown;
   };
 
-  const workspace = normalizeWorkspace(body.workspace);
+  const normalizedWorkspace = normalizeWorkspace(body.workspace);
 
   try {
     const existingResult = await admin.from("pilot_range_workspaces")
@@ -133,9 +139,16 @@ export async function PUT(request: NextRequest) {
       throw new Error("The current range workspace could not be loaded.");
     }
 
+    if (rangeWorkspaceVersionConflict(body.baseUpdatedAt, existingResult.data?.updated_at ?? null)) {
+      return NextResponse.json(
+        { error: STALE_RANGE_WORKSPACE_ERROR, code: "stale_workspace" },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     const decision = authorizeRangeWorkspaceMutation({
       existingWorkspace: existingResult.data?.workspace ?? {},
-      nextWorkspace: workspace,
+      nextWorkspace: normalizedWorkspace,
       departmentId,
       permissions: resolved.context.permissions,
     });
@@ -154,6 +167,12 @@ export async function PUT(request: NextRequest) {
           : 0,
       ),
     ).toISOString();
+    const workspace = withRangeResultRevisions({
+      existingWorkspace: existingResult.data?.workspace ?? {},
+      nextWorkspace: normalizedWorkspace,
+      revisedAt: updatedAt,
+      revisedByUserId: user.id,
+    });
     const payload = {
       department_id: departmentId,
       workspace,
@@ -197,6 +216,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       departmentId,
+      updatedAt,
       counts: {
         rangeDays: workspace.rangeDays?.length ?? 0,
         drillLibrary: workspace.drillLibrary?.length ?? 0,

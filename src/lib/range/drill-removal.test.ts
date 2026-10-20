@@ -20,15 +20,12 @@ test("blocks removal when results or dependent malfunctions exist", () => {
   if (!result.ok) assert.match(result.error, /dependent records/i);
 });
 
-test("blocks finalized and ready-packet range days", () => {
-  for (const day of [
-    { id: "day-1", departmentId: "agency-a", status: "Locked", packetStatus: "In Progress" },
-    { id: "day-1", departmentId: "agency-a", status: "Planned", packetStatus: "Ready" },
-  ]) {
-    const result = removeRangeDayDrill(workspace({ rangeDays: [day] }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-a" });
-    assert.equal(result.ok, false);
-    if (!result.ok) assert.match(result.error, /finalized or locked/i);
-  }
+test("blocks finalized range days but not ready packets", () => {
+  const locked = removeRangeDayDrill(workspace({ rangeDays: [{ id: "day-1", departmentId: "agency-a", status: "Locked", packetStatus: "In Progress" }] }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-a" });
+  assert.equal(locked.ok, false);
+  if (!locked.ok) assert.match(locked.error, /finalized or locked/i);
+  const ready = removeRangeDayDrill(workspace({ rangeDays: [{ id: "day-1", departmentId: "agency-a", status: "Planned", packetStatus: "Ready" }] }), { rangeDayId: "day-1", drillId: "drill-1", departmentId: "agency-a" });
+  assert.equal(ready.ok, true);
 });
 
 test("does not expose or mutate another agency's range day", () => {

@@ -472,7 +472,9 @@ try {
         where conname = 'equipment_assets_lifecycle_status_check'
           and pg_get_constraintdef(oid) like '%out_of_service%'
       ) as equipment_out_of_service_allowed,
-      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable
+      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable,
+      pg_get_functiondef('public.protect_pilot_range_workspace_mutation()'::regprocedure) not like '%= ''ready''%'
+        and pg_get_functiondef('public.protect_range_day_drill_history()'::regprocedure) not like '%= ''ready''%' as range_packet_ready_not_final
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
