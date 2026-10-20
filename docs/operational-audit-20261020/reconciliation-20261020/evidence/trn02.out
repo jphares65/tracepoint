@@ -1,0 +1,5 @@
+browser TZ=America/Los_Angeles server TZ=UTC
+save 1: sent=2026-10-24T18:00 stored=2026-10-24T18:00:00.000Z redisplayed=2026-10-24T11:00
+save 2: sent=2026-10-24T11:00 stored=2026-10-24T11:00:00.000Z redisplayed=2026-10-24T04:00
+save 3: sent=2026-10-24T04:00 stored=2026-10-24T04:00:00.000Z redisplayed=2026-10-23T21:00
+intended instant (browser-local 18:00) = 2026-10-25T01:00:00.000Z

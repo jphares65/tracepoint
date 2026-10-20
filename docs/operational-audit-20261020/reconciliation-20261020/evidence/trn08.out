@@ -1,0 +1,5 @@
+proxy matcher applies to /api/notifications/email-dispatch: true
+bridge (Supabase) proxy treats it as public: true
+aws-native proxy treats it as public: false
+aws-native proxy treats /api/mobile/inbox as public (bearer handled in route): true
+=> In aws-native mode a request with only 'Authorization: Bearer <NOTIFICATION_DISPATCH_SECRET>' and no Cognito session cookie is answered 401 by updateAwsNativeSession (request-proxy.ts:51-52, 17-18) before route.ts:195-208 checks the secret.

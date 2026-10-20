@@ -1,0 +1,16 @@
+--- 1. Printed web labels vs resolver input validation
+"tracepoint://vehicle/11111111-0000-4000-8000-000000000001" => passes opaqueHandle: false -> HTTP 400 'This QR code is not valid.'
+"tracepoint://equipment/EQ-0042" => passes opaqueHandle: false -> HTTP 400 'This QR code is not valid.'
+"https://app.example/q/firearm/eeeeeeee-0000-4000-8000-000000000005" => passes opaqueHandle: false -> HTTP 400 'This QR code is not valid.'
+"eeeeeeee-0000-4000-8000-000000000005" => passes opaqueHandle: true 
+"UNIT-12" => passes opaqueHandle: true 
+"SN-LEGIT" => passes opaqueHandle: true 
+buildTracePointQrValue('firearm') accepted at runtime (type is vehicle|equipment only)
+--- 2. Route queries executed through the real PostgresDataClient against local AWS-chain DB (arm04aws)
+"eeeeeeee-0000-4000-8000-000000000005" => {"http":200,"body":{"entityType":"firearm","entityId":"eeeeeeee-0000-4000-8000-000000000005","workflow":"firearm_custody","allowed":true}}
+"FA-0001" => {"http":500,"errors":["22P02","22P02","22P02"]}
+"SN-LEGIT" => {"http":500,"errors":["22P02","22P02","22P02"]}
+root cause: uuid column compared to non-UUID text parameter => 22P02 invalid input syntax for type uuid: "FA-0001"
+--- 3. qrDecision: unauthorized firearm is 'denied' (not 'unknown') => confirms existence; equipment has no permission check
+{"status":"denied","message":"You are not authorized to use firearm custody."}
+{"entityType":"equipment","entityId":"e1","displayName":"Axon","workflow":"equipment_custody","allowed":true}

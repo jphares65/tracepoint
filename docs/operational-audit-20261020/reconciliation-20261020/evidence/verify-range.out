@@ -1,0 +1,115 @@
+=== RNG-01: score correction / same-day re-shoot re-save ===
+[MATCH] 1a first save of 2 results (control)
+    perms=["score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:score
+    saved ids: result-1000-0, result-1000-1
+    corrected ids: result-2000-0, result-2000-1
+[MATCH] 1b corrected re-save (new IDs, old filtered) as instructor
+    perms=["score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.
+[MATCH] 1c corrected re-save as Range Master
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.
+[MATCH] 1d corrected re-save as administrator
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.
+[MATCH] 1e control: in-place correction keeping stable ID
+    perms=["score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:score
+[MATCH] 1f same-day re-shoot of officer-A only (new ID replaces failed attempt)
+    perms=["score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.
+
+=== RNG-03: packetStatus 'Ready' locks the day ===
+[MATCH] 3a Range Master sets packetStatus Ready the night before (allowed)
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:manage
+[MATCH] 3b first score add on the 'Ready' (not completed) day, instructor
+    perms=["score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 3c first score add on the 'Ready' day, administrator
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 3d status Planned->In Progress on the Ready day
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 3e revert packetStatus Ready->In Progress (unlock attempt), administrator
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 3f roster attendance change on the Ready day
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+
+=== RNG-04: Completed is irreversible ===
+[MATCH] 4a set status Completed (one write, no extra checks)
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:manage
+[MATCH] 4b edit a score on the Completed day (stable ID), administrator
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 4c add AAR text after close-out (RNG-21)
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 4d reopen Completed->In Progress, administrator
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 4e Completed->Archived
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 4f restore Archived->Planned, administrator
+    perms=["administer_department","manage_range_days","score_range_days","manage_qualifications"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+
+=== RNG-13: two devices, full-document PUTs ===
+[MATCH] 13a device A PUT (server state = base)
+    perms=["score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:score
+[MATCH] 13b device B PUT after A landed (server state = A), B lacks A's result
+    perms=["score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.
+[MATCH] 13c control: B merges A's results then PUTs
+    perms=["score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:score
+[MATCH] 13d stale planning write by B after A's title edit (lost update, accepted)
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=ok
+    actual=ok:manage
+
+=== Related: RNG-11 / RNG-22 / RNG-23 ===
+[MATCH] 11a load-time normalization adds attendanceMode to a legacy Completed day
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Completed, locked, archived, or finalized range records cannot be changed.
+[MATCH] 11b library normalization (defaultRunCount) sent by scorer-only user
+    perms=["score_range_days"]
+    expected(defect behaviour)=403
+    actual=403 Range-day planning and drill-library changes require range management permission.
+[MATCH] 22a roster removal that also deletes the officer's results
+    perms=["manage_range_days","score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.
+[MATCH] 23a re-save line recreating the malfunction with new ID/type
+    perms=["score_range_days"]
+    expected(defect behaviour)=409
+    actual=409 Saved scores and malfunction history cannot be removed from the range workspace.

@@ -1,0 +1,2 @@
+typeof admin.auth = undefined
+=> TypeError: Cannot read properties of undefined (reading 'admin') -> route catch returns HTTP 500 with this message

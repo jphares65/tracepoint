@@ -1,0 +1,207 @@
+-- T5 ADM-03: no-membership user, beginSubject-style context (subject only), calls create_department_with_owner
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','80000000-0000-4000-8000-000000000001',true) is not null;
+ ?column? 
+----------
+ t
+(1 row)
+
+select exists(select 1 from public.department_memberships where user_id='80000000-0000-4000-8000-000000000001') as had_membership_before;
+ had_membership_before 
+-----------------------
+ f
+(1 row)
+
+select public.create_department_with_owner('Rogue Agency','rogue-agency','RA') as new_department_id;
+          new_department_id           
+--------------------------------------
+ 94a537f2-95ba-47b5-836f-750545e49c9a
+(1 row)
+
+select d.name, m.is_active, r.role_code, public.has_department_permission(d.id,'administer_department') admin_perm from public.departments d join public.department_memberships m on m.department_id=d.id join public.department_membership_roles r on r.department_id=d.id and r.user_id=m.user_id where d.slug='rogue-agency';
+     name     | is_active |   role_code   | admin_perm 
+--------------+-----------+---------------+------------
+ Rogue Agency | t         | administrator | t
+(1 row)
+
+commit;
+COMMIT
+-- T5b: grants on create_department_with_owner
+select p.oid::regprocedure, p.proacl from pg_proc p where proname='create_department_with_owner'
+                             oid                             |                     proacl                     
+-------------------------------------------------------------+------------------------------------------------
+ create_department_with_owner(text,text,text,text,text,text) | {postgres=X/postgres,authenticated=X/postgres}
+(1 row)
+
+-- T6 ARM-04: Dept A admin -> update_firearm_with_audit on Dept B firearm
+-- T6a: p_department_id = Dept B (context Dept A)
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select public.update_firearm_with_audit('f1000000-0000-4000-8000-00000000000b','dddddddd-0000-4000-8000-00000000000b','a0000000-0000-4000-8000-0000000000a1','x','Hacked','17','B-SN-1','handgun','9mm',null,null);
+ERROR:  firearm update forbidden
+CONTEXT:  PL/pgSQL function update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 6 at RAISE
+commit;
+ROLLBACK
+-- T6b: p_department_id = Dept A (own), firearm id from Dept B
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select public.update_firearm_with_audit('f1000000-0000-4000-8000-00000000000b','dddddddd-0000-4000-8000-00000000000a','a0000000-0000-4000-8000-0000000000a1','x','Hacked','17','B-SN-1','handgun','9mm',null,null);
+ERROR:  Firearm not found for this department.
+CONTEXT:  PL/pgSQL function update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 27 at RAISE
+PL/pgSQL function update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 8 at RETURN
+commit;
+ROLLBACK
+-- T6c: forged tracepoint.department_id = Dept B, p_department_id = Dept B
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000b',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select public.update_firearm_with_audit('f1000000-0000-4000-8000-00000000000b','dddddddd-0000-4000-8000-00000000000b','a0000000-0000-4000-8000-0000000000a1','x','Hacked','17','B-SN-1','handgun','9mm',null,null);
+ERROR:  firearm update forbidden
+CONTEXT:  PL/pgSQL function update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 6 at RAISE
+commit;
+ROLLBACK
+-- T6d: p_user_id spoofed as Dept B admin
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000b',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select public.update_firearm_with_audit('f1000000-0000-4000-8000-00000000000b','dddddddd-0000-4000-8000-00000000000b','b0000000-0000-4000-8000-0000000000a1','x','Hacked','17','B-SN-1','handgun','9mm',null,null);
+ERROR:  firearm update forbidden
+CONTEXT:  PL/pgSQL function update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 6 at RAISE
+commit;
+ROLLBACK
+-- T6e: internal function directly callable?
+select p.oid::regprocedure, p.proacl from pg_proc p where proname like 'update_firearm_with_audit%'
+                                            oid                                             |                     proacl                     
+--------------------------------------------------------------------------------------------+------------------------------------------------
+ update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text)          | {postgres=X/postgres,authenticated=X/postgres}
+ update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text) | {postgres=X/postgres}
+(2 rows)
+
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select public.update_firearm_with_audit_internal('f1000000-0000-4000-8000-00000000000b','dddddddd-0000-4000-8000-00000000000b','a0000000-0000-4000-8000-0000000000a1','x','Hacked','17','B-SN-1','handgun','9mm',null,null);
+ERROR:  permission denied for function update_firearm_with_audit_internal
+commit;
+ROLLBACK
+-- T6 control: Dept B admin legit update
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','b0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000b',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select public.update_firearm_with_audit('f1000000-0000-4000-8000-00000000000b','dddddddd-0000-4000-8000-00000000000b','b0000000-0000-4000-8000-0000000000a1','legit','Glock','17','B-SN-1','handgun','9mm',null,null) is not null as ok;
+ERROR:  No firearm details were changed.
+CONTEXT:  PL/pgSQL function update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 86 at RAISE
+PL/pgSQL function update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text) line 8 at RETURN
+commit;
+ROLLBACK
+select id,department_id,make from firearms
+                  id                  |            department_id             | make  
+--------------------------------------+--------------------------------------+-------
+ f1000000-0000-4000-8000-00000000000b | dddddddd-0000-4000-8000-00000000000b | Glock
+(1 row)
+
+-- T8 TRN-26: plain officer A1 reads other officers' training rows
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select user_id, certification_title from public.training_certifications t where t.department_id='dddddddd-0000-4000-8000-00000000000a' order by 2;
+               user_id                |   certification_title   
+--------------------------------------+-------------------------
+ a0000000-0000-4000-8000-0000000000c1 | Officer A1 own cert
+ a0000000-0000-4000-8000-0000000000c2 | Officer A2 private cert
+(2 rows)
+
+select officer_user_id, score, passed from public.qualification_results t where t.department_id='dddddddd-0000-4000-8000-00000000000a' order by 2;
+           officer_user_id            | score | passed 
+--------------------------------------+-------+--------
+ a0000000-0000-4000-8000-0000000000c2 | 71.00 | f
+ a0000000-0000-4000-8000-0000000000c1 | 95.00 | t
+(2 rows)
+
+select a.user_id, e.title from public.agency_training_attendees a join public.agency_training_events e on e.id=a.event_id where a.department_id='dddddddd-0000-4000-8000-00000000000a';
+               user_id                |   title    
+--------------------------------------+------------
+ a0000000-0000-4000-8000-0000000000c2 | In-service
+(1 row)
+
+commit;
+COMMIT
+-- T8 cross-tenant control: Dept B officer reads Dept A rows
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','b0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000b',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select count(*) dept_a_certs_visible_to_b from public.training_certifications t where t.department_id='dddddddd-0000-4000-8000-00000000000a';
+ dept_a_certs_visible_to_b 
+---------------------------
+                         0
+(1 row)
+
+select count(*) dept_a_quals_visible_to_b from public.qualification_results t where t.department_id='dddddddd-0000-4000-8000-00000000000a';
+ dept_a_quals_visible_to_b 
+---------------------------
+                         0
+(1 row)
+
+commit;
+COMMIT

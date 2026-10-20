@@ -1,0 +1,102 @@
+### node --preserve-symlinks --import tsx --test adm.test.ts
+TAP version 13
+# Subtest: ADM-01/Cognito: legacy issueActivationEmail throws in aws-native mode (called by cognito-personnel-writer for existing pending identities)
+ok 1 - ADM-01/Cognito: legacy issueActivationEmail throws in aws-native mode (called by cognito-personnel-writer for existing pending identities)
+  ---
+  duration_ms: 195.93311
+  type: 'test'
+  ...
+# Subtest: ADM-01/Cognito: personnel writer still calls issueActivationEmail on the existing-pending and reactivation paths
+ok 2 - ADM-01/Cognito: personnel writer still calls issueActivationEmail on the existing-pending and reactivation paths
+  ---
+  duration_ms: 1.84121
+  type: 'test'
+  ...
+# Subtest: ADM-04/Cognito: membership lifecycle 'enable' re-enables a disabled Cognito user when no other active membership exists
+ok 3 - ADM-04/Cognito: membership lifecycle 'enable' re-enables a disabled Cognito user when no other active membership exists
+  ---
+  duration_ms: 0.427026
+  type: 'test'
+  ...
+# Subtest: ADM-04/Cognito: classic route maps a missing Active column to active=true (reactivation of separated officers on re-import)
+ok 4 - ADM-04/Cognito: classic route maps a missing Active column to active=true (reactivation of separated officers on re-import)
+  ---
+  duration_ms: 0.664354
+  type: 'test'
+  ...
+# Subtest: NEW-ADM-B: app password policy (min 10) is weaker than the Cognito pool policy (min 14)
+ok 5 - NEW-ADM-B: app password policy (min 10) is weaker than the Cognito pool policy (min 14)
+  ---
+  duration_ms: 0.409033
+  type: 'test'
+  ...
+# Subtest: authz: support_department_id is only set when supportMode === true
+ok 6 - authz: support_department_id is only set when supportMode === true
+  ---
+  duration_ms: 1.077485
+  type: 'test'
+  ...
+# Subtest: authz: invalid subject/department ids are rejected before any connection
+ok 7 - authz: invalid subject/department ids are rejected before any connection
+  ---
+  duration_ms: 0.338082
+  type: 'test'
+  ...
+# Subtest: ADM-22/AWS: platform subject-only context never sets tracepoint.department_id (platform RPCs must not depend on it)
+ok 8 - ADM-22/AWS: platform subject-only context never sets tracepoint.department_id (platform RPCs must not depend on it)
+  ---
+  duration_ms: 0.320626
+  type: 'test'
+  ...
+# Subtest: post-auth routing: platform admin with no active membership goes to /platform; deactivated non-admin does not
+ok 9 - post-auth routing: platform admin with no active membership goes to /platform; deactivated non-admin does not
+  ---
+  duration_ms: 0.36416
+  type: 'test'
+  ...
+# Subtest: NEW-ADM-A: an invited/imported user with a 'pending' Cognito link is not mapped on first sign-in (production mapping requires state='active')
+ok 10 - NEW-ADM-A: an invited/imported user with a 'pending' Cognito link is not mapped on first sign-in (production mapping requires state='active')
+  ---
+  duration_ms: 1.741998
+  type: 'test'
+  ...
+# Subtest: NEW-ADM-A: invite commit writes state 'pending' and only assign_password / legacy finalize set 'active' (static)
+ok 11 - NEW-ADM-A: invite commit writes state 'pending' and only assign_password / legacy finalize set 'active' (static)
+  ---
+  duration_ms: 2.585068
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 627.634262
+### node --preserve-symlinks --experimental-test-module-mocks --import tsx --test adm01-bridge.test.ts
+TAP version 13
+# (node:18488) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: ADM-01/bridge: imported user (email_confirm:true) is rejected by validateActivationToken
+ok 1 - ADM-01/bridge: imported user (email_confirm:true) is rejected by validateActivationToken
+  ---
+  duration_ms: 151.991676
+  type: 'test'
+  ...
+# Subtest: ADM-01/bridge control: invited user (email_confirm:false) passes validateActivationToken
+ok 2 - ADM-01/bridge control: invited user (email_confirm:false) passes validateActivationToken
+  ---
+  duration_ms: 5.391236
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 605.524922

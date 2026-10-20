@@ -1,0 +1,21 @@
+migrations: 78 (validate-clean-bootstrap.mjs expects 75)
+FAIL at #76 202610020001_vehicle_document_metadata.sql: 42P01 relation "public.attachments" does not exist
+applied: 75
+┌─────────┬───────────────────────────────────┬─────────┐
+│ (index) │ n                                 │ present │
+├─────────┼───────────────────────────────────┼─────────┤
+│ 0       │ 'firearms'                        │ true    │
+│ 1       │ 'firearm_assignments'             │ true    │
+│ 2       │ 'firearm_status_history'          │ false   │
+│ 3       │ 'ammunition_lots'                 │ false   │
+│ 4       │ 'ammunition_transactions'         │ false   │
+│ 5       │ 'ammunition_reconciliations'      │ false   │
+│ 6       │ 'ammunition_reconciliation_items' │ false   │
+│ 7       │ 'attachments'                     │ false   │
+│ 8       │ 'pilot_ammunition_workspaces'     │ false   │
+└─────────┴───────────────────────────────────┴─────────┘
+┌─────────┬─────────────────────────────────────────────────────────────────────────────────────┬────────────────────┬───────────┬──────────────────┬──────┐
+│ (index) │ fn                                                                                  │ authenticated_exec │ anon_exec │ security_definer │ acl  │
+├─────────┼─────────────────────────────────────────────────────────────────────────────────────┼────────────────────┼───────────┼──────────────────┼──────┤
+│ 0       │ 'update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text)' │ true               │ true      │ true             │ null │
+└─────────┴─────────────────────────────────────────────────────────────────────────────────────┴────────────────────┴───────────┴──────────────────┴──────┘

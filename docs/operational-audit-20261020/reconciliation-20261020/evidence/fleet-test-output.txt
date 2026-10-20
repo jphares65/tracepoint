@@ -1,0 +1,94 @@
+TAP version 13
+# T1 override=true -> { status: 'Available', openIssueCount: 1 }
+# T1 override=false -> { status: 'Out of Service', openIssueCount: 1 }
+# T1b after PATCH status=Available: override_active = true
+# T1b inspection -> 201 workOrder.priority: Critical readiness: { status: 'Available', openIssueCount: 1 } vehicle.status: Available
+# T1b after clearStatusOverride:true -> Out of Service false
+# T2 PATCH -> 200 current_mileage: 18000 last_service_mileage: 18000
+# T3 -> 201 current_mileage: 0 next_service_mileage: 1
+# T4 numeric(x, 19200) -> { emptyString: 0, nullValue: 0, undefinedValue: 19200, whitespace: 0 }
+# T4 mobile JSON mileage:null -> inspection.mileage = 0 vehicle current_mileage = 19200
+# T5 resolve("tracepoint://vehicle/11111111-1111-4111-8111-111111111111") -> 400 {"status":"unknown","message":"This QR code is not valid."}
+# T5 resolve("tracepoint://equipment/22222222-2222-4222-8222-222222222222") -> 400 {"status":"unknown","message":"This QR code is not valid."}
+# T5 resolve("https://app.tracepoint.example/fleet-management/11111111-1111-4111-8111-111111111111") -> 400 {"status":"unknown","message":"This QR code is not valid."}
+# T5 resolve("11111111-1111-4111-8111-111111111111") -> 200 {"entityType":"vehicle","entityId":"11111111-1111-4111-8111-111111111111","displayName":"Unit 3101","workflow":"vehicle_inspection","allowed":true}
+# T5 resolve("3101") -> 200 {"entityType":"vehicle","entityId":"11111111-1111-4111-8111-111111111111","displayName":"Unit 3101","workflow":"vehicle_inspection","allowed":true}
+# T5 resolve("22222222-2222-4222-8222-222222222222") -> 200 {"entityType":"equipment","entityId":"22222222-2222-4222-8222-222222222222","displayName":"Axon T7","workflow":"equipment_custody","allowed":true}
+# T5 resolve("A-42") -> 200 {"entityType":"equipment","entityId":"22222222-2222-4222-8222-222222222222","displayName":"Axon T7","workflow":"equipment_custody","allowed":true}
+# T5 resolve("asset 42") -> 400 {"status":"unknown","message":"This QR code is not valid."}
+# T6 custody GET identifier=tracepoint://equipment/22222222-2222-4222-8222-222222222222 -> 404
+# T6 custody GET identifier=22222222-2222-4222-8222-222222222222 -> 200
+# T6 custody GET identifier=a-42 -> 200
+# T7 work orders after 3 identical inspections: 3
+# T8 outcome: handler threw (Next returns 500): Audit record failed: new row violates row-level security policy for table "audit_events"
+# T8 inspections persisted: 1 work orders: 0 vehicle status: Available inspection_due_date: null
+# T9 -> 201 {"ok":true,"attachment":{"id":"84bc1bf5-64a0-4d3d-8082-a1e99989487b","department_id":"dept-1","entity_type":"fleet_vehicle_inspection","entity_id":"insp1","attachment_type":"photo","file_name":"dent.jpg","storage_path":"evidence/84bc1bf5-64a0-4d3d-8082-a1e99989487b","mime_type":"image/jpeg","file_size":3,"description":"Anything [not-a-real-item]","uploaded_by_user_id":"user-1"}}
+# Subtest: T1 FLT-01 refreshFleetVehicle: override_active suppresses Out of Service for an open Critical work order
+ok 1 - T1 FLT-01 refreshFleetVehicle: override_active suppresses Out of Service for an open Critical work order
+  ---
+  duration_ms: 4.365955
+  type: 'test'
+  ...
+# Subtest: T1b FLT-01 end-to-end: manager sets Available via [vehicleId] PATCH, then a Critical brake inspection leaves the vehicle Available
+ok 2 - T1b FLT-01 end-to-end: manager sets Available via [vehicleId] PATCH, then a Critical brake inspection leaves the vehicle Available
+  ---
+  duration_ms: 13.01711
+  type: 'test'
+  ...
+# Subtest: T2 FLT-02 work-order PATCH rolls the odometer back to the work order's reported mileage
+ok 3 - T2 FLT-02 work-order PATCH rolls the odometer back to the work order's reported mileage
+  ---
+  duration_ms: 2.356363
+  type: 'test'
+  ...
+# Subtest: T3 FLT-09/FLT-14 officer Issue POST with a cleared mileage field zeroes the odometer (no permission needed)
+ok 4 - T3 FLT-09/FLT-14 officer Issue POST with a cleared mileage field zeroes the odometer (no permission needed)
+  ---
+  duration_ms: 2.515333
+  type: 'test'
+  ...
+# Subtest: T4 FLT-09 numeric(): blank/null mileage become 0, not the fallback; inspection record stores 0
+ok 5 - T4 FLT-09 numeric(): blank/null mileage become 0, not the fallback; inspection record stores 0
+  ---
+  duration_ms: 5.170914
+  type: 'test'
+  ...
+# Subtest: T5 FLT-04 mobile QR resolve rejects the printed label payload and HTTPS deep links; accepts only bare identifiers
+ok 6 - T5 FLT-04 mobile QR resolve rejects the printed label payload and HTTPS deep links; accepts only bare identifiers
+  ---
+  duration_ms: 6.968886
+  type: 'test'
+  ...
+# Subtest: T6 FLT-04/EQP-06 custody lookup does not accept the tracepoint://equipment/ label value
+ok 7 - T6 FLT-04/EQP-06 custody lookup does not accept the tracepoint://equipment/ label value
+  ---
+  duration_ms: 2.440663
+  type: 'test'
+  ...
+# Subtest: T7 FLT-07 repeated inspections of the same known defect create duplicate work orders
+ok 8 - T7 FLT-07 repeated inspections of the same known defect create duplicate work orders
+  ---
+  duration_ms: 7.041142
+  type: 'test'
+  ...
+# Subtest: T8 NEW-01 simulation of AWS-native RLS (database/aws/018 + audit_events_insert_managers) for an inspector-only user
+ok 9 - T8 NEW-01 simulation of AWS-native RLS (database/aws/018 + audit_events_insert_managers) for an inspector-only user
+  ---
+  duration_ms: 2.055192
+  type: 'test'
+  ...
+# Subtest: T9 FLT-03 evidence POST: accepted for a checklist item id that is not on the inspection
+ok 10 - T9 FLT-03 evidence POST: accepted for a checklist item id that is not on the inspection
+  ---
+  duration_ms: 9.208401
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 706.611185

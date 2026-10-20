@@ -1,0 +1,169 @@
+-- control: T2 dept-admin audit_events insert (expected to pass)
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+insert into public.audit_events(department_id,actor_user_id,action,entity_type,entity_id,details) values ('dddddddd-0000-4000-8000-00000000000a','a0000000-0000-4000-8000-0000000000a1','fleet_vehicle_inspected','fleet_vehicle','feee0000-0000-4000-8000-00000000000a','{"support_mode":false}'::jsonb);
+INSERT 0 1
+commit;
+COMMIT
+-- setup: equipment manager (armorer + dept-granted manage_equipment) assigns EQ-2 to officer via app-equivalent update
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000d1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.equipment_assets t set assigned_user_id='a0000000-0000-4000-8000-0000000000c1',updated_by='a0000000-0000-4000-8000-0000000000d1' where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='ea000000-0000-4000-8000-000000000002' returning id,assigned_user_id;
+                  id                  |           assigned_user_id           
+--------------------------------------+--------------------------------------
+ ea000000-0000-4000-8000-000000000002 | a0000000-0000-4000-8000-0000000000c1
+(1 row)
+
+UPDATE 1
+commit;
+COMMIT
+-- T3a officer CHECK-OUT of unassigned EQ-1: step 1 select existing
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select id,manufacturer,model,serial_number,asset_number,lifecycle_status,assigned_user_id,assigned_vehicle_id,assigned_location from public.equipment_assets t where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='ea000000-0000-4000-8000-000000000001';
+ id | manufacturer | model | serial_number | asset_number | lifecycle_status | assigned_user_id | assigned_vehicle_id | assigned_location 
+----+--------------+-------+---------------+--------------+------------------+------------------+---------------------+-------------------
+(0 rows)
+
+commit;
+COMMIT
+-- T3a step 2 (would only run if visible): conditional update
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.equipment_assets t set assigned_user_id='a0000000-0000-4000-8000-0000000000c1',updated_by='a0000000-0000-4000-8000-0000000000c1' where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='ea000000-0000-4000-8000-000000000001' and t.lifecycle_status='active' and t.assigned_user_id is null and t.assigned_vehicle_id is null and t.assigned_location is null returning id,manufacturer,model,serial_number,asset_number,lifecycle_status,assigned_user_id,assigned_vehicle_id,assigned_location;
+ id | manufacturer | model | serial_number | asset_number | lifecycle_status | assigned_user_id | assigned_vehicle_id | assigned_location 
+----+--------------+-------+---------------+--------------+------------------+------------------+---------------------+-------------------
+(0 rows)
+
+UPDATE 0
+commit;
+COMMIT
+-- T3b officer CHECK-IN of EQ-2 (assigned to officer), condition serviceable
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select id,manufacturer,model,serial_number,asset_number,lifecycle_status,assigned_user_id,assigned_vehicle_id,assigned_location from public.equipment_assets t where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='ea000000-0000-4000-8000-000000000002';
+                  id                  | manufacturer | model | serial_number | asset_number | lifecycle_status |           assigned_user_id           | assigned_vehicle_id | assigned_location 
+--------------------------------------+--------------+-------+---------------+--------------+------------------+--------------------------------------+---------------------+-------------------
+ ea000000-0000-4000-8000-000000000002 |              |       | RAD-2         | EQ-2         | active           | a0000000-0000-4000-8000-0000000000c1 |                     | 
+(1 row)
+
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.equipment_assets t set assigned_user_id=null,lifecycle_status='active',updated_by='a0000000-0000-4000-8000-0000000000c1' where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='ea000000-0000-4000-8000-000000000002' and t.assigned_user_id='a0000000-0000-4000-8000-0000000000c1' returning id,manufacturer,model,serial_number,asset_number,lifecycle_status,assigned_user_id,assigned_vehicle_id,assigned_location;
+ id | manufacturer | model | serial_number | asset_number | lifecycle_status | assigned_user_id | assigned_vehicle_id | assigned_location 
+----+--------------+-------+---------------+--------------+------------------+------------------+---------------------+-------------------
+(0 rows)
+
+UPDATE 0
+commit;
+COMMIT
+-- T3c officer CHECK-IN of EQ-2 with condition=damaged -> lifecycle_status='out_of_service'
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.equipment_assets t set assigned_user_id=null,lifecycle_status='out_of_service',updated_by='a0000000-0000-4000-8000-0000000000c1' where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='ea000000-0000-4000-8000-000000000002' and t.assigned_user_id='a0000000-0000-4000-8000-0000000000c1' returning id,manufacturer,model,serial_number,asset_number,lifecycle_status,assigned_user_id,assigned_vehicle_id,assigned_location;
+ id | manufacturer | model | serial_number | asset_number | lifecycle_status | assigned_user_id | assigned_vehicle_id | assigned_location 
+----+--------------+-------+---------------+--------------+------------------+------------------+---------------------+-------------------
+(0 rows)
+
+UPDATE 0
+commit;
+COMMIT
+-- T3d annotateAssignment
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.equipment_asset_assignments t set return_notes='[condition=serviceable]' where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.equipment_asset_id='ea000000-0000-4000-8000-000000000002';
+UPDATE 0
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000c1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select id,assigned_user_id,returned_at from public.equipment_asset_assignments t where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.equipment_asset_id='ea000000-0000-4000-8000-000000000002';
+                  id                  |           assigned_user_id           | returned_at 
+--------------------------------------+--------------------------------------+-------------
+ 035d4a36-e70e-4293-94eb-802b4e3d62b5 | a0000000-0000-4000-8000-0000000000c1 | 
+(1 row)
+
+commit;
+COMMIT
+-- post-state
+select id,lifecycle_status,assigned_user_id from equipment_assets order by id
+                  id                  | lifecycle_status |           assigned_user_id           
+--------------------------------------+------------------+--------------------------------------
+ ea000000-0000-4000-8000-000000000001 | active           | 
+ ea000000-0000-4000-8000-000000000002 | active           | a0000000-0000-4000-8000-0000000000c1
+(2 rows)
+

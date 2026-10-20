@@ -1,0 +1,7 @@
+default critical_email_only=true; default email_enabled=true
+  required_certification_due_soon      priority=High     email queued=false
+  agency_training_due_soon (<=30d)     priority=High     email queued=false
+  agency_training_due_soon (>30d)      priority=Normal   email queued=false
+  required_certification_expired       priority=Critical email queued=true
+TRN-13: API 409 kinds=21, home hides Acknowledge for=9; Acknowledge shown but rejected (409) for 12:
+  qualification_no_record, qualification_missing_day, qualification_missing_night, qualification_failed, qualification_overdue, qualification_due_soon, agency_training_missing, agency_training_overdue, agency_training_due_soon, agency_training_missing_staff, agency_training_overdue_staff, agency_training_due_soon_staff

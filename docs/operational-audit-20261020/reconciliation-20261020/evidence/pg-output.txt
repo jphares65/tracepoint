@@ -1,0 +1,23 @@
+CREATE TABLE
+INSERT 0 1
+PREPARE
+                  id                  | unit_number 
+--------------------------------------+-------------
+ 11111111-1111-4111-8111-111111111111 | 3101
+(1 row)
+
+psql:/tmp/claude-0/-home-user/37d8642d-fcb5-5f5b-86e8-f46de44d221c/scratchpad/recon/work-fleet/pg-checks.sql:7: ERROR:  invalid input syntax for type uuid: "3101"
+LINE 1: execute qr('00000000-0000-4000-8000-000000000001','3101','31...
+                                                          ^
+CREATE TABLE
+INSERT 0 1
+psql:/tmp/claude-0/-home-user/37d8642d-fcb5-5f5b-86e8-f46de44d221c/scratchpad/recon/work-fleet/pg-checks.sql:11: ERROR:  new row for relation "equipment_assets" violates check constraint "equipment_assets_lifecycle_status_check"
+DETAIL:  Failing row contains (1, out_of_service).
+ALTER TABLE
+ALTER TABLE
+UPDATE 1
+ id | lifecycle_status 
+----+------------------
+  1 | out_of_service
+(1 row)
+

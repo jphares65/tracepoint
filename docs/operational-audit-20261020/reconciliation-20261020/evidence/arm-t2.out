@@ -1,0 +1,10 @@
+ARM-04 cross-tenant as authenticated => OK {"ok":true,"firearm_id":"eeeeeeee-0000-4000-8000-000000000005","changed_fields":["serial_number"]}
+ARM-04 as anon => OK {"ok":true,"firearm_id":"eeeeeeee-0000-4000-8000-000000000005","changed_fields":["model","serial_number"]}
+firearm now: { serial_number: 'SN-TAMPERED-2', model: '19' }
+┌─────────┬────────────────────────────────────────┬───────────────┬──────────────────────────────┐
+│ (index) │ changed_by_user_id                     │ change_note   │ changed_fields               │
+├─────────┼────────────────────────────────────────┼───────────────┼──────────────────────────────┤
+│ 0       │ 'dddddddd-0000-4000-8000-000000000004' │ 'forged note' │ [ 'serial_number' ]          │
+│ 1       │ 'dddddddd-0000-4000-8000-000000000004' │ 'anon note'   │ [ 'model', 'serial_number' ] │
+└─────────┴────────────────────────────────────────┴───────────────┴──────────────────────────────┘
+ARM-33 empty caliber (as postgres) => ERROR 23502 null value in column "caliber" of relation "firearms" violates not-null constraint

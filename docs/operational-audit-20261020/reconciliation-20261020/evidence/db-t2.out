@@ -1,0 +1,178 @@
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select id,unit_number,current_mileage,current_hours from public.fleet_vehicles t where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='feee0000-0000-4000-8000-00000000000a';
+                  id                  | unit_number | current_mileage | current_hours 
+--------------------------------------+-------------+-----------------+---------------
+ feee0000-0000-4000-8000-00000000000a | A-101       |            1000 |           0.0
+(1 row)
+
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select inspection_role_codes, inspection_defect_creates_work_order, inspection_critical_out_of_service, inspection_include_required_equipment from public.fleet_rules t where t.department_id='dddddddd-0000-4000-8000-00000000000a';
+ inspection_role_codes | inspection_defect_creates_work_order | inspection_critical_out_of_service | inspection_include_required_equipment 
+-----------------------+--------------------------------------+------------------------------------+---------------------------------------
+ {}                    | t                                    | t                                  | t
+(1 row)
+
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select id,category,name,status,is_required,is_critical from public.fleet_vehicle_equipment t where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.vehicle_id='feee0000-0000-4000-8000-00000000000a';
+                  id                  | category | name | status  | is_required | is_critical 
+--------------------------------------+----------+------+---------+-------------+-------------
+ fe000000-0000-4000-8000-0000000000e1 | Safety   | AED  | Current | t           | t
+(1 row)
+
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+insert into public.fleet_vehicle_inspections(department_id,vehicle_id,inspection_type,result,mileage,hours,checklist,defect_count,critical_defect_count,notes,inspector_user_id) values ('dddddddd-0000-4000-8000-00000000000a','feee0000-0000-4000-8000-00000000000a','Pre-Shift','Failed',1200,0,'[{"id":"equipment:fe000000-0000-4000-8000-0000000000e1","condition":"Critical","note":"AED missing pads"}]'::jsonb,1,1,null,'a0000000-0000-4000-8000-0000000000f1') returning id,result,inspector_user_id;
+                  id                  | result |          inspector_user_id           
+--------------------------------------+--------+--------------------------------------
+ 23bb364c-a20a-4454-8006-88ef9e61d669 | Failed | a0000000-0000-4000-8000-0000000000f1
+(1 row)
+
+INSERT 0 1
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.fleet_vehicle_equipment t set status='Out of Service',updated_by_user_id='a0000000-0000-4000-8000-0000000000f1',updated_at=now() where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.vehicle_id='feee0000-0000-4000-8000-00000000000a' and t.id='fe000000-0000-4000-8000-0000000000e1';
+UPDATE 1
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+insert into public.fleet_work_orders(department_id,vehicle_id,record_type,title,description,priority,status,affects_availability,assigned_role_code,mileage,hours,created_by_user_id,updated_by_user_id) values ('dddddddd-0000-4000-8000-00000000000a','feee0000-0000-4000-8000-00000000000a','Inspection','Pre-Shift inspection defects','Safety: AED: AED missing pads','Critical','Open',true,'mechanic',1200,0,'a0000000-0000-4000-8000-0000000000f1','a0000000-0000-4000-8000-0000000000f1') returning id;
+                  id                  
+--------------------------------------
+ e24fed7f-307d-4d67-b612-306a6a4b7c8d
+(1 row)
+
+INSERT 0 1
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.fleet_vehicles t set current_mileage=1200,current_hours=0,inspection_due_date=current_date+1,updated_by_user_id='a0000000-0000-4000-8000-0000000000f1',updated_at=now() where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='feee0000-0000-4000-8000-00000000000a';
+UPDATE 1
+commit;
+COMMIT
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+insert into public.audit_events(department_id,actor_user_id,action,entity_type,entity_id,details) values ('dddddddd-0000-4000-8000-00000000000a','a0000000-0000-4000-8000-0000000000f1','fleet_vehicle_inspected','fleet_vehicle','feee0000-0000-4000-8000-00000000000a','{"support_mode":false}'::jsonb);
+ERROR:  new row violates row-level security policy for table "audit_events"
+commit;
+ROLLBACK
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000f1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+update public.fleet_vehicles t set status='Out of Service',open_issue_count=1,updated_at=now() where t.department_id='dddddddd-0000-4000-8000-00000000000a' and t.id='feee0000-0000-4000-8000-00000000000a';
+UPDATE 1
+commit;
+COMMIT
+-- ===== post-state (superuser view) =====
+select count(*) inspections from fleet_vehicle_inspections
+ inspections 
+-------------
+           2
+(1 row)
+
+select count(*) work_orders from fleet_work_orders
+ work_orders 
+-------------
+           1
+(1 row)
+
+select status,current_mileage,inspection_due_date,open_issue_count from fleet_vehicles where id='feee0000-0000-4000-8000-00000000000a'
+     status     | current_mileage | inspection_due_date | open_issue_count 
+----------------+-----------------+---------------------+------------------
+ Out of Service |            1200 | 2026-10-21          |                1
+(1 row)
+
+select status from fleet_vehicle_equipment where id='fe000000-0000-4000-8000-0000000000e1'
+     status     
+----------------
+ Out of Service
+(1 row)
+
+select action,actor_user_id from audit_events where action='fleet_vehicle_inspected'
+ action | actor_user_id 
+--------+---------------
+(0 rows)
+

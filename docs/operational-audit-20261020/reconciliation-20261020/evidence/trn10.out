@@ -1,0 +1,6 @@
+2026-10-20 u-self status=expired days=-10 reason="Certification expired 10 days ago."
+2026-10-20 u-other status=due_soon days=16 reason="Certification expires in 16 days."
+  fingerprint changed vs prior: n/a; snoozed_until carried: null
+2026-10-21 u-self status=expired days=-11 reason="Certification expired 11 days ago."
+2026-10-21 u-other status=due_soon days=15 reason="Certification expires in 15 days."
+  fingerprint changed vs prior: true; snoozed_until carried: null

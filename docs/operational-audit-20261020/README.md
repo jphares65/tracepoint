@@ -14,6 +14,7 @@
 | [Appendix E – Administration, Onboarding & Oversight](appendix-e-admin-onboarding.md) | Provisioning, users, permissions, settings, import, help, dashboards, landing-site claims (ADM-01 – ADM-36) |
 | [Appendix F – Architecture reconciliation](appendix-f-architecture-reconciliation.md) | Status of 83 earlier recommendations (ARC-01 – ARC-83) plus 5 new blockers |
 | [Appendix G – Runtime validation](appendix-g-runtime-validation.md) | What was actually executed, and with what result |
+| [Current-state reconciliation (2026-10-20)](reconciliation-20261020/README.md) | **Supersedes this report for current status:** findings reconciled against the AWS-native code line `555f061`, and the defect-remediation plan |
 | [Finding index](finding-index.md) | All 186 workflow findings with classification, priority and complexity |
 
 Each finding in Appendices A–E records the affected module, the real-world scenario, file:line evidence, the proposed correction, the user benefit and the implementation complexity (S/M/L).

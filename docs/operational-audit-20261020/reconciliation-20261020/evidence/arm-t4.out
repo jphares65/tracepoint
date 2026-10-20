@@ -1,0 +1,18 @@
+┌─────────┬──────────────────────────────────────────────────────────────────────────────────────────────┬────────┬───────┬───────────────┬──────────────┬────────────────────┬──────────────────────────────────────────────────┐
+│ (index) │ fn                                                                                           │ secdef │ anon  │ authenticated │ service_role │ tracepoint_runtime │ acl                                              │
+├─────────┼──────────────────────────────────────────────────────────────────────────────────────────────┼────────┼───────┼───────────────┼──────────────┼────────────────────┼──────────────────────────────────────────────────┤
+│ 0       │ 'update_firearm_with_audit(uuid,uuid,uuid,text,text,text,text,text,text,text,text)'          │ true   │ false │ true          │ false        │ false              │ '{postgres=X/postgres,authenticated=X/postgres}' │
+│ 1       │ 'update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)' │ true   │ false │ false         │ false        │ false              │ '{postgres=X/postgres}'                          │
+└─────────┴──────────────────────────────────────────────────────────────────────────────────────────────┴────────┴───────┴───────────────┴──────────────┴────────────────────┴──────────────────────────────────────────────────┘
+┌─────────┬──────────────────────┬─────────────┬────────────┬──────────────┬─────────────────────────┐
+│ (index) │ rolname              │ rolcanlogin │ rolinherit │ rolbypassrls │ member_of_authenticated │
+├─────────┼──────────────────────┼─────────────┼────────────┼──────────────┼─────────────────────────┤
+│ 0       │ 'tracepoint_runtime' │ false       │ false      │ false        │ true                    │
+└─────────┴──────────────────────┴─────────────┴────────────┴──────────────┴─────────────────────────┘
+1 attacker(B) ctx=B, p_department=A => ERROR 42501 firearm update forbidden
+2 attacker(B) spoofs ctx dept=A (needs raw SQL) => ERROR 42501 firearm update forbidden
+3 armorer(A) forges p_user_id=attacker => ERROR 42501 firearm update forbidden
+4 armorer(A) legitimate => OK {"ok":true,"firearm_id":"eeeeeeee-0000-4000-8000-000000000005","changed_fields":["serial_number"]}
+5 internal direct as authenticated => ERROR 42501 permission denied for function update_firearm_with_audit_internal
+6 anon => ERROR 42501 permission denied for function update_firearm_with_audit
+final: { serial_number: 'SN-LEGIT' }

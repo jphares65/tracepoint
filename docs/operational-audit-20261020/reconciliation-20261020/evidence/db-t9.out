@@ -1,0 +1,120 @@
+-- T9 step 1: dept admin A prepares invite (withPostgresAuthorization context, 13-arg overload as in cognito-invite.ts)
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select tracepoint_auth.prepare_cognito_invite('70000000-0000-4000-8000-000000000001','60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','dddddddd-0000-4000-8000-00000000000a','invitee@example.test','Invited Officer','B-77',null,null,null,array['officer']::text[],array[]::uuid[],true);
+ prepare_cognito_invite 
+------------------------
+ 
+(1 row)
+
+commit;
+COMMIT
+-- T9 step 2: pool-level (session_user=tracepoint_runtime, no role switch) confirm + commit + finish(sent=true)
+begin
+BEGIN
+select tracepoint_auth.confirm_cognito_provider_username('60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001')
+ confirm_cognito_provider_username 
+-----------------------------------
+ 
+(1 row)
+
+select tracepoint_auth.commit_cognito_invite('60000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL')
+ commit_cognito_invite 
+-----------------------
+ 
+(1 row)
+
+commit
+COMMIT
+select tracepoint_auth.finish_cognito_invite('60000000-0000-4000-8000-000000000001',true,null)
+ finish_cognito_invite 
+-----------------------
+ 
+(1 row)
+
+-- T9 step 3: lifecycle state of invited user
+select provider,issuer,subject,tracepoint_user_id,state,provider_username from authentication_identity_links where tracepoint_user_id='70000000-0000-4000-8000-000000000001'
+ provider |                             issuer                             |               subject                |          tracepoint_user_id          |  state  |          provider_username           
+----------+----------------------------------------------------------------+--------------------------------------+--------------------------------------+---------+--------------------------------------
+ cognito  | https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL | 50000000-0000-4000-8000-000000000001 | 70000000-0000-4000-8000-000000000001 | pending | 50000000-0000-4000-8000-000000000001
+(1 row)
+
+select department_id,is_active,activation_status from department_memberships where user_id='70000000-0000-4000-8000-000000000001'
+            department_id             | is_active | activation_status 
+--------------------------------------+-----------+-------------------
+ dddddddd-0000-4000-8000-00000000000a | t         | activation_sent
+(1 row)
+
+select operation_kind,state from authentication_lifecycle_operations where id='60000000-0000-4000-8000-000000000001'
+ operation_kind |   state   
+----------------+-----------
+ invite         | committed
+(1 row)
+
+-- T9 step 4: PostgresIdentityMappingStore.findActive (exact SQL from postgres-mapping.ts) as tracepoint_runtime pool
+select tracepoint_user_id from public.authentication_identity_links where provider='cognito' and issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL' and subject='50000000-0000-4000-8000-000000000001' and state='active'
+ tracepoint_user_id 
+--------------------
+(0 rows)
+
+-- T9 step 5: PostgresCognitoSessionStore.registerVerified mapping lock (postgres-sessions.ts)
+begin
+BEGIN
+select 1 from public.authentication_identity_links where provider='cognito' and issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL' and subject='50000000-0000-4000-8000-000000000001' and tracepoint_user_id='70000000-0000-4000-8000-000000000001' and state='active' for update
+ ?column? 
+----------
+(0 rows)
+
+rollback
+ROLLBACK
+-- T9 step 6: same query without the state filter (shows the row exists but is pending)
+select tracepoint_user_id, state from public.authentication_identity_links where provider='cognito' and issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL' and subject='50000000-0000-4000-8000-000000000001'
+          tracepoint_user_id          |  state  
+--------------------------------------+---------
+ 70000000-0000-4000-8000-000000000001 | pending
+(1 row)
+
+-- T9 step 7: which DB functions can move cognito link pending->active?
+select p.oid::regprocedure from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','tracepoint_auth') and pg_get_functiondef(p.oid) ~* 'set\s+state\s*=\s*''active''' order by 1
+ERROR:  "array_agg" is an aggregate function
+tracepoint_auth.finalize_cognito_activation(uuid)|{postgres=X/postgres,tracepoint_runtime=X/postgres}
+tracepoint_auth.finish_cognito_password_operation(uuid,boolean,text)|{postgres=X/postgres,tracepoint_runtime=X/postgres}
+-- T9 step 8: only in-app workaround: admin assign_password (prepare in auth ctx, finish at pool level), then findActive again
+begin;
+BEGIN
+set local role authenticated;
+SET
+select set_config('tracepoint.subject_id','a0000000-0000-4000-8000-0000000000a1',true) is not null as subj_set, set_config('tracepoint.department_id','dddddddd-0000-4000-8000-00000000000a',true) is not null as dept_set;
+ subj_set | dept_set 
+----------+----------
+ t        | t
+(1 row)
+
+select user_id, identity_state from tracepoint_auth.prepare_cognito_password_operation('60000000-0000-4000-8000-000000000002','assign_password','dddddddd-0000-4000-8000-00000000000a','70000000-0000-4000-8000-000000000001',null);
+               user_id                | identity_state 
+--------------------------------------+----------------
+ 70000000-0000-4000-8000-000000000001 | pending
+(1 row)
+
+commit;
+COMMIT
+select tracepoint_auth.finish_cognito_password_operation('60000000-0000-4000-8000-000000000002',true,null)
+ finish_cognito_password_operation 
+-----------------------------------
+ 
+(1 row)
+
+select tracepoint_user_id from public.authentication_identity_links where provider='cognito' and issuer='https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TESTPOOL' and subject='50000000-0000-4000-8000-000000000001' and state='active'
+          tracepoint_user_id          
+--------------------------------------
+ 70000000-0000-4000-8000-000000000001
+(1 row)
+
