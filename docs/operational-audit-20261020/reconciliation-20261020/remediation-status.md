@@ -107,8 +107,8 @@ Every branch is cut from `555f061` (`codex/staging-mobile-api-release-20261007`)
 | B9 equipment holder | `claude/fix-b9-separated-custody` @ `330ce20` | 049 | Green |
 | B7 training records | `claude/fix-b7-training-records` @ `15867d0` | 050 | Green (run 10) |
 | B10 qualification and range roles | `claude/fix-b10-qualification-range-roles` @ `6e43ab4` | 051 | Green (run 11) |
-| B8 armory integrity | `claude/fix-b8-armory-integrity` @ `06d397d` | 052 | See integration CI |
-| B11 admin correctness | `claude/fix-b11-admin-correctness` @ `b8b3475` | — | See integration CI |
+| B8 armory integrity | `claude/fix-b8-armory-integrity` @ `06d397d` | 052 | Green (run 12) |
+| B11 admin correctness | `claude/fix-b11-admin-correctness` @ `b8b3475` | — | Green (run 14, integration head `e19e84c`) |
 
 The staging package now covers migrations 038–051 (047 is reserved for B6) and acceptance steps S1–S21. Native contract rows C25–C27 cover B10.
 
