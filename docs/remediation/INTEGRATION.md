@@ -56,3 +56,4 @@ The four xlsx failures and the "ran no tests" exclusions recorded during local d
 |---|---|---|
 | `claude/fix-f1-account-import-decisions` | `ddcfc58acf8af3203227ae12774af24d1c554ab0` | 044 |
 | `claude/fix-f4-qr-disclosure` | `2edaba653ff2bf4e821fa159aadce295566c9b29` | — |
+| `claude/fix-f2-fleet-authorization-decisions` | `3de7ee73a65946d7808f2afcb54d6a5481a7afa8` | 045 |
