@@ -7,6 +7,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createAgencyTrainingReadRepository } from "@/lib/agency-training/read-repository";
+import { ownRows } from "@/lib/tracepoint/training-record-visibility";
 
 type RouteContext = { params: Promise<{ eventId: string }> };
 
@@ -147,6 +148,8 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
     return NextResponse.json({ error: "Training event not found." }, { status: 404 });
   }
 
+  // Scores, outcomes and remedial notes of other attendees need manage_training.
+  const canManage = hasAnyServerPermission(context, MANAGE_PERMISSIONS);
   return NextResponse.json(
     {
       event: {
@@ -156,8 +159,8 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
         status: roster.event.status,
       },
       members: roster.members,
-      attendees: roster.attendees,
-      canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),
+      attendees: canManage ? roster.attendees : ownRows(roster.attendees, context.userId, ["userId"]),
+      canManage,
     },
     { headers: { "Cache-Control": "no-store" } },
   );

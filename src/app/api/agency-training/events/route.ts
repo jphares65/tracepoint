@@ -8,6 +8,7 @@ import {
   permissionDeniedResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { AGENCY_TRAINING_SUMMARY_PERMISSIONS } from "@/lib/tracepoint/training-record-visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,11 @@ export async function GET() {
 
   const context = resolved.context;
   try {
-    const events = await createAgencyTrainingReadRepository(context.admin, context.departmentId).listEvents({ departmentId: context.departmentId });
+    // Attendance counts cover other officers only for training staff and command.
+    const events = await createAgencyTrainingReadRepository(context.admin, context.departmentId).listEvents({
+      departmentId: context.departmentId,
+      attendeeUserId: hasAnyServerPermission(context, AGENCY_TRAINING_SUMMARY_PERMISSIONS) ? undefined : context.userId,
+    });
     return NextResponse.json({
       events,
       canManage: hasAnyServerPermission(context, MANAGE_PERMISSIONS),

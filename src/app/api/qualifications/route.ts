@@ -5,6 +5,11 @@ import {
   mapQualificationHistoryRows,
 } from "@/lib/qualifications/history-repository";
 import { resolveServerAccess } from "@/lib/tracepoint/server-access";
+import {
+  canViewDepartmentRecords,
+  ownRows,
+  RANGE_RECORD_PERMISSIONS,
+} from "@/lib/tracepoint/training-record-visibility";
 
 export async function GET() {
   const access = await resolveServerAccess();
@@ -16,7 +21,7 @@ export async function GET() {
     );
   }
 
-  const { admin, departmentId } = access.context;
+  const { admin, departmentId, permissions, userId } = access.context;
 
   try {
     const data = await createQualificationHistoryRepository(
@@ -24,8 +29,11 @@ export async function GET() {
       departmentId,
     ).listImportedHistory({ departmentId });
 
+    const results = mapQualificationHistoryRows(data);
     return NextResponse.json({
-      results: mapQualificationHistoryRows(data),
+      results: canViewDepartmentRecords(permissions, RANGE_RECORD_PERMISSIONS)
+        ? results
+        : ownRows(results, userId, ["officerUserId"]),
     });
   } catch (error) {
     return NextResponse.json(

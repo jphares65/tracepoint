@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, routeContext: RouteContext) {
       const workspace = await admin.from("pilot_range_workspaces").select("workspace")
         .eq("department_id", departmentId).maybeSingle();
       const results = Array.isArray(workspace.data?.workspace?.results) ? workspace.data.workspace.results : [];
-      authorized = results.some((result: Record<string, unknown>) => String(result.id ?? "") === String(row.entity_key) && String(result.officerUserId ?? result.officer_user_id ?? "") === resolved.context.userId);
+      authorized = results.some((result: Record<string, unknown>) => String(result.id ?? "") === String(row.entity_key) && String(result.officerId ?? result.officerUserId ?? result.officer_user_id ?? "") === resolved.context.userId);
     }
   } else if (row.entity_type === "agency_training_event") {
     authorized = true;

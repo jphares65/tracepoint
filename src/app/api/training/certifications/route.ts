@@ -7,6 +7,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createTrainingReadRepository } from "@/lib/training/read-repository";
+import { ownRows } from "@/lib/tracepoint/training-record-visibility";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -87,7 +88,9 @@ export async function GET() {
 
   try {
     const data = await createTrainingReadRepository(context.admin, context.departmentId).getCertificationWorkspace(context.departmentId);
-    return NextResponse.json({ ...data, canManage: context.canManage });
+    // Officers see only their own credentials; certification managers see the department.
+    const certifications = context.canManage ? data.certifications : ownRows(data.certifications, context.user.id, ["user_id"]);
+    return NextResponse.json({ ...data, certifications, canManage: context.canManage });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Certification records could not be loaded." }, { status: 500 });
   }
