@@ -2,6 +2,8 @@ import { types as pgTypes } from "pg";
 
 const INT8_OID = 20;
 const NUMERIC_OID = 1700;
+// Calendar dates stay YYYY-MM-DD text, as the provider (PostgREST) returned them; pg would build a local-midnight Date.
+const DATE_OID = 1082;
 
 export function parsePostgresContractNumber(value: string) {
   const parsed = Number(value);
@@ -16,6 +18,7 @@ export const postgresRuntimeTypes = {
     if ((format ?? "text") === "text" && (oid === INT8_OID || oid === NUMERIC_OID)) {
       return parsePostgresContractNumber;
     }
+    if ((format ?? "text") === "text" && oid === DATE_OID) return (value: string) => value;
     return pgTypes.getTypeParser(oid, format);
   },
 };
