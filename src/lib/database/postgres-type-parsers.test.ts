@@ -15,3 +15,9 @@ test("unsafe PostgreSQL numbers fail instead of losing precision", () => {
     /exceeds the TracePoint number contract/,
   );
 });
+
+test("PostgreSQL DATE fields stay calendar-date text, as PostgREST returns them", () => {
+  assert.equal(postgresRuntimeTypes.getTypeParser(1082)("2026-09-14"), "2026-09-14");
+  assert.deepEqual(postgresRuntimeTypes.getTypeParser(1182)("{2026-09-14,NULL,2024-02-29}"), ["2026-09-14", null, "2024-02-29"]);
+  assert.ok(postgresRuntimeTypes.getTypeParser(1184)("2026-09-14 12:00:00+00") instanceof Date, "timestamptz parsing is unchanged");
+});
