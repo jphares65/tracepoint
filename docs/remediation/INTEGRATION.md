@@ -64,3 +64,5 @@ F3 merge notes:
 - There was a textual conflict in the `src/app/api/fleet/vehicles/[vehicleId]/route.ts` import line. It was resolved by taking the union: F2's `canViewFleetCosts` and F3's `findSafetyHold`.
 - One test-fixture gap was fixed. F3's `findSafetyHold` uses `.gt()`, which F2's mock data client in `fleet-authorization-decisions.test.ts` did not implement, so F2's 4 route tests failed. The mock gained `gt`, in the same form as `fleet-integrity.test.ts`. After the fix, all 136 fleet and tracepoint tests pass.
 - Migration 046 does not redefine F2's `guard_fleet_field_vehicle_update`, so 045's eligibility rule is preserved. F3 also verified its route harness with 045 applied before 046 (124/124 migrations).
+| `claude/fix-f5-qr-inspection-eligibility` | `dbab1166623597060f75e9e8fc5141add86d7ef5` | — |
+| `claude/fix-date-contract` | `cec3235baeb62f4740c0361ccb8765f8f43bdabd` | — |

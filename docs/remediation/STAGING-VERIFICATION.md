@@ -1,6 +1,6 @@
 # Staging verification package: claude/integration-defects-20261020
 
-**Status:** DRAFT for owner approval. Nothing in this package has been executed.
+**Status:** Ready for owner review. Nothing in this package has been executed.
 
 **Scope:** staging only (AWS account `559054714699`). Production is out of scope and needs a separate authorization.
 
@@ -85,7 +85,7 @@ Run every step **before** (current staging image and schema) and **after** (migr
 | **S1** | Invite a new user. On the website they set a password of at least 14 characters, enrol in MFA, and complete first sign-in. | Lands in the app; identity link becomes `active`; one `account_activated` audit row per membership | NEW-ADM-A, F1 password |
 | **S2** | An inspector-only user (role with `perform_fleet_inspections`, not an administrator) submits an inspection with a Critical defect on a vehicle a manager set to Available (override active). Test web and native app. | 201; Critical work order exists; vehicle Out of Service with override kept; `audit.status` `recorded`; one `fleet_vehicle_inspected` audit row | NEW-01, FLT-01, B2 amendment |
 | **S3** | An officer checks out an unassigned pool item, then returns it as `damaged`, through the native app. Then a second officer looks up the first officer's held item. | Check-out 200 and check-in 200; lifecycle becomes `out_of_service`; the second officer gets 404 | EQP-06, EQP-09, custody privacy |
-| **S4** | Through the native app: scan a printed vehicle label, an equipment label, then a unit number, a serial, a duplicated serial, a firearm serial as an officer without firearm read, and a firearm the officer holds. | Labels and unit number resolve to the exact item; duplicate gives 409 and the app opens **no** item; no-read firearm gives a body identical to a non-existent value; held firearm gives `denied` | NEW-02, FLT-04, F4 |
+| **S4** | Through the native app: scan a printed vehicle label, an equipment label, then a unit number, a serial, a duplicated serial, a firearm serial as an officer without firearm read, and a firearm the officer holds. Repeat the vehicle scan as: (a) an inspector; (b) an officer eligible only through a configured inspection role; (c) a `view_fleet` viewer outside the configured roles. | Labels and unit number resolve to the exact item; duplicate gives 409 and the app opens **no** item; no-read firearm gives a body identical to a non-existent value; held firearm gives `denied`. Vehicle scan: (a) and (b) get `vehicle_inspection` `allowed:true`; (c) gets `denied`. Before F5, every vehicle scan returned `denied`. | NEW-02, FLT-04, F4, F5 |
 | **S5** | Range day: save 3 scores; correct one and save again; set Packet = Ready, then enter a new score; save from a second browser with a stale page. | Correction saved and visible in `resultRevisions`; scoring works after Ready; the stale save gets a 409 reload prompt and nothing is silently overwritten. On the native app, confirm it tolerates `resultRevisions` and, if supported, sends `baseUpdatedAt`. | RNG-01, RNG-03, RNG-13 |
 | **S6** | Notifications: *deferred to B6.* Infrastructure is not authorized in this package. Record the current behaviour only. | Documented as known open (TRN-01, TRN-08) | — |
 | **S7** | A platform admin in Support Mode toggles a module off and on for a synthetic agency, then reloads. Then, outside Support Mode, opens the agency page. | Toggle persists, with a `department_feature_events` row; outside Support Mode the page shows the Support Mode guidance | NEW-ADM-C, F1 guidance |
@@ -98,6 +98,7 @@ Run every step **before** (current staging image and schema) and **after** (migr
 | S14 | Assign Password with 13 and with 14 characters; an existing user with an older shorter password signs in. | 13 rejected with a clear message; 14 accepted; the existing user signs in without a forced reset | F1 |
 | S15 | An inspector (not a maintenance user) opens vehicle detail, the mobile vehicle view and the inspection response; a fleet manager does the same. | No `labor_cost`, `parts_cost` or `total_cost` for the inspector; costs present for the manager | F2 |
 | S16 | An eligible officer (`view_fleet`, empty inspection-role list) reports a Critical issue. Then configure the inspection-role list without that officer's role and retry. | First: 201, vehicle Out of Service, no management access gained. Second: refused in both the API and the DB | F2 |
+| S17 | A synthetic member holds a certification valid until next year. Open My Home, the inbox, `/training/certifications` and the readiness views on the website. Through the native app, open any view with a date (equipment expiry, inspection due date). | Shows **current** with the correct expiry date. Before the DC fix it showed **expired** with no date. The native app parses `YYYY-MM-DD` dates correctly. If it does not, **stop**: the native client needs an update before deploy. | DC (date contract) |
 
 ## 5. Rollback
 
@@ -128,13 +129,13 @@ The migrations are additive and were designed to stay in place under the previou
 |---|---|---|---|---|---|---|---|
 | Pre-flight 1–5 | | | | | | | |
 | Migrations 038–046 | | | | | | | |
+| S17 | | | | | | | |
 | S1 … S16 | | | | | | | |
 
 ## 7. Known open items: not covered or not yet decided
 
 - Notification delivery (B6 TRN-01/TRN-08) needs the separate infrastructure proposal and authorization.
 - TRN-26 data visibility is pending an owner decision.
-- QR resolution for officers eligible only through a listed inspection role:
-  - A vehicle scan returns `denied`, because the QR decision uses the permission list rather than `can_submit_fleet_inspection` (F2 note).
-  - This needs a small alignment fix before S4/S16 sign-off.
+- Notification fixes that do not need infrastructure (TRN-10, 13, 16, 19 silent failure, 35, and constant-time secret comparison) are on the separate branch `claude/fix-b6-notification-delivery`. That branch is **not** in this package; it waits for the B6 infrastructure decision.
+- **DC date contract:** if production is AWS-native, valid certifications currently show as expired. Consider prioritising S17, and check production read-only for this symptom.
 - The native client's behaviour has to be verified in S2–S5, because the client code is not in the repository.
