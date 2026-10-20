@@ -106,10 +106,16 @@ Every branch is cut from `555f061` (`codex/staging-mobile-api-release-20261007`)
 | TV training visibility | `claude/fix-tv-training-visibility` @ `3f8f5e2` | 048 | Green |
 | B9 equipment holder | `claude/fix-b9-separated-custody` @ `330ce20` | 049 | Green |
 | B7 training records | `claude/fix-b7-training-records` @ `15867d0` | 050 | Green (run 10) |
-| B10 qualification and range roles | `claude/fix-b10-qualification-range-roles` @ `6e43ab4` | 051 | Run 11 on the merge |
+| B10 qualification and range roles | `claude/fix-b10-qualification-range-roles` @ `6e43ab4` | 051 | Green (run 11) |
+| B8 armory integrity | `claude/fix-b8-armory-integrity` @ `06d397d` | 052 | See integration CI |
+| B11 admin correctness | `claude/fix-b11-admin-correctness` @ `b8b3475` | — | See integration CI |
 
 The staging package now covers migrations 038–051 (047 is reserved for B6) and acceptance steps S1–S21. Native contract rows C25–C27 cover B10.
 
 **B10 needs a data-impact step before staging apply:** run `scripts/qualification-status-snapshot.sql` and `scripts/qualification-status-diff.mjs`, and close out completed range days, because passes on open days stop counting.
 
-**In progress:** B8 (migration 052) and B11 (053 if needed), on separate branches. They merge in that order.
+B8 and B11 are now merged, in that order. The staging package covers migrations 038–052 and steps S1–S23. **All planned batches B0–B11 except B6 are fixed in code. None is validated in staging or confirmed in production.**
+
+Open owner decisions from B8/B11:
+- B8: profile name read for `manage_firearms`-only armorers ("Unknown User"); two read-policy gaps (off-duty inspection without review permission; rifle-review permission resolution for non-administrators); review the narrow personal-rifle history INSERT grant in 052.
+- B11: ADM-07 `email_verified` for invited users (S23 step 3); bridge-mode member save stays non-atomic; 63 other routes still pass raw error text in some path; 33 armory backup files still to remove.

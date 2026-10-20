@@ -37,7 +37,8 @@ Updated 2026-10-20. Every defect moves through four separate stages:
 | DC2 timestamps arrive as Date (dashboard training lists empty) | Medium | DC inventory | **Not fixed** | — | — | — |
 | B7 training records (TRN-02/03/04/11/12/18/27/29/30) | High/Med | R4 | B7 (050) | S20 | — | — |
 | B10 qualification and range roles (RNG-07/09/10/12/14/15/24) | High/Med | R3 | B10 (051) | S21 (run the qualification-status diff report first) | — | — |
-| B8 armory integrity, B11 admin correctness | High/Med | R2, R6 | In progress on `claude/fix-b8-armory-integrity` and `claude/fix-b11-admin-correctness`; merge order B8 then B11 | — | — | — |
+| B8 armory integrity (ARM-06/11/13/16/17/21/22/23/26/28/29/33), plus second-person certification and rifle history write on AWS (new) | High/Med | R2, B8 | B8 (052) | S22 | — | — |
+| B11 admin correctness (ADM-06/08/10/19/20/23/25/30/32; ADM-07 and ADM-02 verified only) | High/Med | R6 | B11 (no migration) | S23 | — | — |
 
 **Superseded or not applicable:**
 
