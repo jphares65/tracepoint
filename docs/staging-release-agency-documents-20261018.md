@@ -4,9 +4,31 @@ Branch `claude/staging-rc-agency-documents-20261018` (supersedes
 `claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Validation
 evidence is in the commit history and the final report; this file is the operator's procedure.
 
-## Next release: date fixes and the Agency Documents module toggle (migration 046)
+## Status: date fixes and module toggle deployed to staging 2026-10-20 (revision 188)
 
-Pending. It contains:
+Application `75499335` was released with tooling `f845b932`:
+- Task definition revision **188**, image
+  `sha256:c60a4a69fd11c85129440044b38b5f2a5b9093058c83e257b57ff19f824734c8` (zero scan findings).
+- Migration 046 applied; ledger 001–046, 0 pending. The 046 row carries `75499335`, `staging`,
+  `apply`.
+- `STAGING RELEASE VERIFIED` was printed after the post-rollout health check.
+- Afterwards, read-only: service 1/1 on 188 with deployment COMPLETED; `/api/health` 200;
+  unauthenticated `/api/qualifications` and `/api/agency-documents/templates` 401;
+  `/agency-documents` redirects to login; no errors logged since the rollout.
+- Rollback target: revision 187 (`sha256:d5a19dd2…`), via
+  `.\scripts\deploy-app.ps1 -Environment staging -RollbackTaskDefinitionArn …:187`. 046 is
+  additive and stays applied.
+
+The first attempt (tooling `75499335`) built and scanned the image and accepted `APPLY 046`.
+`migrate-db.ps1` then failed its first AWS identity call, before any migration task started. The
+rerun's `status` confirmed 001–045 applied and 046 pending. Because ECR tags are immutable, a rerun
+could not push the tag again; the release now reuses an image whose exact tag already exists.
+
+The authenticated checks below are still to do.
+
+### Release contents
+
+It contains:
 - **A1 date fix.** On the AWS runtime, node-postgres returned DATE columns as `Date` objects, so
   Agency Documents treated every qualification date as missing. The pool now returns DATE as
   `yyyy-mm-dd` text (`postgres-type-parsers.ts`), and Agency Documents normalizes dates itself.
