@@ -2,7 +2,7 @@ name: Application quality gate
 on:
   pull_request:
   push:
-    branches: [main, codex/staging-mobile-api-release-20261007]
+    branches: [main, codex/staging-mobile-api-release-20261007, "claude/integration-**"]
   workflow_dispatch:
 permissions:
   contents: read
