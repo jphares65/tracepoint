@@ -234,7 +234,8 @@ begin
  update public.fleet_vehicles set status='Maintenance',open_issue_count=1 where id='0b200000-0000-4000-8000-0000000001a1';
  get diagnostics affected = row_count;
  if affected <> 1 then raise exception 'Mechanic status refresh failed'; end if;
- begin update public.fleet_vehicles set inspection_due_date=current_date+30 where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Mechanic changed the inspection due date'; exception when insufficient_privilege then null; end;
+ -- With no inspection roles listed, a mechanic (view_fleet) is an eligible inspector and may set the
+ -- inspection due date (045); validate-local-fleet-inspection-eligibility.sql covers the listed-roles case.
  begin update public.fleet_vehicles set vin=null,notes='x' where id='0b200000-0000-4000-8000-0000000001a1'; raise exception 'Mechanic edited vehicle details'; exception when insufficient_privilege then null; end;
  insert into public.audit_events(department_id,actor_user_id,action,entity_type,entity_id) values ('0b200000-0000-4000-8000-00000000000a','0b200000-0000-4000-8000-0000000000d1','fleet_work_order_updated','fleet_vehicle','0b200000-0000-4000-8000-0000000001a1');
  perform set_config('tracepoint.subject_id','0b200000-0000-4000-8000-0000000000f1',true);

@@ -5,7 +5,10 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { FLEET_WORK_ORDER_FIELDS_WITHOUT_COST } from "@/lib/fleet/read-repository-core";
 import {
+  canSubmitFleetInspection,
+  canViewFleetCosts,
   numeric,
   optionalNumeric,
   reconcileFleetAudit,
@@ -54,28 +57,7 @@ export async function POST(
     .select("*")
     .eq("department_id", context.departmentId)
     .maybeSingle();
-  const permittedRoles = Array.isArray(rules?.inspection_role_codes)
-    ? rules.inspection_role_codes
-    : [];
-
-  const userRoles = Array.isArray(context.roleCodes) ? context.roleCodes : [];
-
-  const userPermissions = Array.isArray(context.permissions)
-    ? context.permissions
-    : [];
-
-  const hasInspectionPermission =
-    context.isSuperAdmin ||
-    userPermissions.includes("administer_department") ||
-    userPermissions.includes("perform_fleet_inspections") ||
-    userPermissions.includes("manage_fleet") ||
-    userPermissions.includes("manage_fleet_rules");
-
-  if (
-    permittedRoles.length &&
-    !hasInspectionPermission &&
-    !userRoles.some((role: string) => permittedRoles.includes(role))
-  ) {
+  if (!canSubmitFleetInspection(context, rules)) {
     return NextResponse.json(
       {
         error:
@@ -345,7 +327,7 @@ export async function POST(
         created_by_user_id: context.user.id,
         updated_by_user_id: context.user.id,
       })
-      .select("*")
+      .select(canViewFleetCosts(context) ? "*" : FLEET_WORK_ORDER_FIELDS_WITHOUT_COST)
       .single();
     if (workOrderError || !data)
       return fail("creating the defect work order", workOrderError);

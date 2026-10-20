@@ -172,7 +172,7 @@ test("FLT-02 work-order edits never roll the odometer or hour meter back; the wo
 test("FLT-09 blank or null mileage means not provided", async () => {
   const { json, server, workOrders, inspections } = await load();
   const db = createDb(fleet([vehicle()]));
-  signIn(db, []);
+  signIn(db, ["view_fleet"]);
   assert.equal((await workOrders.POST(json(`/api/fleet/vehicles/${V}/work-orders`, "POST", { recordType: "Issue", title: "Dent", mileage: "", hours: null }), params({ vehicleId: V }))).status, 201);
   assert.equal(db.tables.fleet_vehicles[0].current_mileage, 19200);
   assert.equal(db.tables.fleet_vehicles[0].current_hours, 100);

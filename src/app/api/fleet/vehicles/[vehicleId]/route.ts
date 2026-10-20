@@ -5,7 +5,7 @@ import {
   createObjectStore,
 } from "@/lib/storage/object-store";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewNetworkDetails, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewFleetCosts, canViewNetworkDetails, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const attachmentBase = mobile ? "/api/mobile/attachments" : "/api/attachments";
 
   let detail;
-  try { detail = await createFleetReadRepository(context.admin, context.departmentId).getVehicleDetail({ departmentId: context.departmentId, vehicleId, canViewNetworkDetails: (rules) => canViewNetworkDetails(context, rules) }); }
+  try { detail = await createFleetReadRepository(context.admin, context.departmentId).getVehicleDetail({ departmentId: context.departmentId, vehicleId, canViewNetworkDetails: (rules) => canViewNetworkDetails(context, rules), canViewCosts: canViewFleetCosts(context) }); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Fleet records could not be loaded." }, { status: 500 }); }
   if (!detail) return NextResponse.json({ error: "Vehicle was not found." }, { status: 404 });
 
