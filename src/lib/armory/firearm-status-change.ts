@@ -63,8 +63,9 @@ export function inspectionStatusNote(result: InspectionResult, inspectionId: str
 }
 
 // Applies a condition change and its history row. The firearm row changes only
-// from the status it was read with; if the history row cannot be written the
-// change is reverted. Returns false when the firearm changed underneath.
+// from the status it was read with. Returns false when the firearm changed
+// underneath. On AWS one database call does both, atomically (053); on bridge
+// the history row is written next and the change is reverted if that fails.
 export async function changeFirearmStatus(
   db: any,
   input: {
@@ -76,6 +77,18 @@ export async function changeFirearmStatus(
     notes: string | null;
   },
 ) {
+  if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+    const { data, error } = await db.rpc("change_firearm_status", {
+      p_department_id: input.departmentId,
+      p_firearm_id: input.firearmId,
+      p_from_status: input.fromStatus,
+      p_to_status: input.toStatus,
+      p_notes: input.notes,
+    });
+    if (error) throw new Error(error.message);
+    return data === true;
+  }
+
   const now = new Date().toISOString();
   let update = db
     .from("firearms")

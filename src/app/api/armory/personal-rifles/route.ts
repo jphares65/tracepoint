@@ -32,7 +32,7 @@ export async function GET() {
     const { admin, departmentId, user } = context;
     const [rules, access] = await Promise.all([
       getPersonalRifleRules(admin, departmentId),
-      getPersonalRifleAccess(admin, departmentId, user.id),
+      getPersonalRifleAccess(context.permissions),
     ]);
 
     const repository = createPersonalRifleReadRepository(admin, departmentId, user.id);

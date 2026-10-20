@@ -277,7 +277,8 @@ test("ARM-29: an owner cannot review or reinstate their own personal rifle; anot
     department_membership_roles: [{ department_id: D, user_id: CHIEF, role_code: "chief" }, { department_id: D, user_id: "user-lieutenant", role_code: "chief" }],
     department_role_permissions: [{ department_id: D, role_code: "chief", permission_code: "approve_personal_rifles" }, { department_id: D, role_code: "chief", permission_code: "manage_inspections" }],
   });
-  let db = world(tables(), CHIEF, []);
+  const reviewer = ["approve_personal_rifles", "manage_inspections"];
+  let db = world(tables(), CHIEF, reviewer);
   for (const [rifleId, action] of [["pr-1", "chief_approve"], ["pr-1", "chief_deny"], ["pr-2", "reinstate"]]) {
     const result = await call(route, "PATCH", "/x", { action, notes: "x" }, { rifleId });
     assert.equal(result.status, 403, `${action}: ${JSON.stringify(result.body)}`);
@@ -286,7 +287,7 @@ test("ARM-29: an owner cannot review or reinstate their own personal rifle; anot
   assert.equal(db.tables.personal_rifles[0].status, "Pending Chief Approval");
   assert.equal(db.tables.personal_rifles[1].status, "Suspended");
 
-  db = world(tables(), "user-lieutenant", []);
+  db = world(tables(), "user-lieutenant", reviewer);
   const approved = await call(route, "PATCH", "/x", { action: "chief_approve" }, { rifleId: "pr-1" });
   assert.equal(approved.status, 200, JSON.stringify(approved.body));
   assert.equal(db.tables.personal_rifles[0].chief_reviewed_by, "user-lieutenant");
@@ -381,4 +382,120 @@ test("ARM-23: expected quantities come from the lots, a variance needs a reason,
   assert.equal(db.tables.ammunition_reconciliations[0].status, "Certified");
   assert.equal(db.tables.ammunition_reconciliations[0].certified_by, CHIEF);
   assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "certify does not rewrite the counts");
+});
+
+// B8a
+async function inMode<T>(mode: string | undefined, run: () => Promise<T>) {
+  const previous = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE;
+  if (mode === undefined) delete process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE; else process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE = mode;
+  try { return await run(); } finally {
+    if (previous === undefined) delete process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE; else process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE = previous;
+  }
+}
+const rpcReturns = (db: ReturnType<typeof createDb>, data: unknown, error: Row | null = null) => {
+  (db as any).rpc = async (name: string, args: Row) => { db.rpcs.push({ name, ...args }); return { data, error }; };
+};
+
+test("B8a ARM-06: if the archive fails, the assignment is not closed as not returned", async () => {
+  const db = world({ firearms: [firearm()], firearm_assignments: [openAssignment()] });
+  const from = db.from;
+  (db as any).from = (table: string) => {
+    const builder = from(table);
+    if (table !== "firearms") return builder;
+    const update = builder.update;
+    builder.update = (value: Row) => { update(value); builder.then = (resolve: any) => Promise.resolve({ data: null, error: { message: "archive failed" } }).then(resolve); return builder; };
+    return builder;
+  };
+  const result = await call("../../app/api/armory/firearms/[firearmId]/archive/route.ts", "PATCH", "/x", { archiveReason: "Reported stolen", notReturnedReason: "Stolen" }, { firearmId: "fa-1" });
+  assert.equal(result.status, 500);
+  assert.equal(db.tables.firearm_assignments[0].returned_at, null);
+  assert.equal(db.tables.firearm_assignments[0].condition_at_return, undefined);
+});
+
+test("B8a ARM-29: rifle review permission comes from the session, not from department_role_permissions", async () => {
+  const route = "../../app/api/armory/personal-rifles/[rifleId]/route.ts";
+  // On AWS a non-administrator cannot read the role tables: they come back empty.
+  const tables = () => ({ personal_rifles: [{ id: "pr-1", department_id: D, owner_user_id: OFFICER, status: "Pending Chief Approval" }], department_rules: [], personal_rifle_status_history: [], department_membership_roles: [], department_role_permissions: [] });
+  let db = world(tables(), CHIEF, ["approve_personal_rifles"]);
+  const approved = await call(route, "PATCH", "/x", { action: "chief_approve" }, { rifleId: "pr-1" });
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+  assert.equal(db.tables.personal_rifles[0].status, "Approved");
+
+  db = world(tables(), "user-other-officer", ["submit_off_duty_requests"]);
+  const refused = await call(route, "PATCH", "/x", { action: "chief_approve" }, { rifleId: "pr-1" });
+  assert.equal(refused.status, 403);
+  assert.equal(db.tables.personal_rifles[0].status, "Pending Chief Approval");
+
+  const list = await call("../../app/api/armory/personal-rifles/route.ts", "GET", "/api/armory/personal-rifles");
+  assert.equal(list.status, 200, JSON.stringify(list.body));
+  assert.equal(list.body.access.canChiefReview, false);
+});
+
+test("B8a ARM-29: on AWS the route leaves rifle history to the database and passes its note; bridge still writes it", async () => {
+  const route = "../../app/api/armory/personal-rifles/[rifleId]/route.ts";
+  const tables = () => ({ personal_rifles: [{ id: "pr-1", department_id: D, owner_user_id: OFFICER, status: "Approved" }], department_rules: [{ department_id: D, allow_personally_owned_rifles: true, require_personal_rifle_spec_acknowledgment: false }], personal_rifle_status_history: [] as Row[],
+    department_membership_roles: [{ department_id: D, user_id: CHIEF, role_code: "chief" }], department_role_permissions: [{ department_id: D, role_code: "chief", permission_code: "approve_personal_rifles" }] });
+  const reviewer = ["approve_personal_rifles"];
+
+  let db = world(tables(), CHIEF, reviewer);
+  const suspended = await inMode("aws-native", () => call(route, "PATCH", "/x", { action: "suspend", notes: "Qualification lapsed" }, { rifleId: "pr-1" }));
+  assert.equal(suspended.status, 200, JSON.stringify(suspended.body));
+  assert.equal(db.tables.personal_rifle_status_history.length, 0);
+  assert.equal(db.tables.personal_rifles[0].workflow_note, "Qualification lapsed");
+  db = world(tables(), OFFICER, []);
+  const created = await inMode("aws-native", () => call("../../app/api/armory/personal-rifles/route.ts", "POST", "/x", { manufacturer: "Colt", model: "M4", serialNumber: "PR-NEW", caliber: "5.56", ownershipConfirmed: true }));
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(db.tables.personal_rifle_status_history.length, 0);
+
+  db = world(tables(), CHIEF, reviewer);
+  const bridge = await inMode(undefined, () => call(route, "PATCH", "/x", { action: "suspend", notes: "Qualification lapsed" }, { rifleId: "pr-1" }));
+  assert.equal(bridge.status, 200);
+  assert.deepEqual(db.tables.personal_rifle_status_history.map((row) => [row.from_status, row.to_status, row.action, row.actor_user_id, row.notes]), [["Approved", "Suspended", "Approval Suspended", CHIEF, "Qualification lapsed"]]);
+  assert.equal("workflow_note" in db.tables.personal_rifles[0], false);
+});
+
+test("B8a ARM-11/17: on AWS a firearm status change and its history row are one database call", async () => {
+  const route = "../../app/api/armory/firearms/[firearmId]/status/route.ts";
+  let db = world({ firearms: [firearm()], firearm_assignments: [], firearm_status_history: [] });
+  rpcReturns(db, true);
+  const changed = await inMode("aws-native", () => call(route, "PATCH", "/x", { status: "Out of Service", notes: "Cracked frame" }, { firearmId: "fa-1" }));
+  assert.equal(changed.status, 200, JSON.stringify(changed.body));
+  assert.deepEqual(db.rpcs, [{ name: "change_firearm_status", p_department_id: D, p_firearm_id: "fa-1", p_from_status: "In Service", p_to_status: "Out of Service", p_notes: "Cracked frame" }]);
+  assert.equal(db.tables.firearm_status_history.length, 0);
+  assert.equal(db.writes.filter((write) => write.table === "firearms").length, 0);
+
+  db = world({ firearms: [firearm()], firearm_assignments: [], firearm_status_history: [] });
+  rpcReturns(db, false);
+  const stale = await inMode("aws-native", () => call(route, "PATCH", "/x", { status: "Out of Service" }, { firearmId: "fa-1" }));
+  assert.equal(stale.status, 409);
+});
+
+test("B8a off-duty: on AWS an inspection manager who cannot read the request records the inspection; missing and forbidden are 404 and 403", async () => {
+  const route = "../../app/api/off-duty-firearms/[requestId]/inspections/route.ts";
+  const inspector = ["manage_inspections"];
+  // RLS hides the request from an inspection manager without review permission.
+  let db = world({ off_duty_firearm_requests: [] }, ARMORER, inspector);
+  rpcReturns(db, { id: "odi-1" });
+  const recorded = await inMode("aws-native", () => call(route, "POST", "/x", { inspectionDate: "2026-10-20", result: "Pass" }, { requestId: "od-9" }));
+  assert.equal(recorded.status, 200, JSON.stringify(recorded.body));
+  assert.equal(db.rpcs[0].name, "record_off_duty_firearm_inspection");
+  assert.equal(db.rpcs[0].p_request_id, "od-9");
+
+  db = world({ off_duty_firearm_requests: [] }, ARMORER, inspector);
+  rpcReturns(db, null, { message: "PostgreSQL data operation failed.", code: "P0002" });
+  const missing = await inMode("aws-native", () => call(route, "POST", "/x", { inspectionDate: "2026-10-20", result: "Pass" }, { requestId: "od-missing" }));
+  assert.equal(missing.status, 404);
+
+  rpcReturns(db, null, { message: "PostgreSQL data operation failed.", code: "42501" });
+  const forbidden = await inMode("aws-native", () => call(route, "POST", "/x", { inspectionDate: "2026-10-20", result: "Pass" }, { requestId: "od-9" }));
+  assert.equal(forbidden.status, 403);
+
+  db = world({ off_duty_firearm_requests: [] }, OFFICER, ["submit_off_duty_requests"]);
+  const officer = await inMode("aws-native", () => call(route, "POST", "/x", { inspectionDate: "2026-10-20", result: "Pass" }, { requestId: "od-9" }));
+  assert.equal(officer.status, 403);
+  assert.equal(db.rpcs.length, 0);
+
+  db = world({ off_duty_firearm_requests: [] }, ARMORER, inspector);
+  const bridge = await inMode(undefined, () => call(route, "POST", "/x", { inspectionDate: "2026-10-20", result: "Pass" }, { requestId: "od-9" }));
+  assert.equal(bridge.status, 404);
 });
