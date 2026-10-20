@@ -56,6 +56,13 @@ before(async () => {
     create table public.firearm_inspection_items (id uuid primary key, department_id uuid, inspection_id uuid, section text, label text, status text, note text, critical boolean, sort_order integer);
     grant usage on schema public to authenticated;
     grant select on all tables in schema public to authenticated;
+    create function public.armory_member_identities(p_department_id uuid, p_user_ids uuid[] default null)
+    returns table (user_id uuid, full_name text, rank_title text, badge_number text, unit_name text, is_active boolean)
+    language sql stable as $$
+      select m.user_id, p.full_name, m.rank_title, m.badge_number, m.unit_name, m.is_active
+      from public.department_memberships m left join public.profiles p on p.id = m.user_id
+      where m.department_id = p_department_id and (p_user_ids is null or m.user_id = any(p_user_ids))
+    $$;
   `);
   const scoped = ["department_memberships", "department_membership_roles", "personal_rifles", "personal_rifle_status_history", "pilot_ammunition_workspaces", "pilot_range_workspaces", "pilot_remediation_workspaces", "department_qualification_standards", "department_qualification_standard_components", "qualification_results", "range_days", "range_day_drills", "drill_run_results", "range_day_roster", "department_rules", "firearms", "firearm_assignments", "firearm_inspections", "firearm_inspection_items"];
   for (const table of scoped) {

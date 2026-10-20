@@ -189,11 +189,13 @@ export async function POST(
   }
 
   const { requestId } = await routeContext.params;
+  const awsNative = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native";
 
-  const offDutyRequest = await loadOffDutyRequest(
-    context,
-    requestId,
-  );
+  // On AWS an inspection manager without review permission cannot read the
+  // request; the inspection function checks it exists in the agency instead.
+  const offDutyRequest = awsNative
+    ? { id: requestId }
+    : await loadOffDutyRequest(context, requestId);
 
   if (!offDutyRequest) {
     return NextResponse.json(
@@ -240,6 +242,17 @@ export async function POST(
     );
 
   if (inspectionError) {
+    if (awsNative && inspectionError.code === "P0002") {
+      return NextResponse.json(
+        { error: "Off-duty firearm request was not found." },
+        { status: 404 },
+      );
+    }
+    if (awsNative && inspectionError.code === "42501") {
+      return permissionDeniedResponse(
+        "Inspection management permission is required to record an off-duty firearm inspection.",
+      );
+    }
     return NextResponse.json(
       { error: inspectionError.message },
       { status: 500 },
@@ -248,10 +261,7 @@ export async function POST(
 
   // A failed inspection marks the request non-compliant. On AWS the database
   // function does this (052); the bridge runtime's function does not.
-  if (
-    result === "Fail" &&
-    process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native"
-  ) {
+  if (result === "Fail" && !awsNative) {
     const { error: complianceError } = await context.admin
       .from("off_duty_firearm_requests")
       .update({ compliance_status: "Non-Compliant" })

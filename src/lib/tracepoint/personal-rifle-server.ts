@@ -1,5 +1,4 @@
 import { resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 
 export type PersonalRifleRules = {
   allow_personally_owned_rifles: boolean;
@@ -68,14 +67,23 @@ export async function getPersonalRifleUsers(
   }
   const ids = [...new Set(candidateUserIds.filter(Boolean))];
   if (!ids.length) return { data: { users: [] }, error: null };
+  // Others' profiles and memberships are readable only by user administrators
+  // on AWS; reviewers and owners get the names they are shown from this lookup.
+  const identities = await admin.rpc("armory_member_identities", { p_department_id: departmentId, p_user_ids: ids });
+  if (identities.error) return { data: null, error: identities.error };
+  const rows = new Map<string, { id: string; email: string | null; full_name: string | null }>(
+    (identities.data ?? []).map((row: { user_id: string; full_name: string | null }) => [row.user_id, { id: row.user_id, email: null, full_name: row.full_name }]),
+  );
   const memberships = await admin.from("department_memberships")
     .select("user_id").eq("department_id", departmentId).in("user_id", ids);
   if (memberships.error) return { data: null, error: memberships.error };
   const scopedIds = [...new Set((memberships.data ?? []).map((row: { user_id: string }) => row.user_id))];
-  if (!scopedIds.length) return { data: { users: [] }, error: null };
-  const profiles = await admin.from("profiles").select("id,email,full_name").in("id", scopedIds);
-  if (profiles.error) return { data: null, error: profiles.error };
-  return { data: { users: (profiles.data ?? []).map((row: { id: string; email: string | null; full_name: string | null }) => ({
+  if (scopedIds.length) {
+    const profiles = await admin.from("profiles").select("id,email,full_name").in("id", scopedIds);
+    if (profiles.error) return { data: null, error: profiles.error };
+    for (const row of profiles.data ?? []) rows.set(row.id, row);
+  }
+  return { data: { users: [...rows.values()].map((row) => ({
     id: row.id, email: row.email, user_metadata: { full_name: row.full_name ?? "" },
   })) }, error: null };
 }
@@ -88,6 +96,7 @@ export async function getPersonalRifleRequestContext() {
       user: null,
       admin: null,
       departmentId: null,
+      permissions: [] as string[],
       error: access.error,
     };
   }
@@ -97,6 +106,7 @@ export async function getPersonalRifleRequestContext() {
     admin,
     departmentId,
     enabledFeatures,
+    permissions,
   } = access.context;
 
   if (!enabledFeatures.includes("firearms")) {
@@ -104,6 +114,7 @@ export async function getPersonalRifleRequestContext() {
       user,
       admin,
       departmentId,
+      permissions,
       error: "Firearms is not enabled for this agency.",
     };
   }
@@ -112,6 +123,7 @@ export async function getPersonalRifleRequestContext() {
     user,
     admin,
     departmentId,
+    permissions,
     error: null,
   };
 }
@@ -162,55 +174,17 @@ export async function getPersonalRifleRules(
   };
 }
 
-export async function getPersonalRifleAccess(
-  admin: any,
-  departmentId: string,
-  userId: string,
-): Promise<PersonalRifleAccess> {
-  const { data: roleRows, error: roleError } = await admin
-    .from("department_membership_roles")
-    .select("role_code")
-    .eq("department_id", departmentId)
-    .eq("user_id", userId);
-
-  if (roleError) throw new Error(roleError.message);
-
-  const roleCodes: string[] = Array.from(
-    new Set<string>(
-      (roleRows ?? [])
-        .map((row: any) => String(row.role_code ?? ""))
-        .filter(Boolean),
-    ),
-  );
-
-  let permissions: string[] = [];
-  if (roleCodes.length > 0) {
-    const { data: permissionRows, error: permissionError } = await admin
-      .from("department_role_permissions")
-      .select("permission_code")
-      .eq("department_id", departmentId)
-      .in("role_code", roleCodes);
-
-    if (permissionError) throw new Error(permissionError.message);
-
-    permissions = Array.from(
-      new Set<string>(
-        (permissionRows ?? [])
-          .map((row: any) => String(row.permission_code ?? ""))
-          .filter(Boolean),
-      ),
-    );
-  }
-
-  const effectivePermissions = effectiveDepartmentPermissions(
-    roleCodes,
-    permissions,
-  );
-  const canConfigure = effectivePermissions.includes("administer_department");
+// The caller's own effective permissions, as resolved for the session. They
+// are not re-read from department_role_permissions, which only user
+// administrators can read on AWS.
+export function getPersonalRifleAccess(
+  permissions: readonly string[],
+): PersonalRifleAccess {
+  const canConfigure = permissions.includes("administer_department");
   const canChiefReview =
-    canConfigure || effectivePermissions.includes("approve_personal_rifles");
+    canConfigure || permissions.includes("approve_personal_rifles");
   const canArmorerReview =
-    canConfigure || effectivePermissions.includes("manage_inspections");
+    canConfigure || permissions.includes("manage_inspections");
 
   return {
     canSubmit: true,
@@ -246,6 +220,12 @@ export function getPersonalRifleExpirationDate(
   return expiration.toISOString().slice(0, 10);
 }
 
+// On AWS the database writes the history row with the rifle change (052); the
+// route only passes its note in workflow_note.
+export function personalRifleHistoryWrittenByDatabase() {
+  return process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native";
+}
+
 export async function recordPersonalRifleHistory(
   admin: any,
   values: {
@@ -259,6 +239,8 @@ export async function recordPersonalRifleHistory(
     metadata?: Record<string, unknown> | null;
   },
 ) {
+  if (personalRifleHistoryWrittenByDatabase()) return;
+
   const { error } = await admin
     .from("personal_rifle_status_history")
     .insert({

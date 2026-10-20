@@ -21,11 +21,7 @@ export async function GET() {
   try {
     const [rules, access] = await Promise.all([
       getPersonalRifleRules(context.admin, context.departmentId),
-      getPersonalRifleAccess(
-        context.admin,
-        context.departmentId,
-        context.user.id,
-      ),
+      getPersonalRifleAccess(context.permissions),
     ]);
 
     return NextResponse.json({ rules, access });
@@ -53,11 +49,7 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    const access = await getPersonalRifleAccess(
-      context.admin,
-      context.departmentId,
-      context.user.id,
-    );
+    const access = getPersonalRifleAccess(context.permissions);
 
     if (!access.canConfigure) {
       return NextResponse.json(

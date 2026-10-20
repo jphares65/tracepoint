@@ -34,7 +34,7 @@ It is idempotent (applied three times locally), has `begin;`/`commit;`, and uses
 
 - `guard_off_duty_request_self_decision()` and trigger `off_duty_requests_self_decision_guard` (ARM-26).
 - `guard_personal_rifle_self_review()` and trigger `personal_rifles_self_review_guard` (ARM-29).
-- `grant insert on personal_rifle_status_history to authenticated` and policy `personal_rifle_history_insert_actor` (ARM-29, AWS history writes).
+- `grant insert on personal_rifle_status_history to authenticated` and policy `personal_rifle_history_insert_actor` (ARM-29, AWS history writes). **Superseded by B8a:** 052 was edited in place (it is unapplied anywhere). The grant and policy are gone, and the database writes the history with the change. See `B8a-armory-audit-and-access.md`.
 - `guard_ammunition_reconciliation_certifier()` and trigger `ammunition_reconciliations_certifier_guard`. Policy `ammunition_reconciliations_update` is recreated with the certifier clause (ARM-23).
 - `record_off_duty_firearm_inspection_internal(...)`: the 202608170005 body, plus `compliance_status = 'Non-Compliant'` on Fail. Its EXECUTE stays revoked from every role (ARM-28).
 

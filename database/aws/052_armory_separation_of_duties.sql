@@ -3,7 +3,8 @@ begin;
 -- B8 armory integrity. Separation of duties in the database, so a direct
 -- write cannot do what the API refuses:
 -- - an off-duty request is never decided by its own officer (ARM-26);
--- - a personal rifle is never reviewed or reinstated by its owner (ARM-29);
+-- - a personal rifle is never reviewed or reinstated by its owner, and its
+--   history is written by the database with the change (ARM-29);
 -- - an ammunition reconciliation is never certified by its submitter, and
 --   someone else can now certify it (ARM-23).
 -- A failed off-duty inspection marks the request Non-Compliant, an existing
@@ -56,28 +57,97 @@ create trigger personal_rifles_self_review_guard
 before update on public.personal_rifles
 for each row execute function public.guard_personal_rifle_self_review();
 
--- The personal rifle route records each action in personal_rifle_status_history
--- as the signed-in user. The table only granted SELECT (its writes used to go
--- through the Supabase service role), so on AWS every rifle action changed the
--- rifle and then failed with no history row. A user may add a row for their
--- own action, on a rifle of their agency they own or review, matching the
--- rifle's current status.
-grant insert on public.personal_rifle_status_history to authenticated;
+-- Personal rifle history is written by the database, in the same statement
+-- as the change it records, so the rifle and its history commit or roll back
+-- together. The actor is the signed-in subject and the statuses come from the
+-- row itself. Users cannot insert, change or delete history rows. A history
+-- row is written when a rifle is created, when its status changes, and when
+-- its owner edits a draft. The route passes its note in workflow_note, which
+-- the trigger moves into the history row, so the column is always null.
+revoke insert, update, delete on public.personal_rifle_status_history from authenticated;
 drop policy if exists personal_rifle_history_insert_actor on public.personal_rifle_status_history;
-create policy personal_rifle_history_insert_actor on public.personal_rifle_status_history for insert to authenticated
-with check (
-  actor_user_id = tracepoint_auth.subject_id()
-  and exists (
-    select 1 from public.personal_rifles rifle
-    where rifle.id = personal_rifle_status_history.personal_rifle_id
-      and rifle.department_id = personal_rifle_status_history.department_id
-      and rifle.status = personal_rifle_status_history.to_status
-      and (
-        rifle.owner_user_id = tracepoint_auth.subject_id()
-        or public.has_any_department_permission(rifle.department_id, array['manage_inspections','approve_personal_rifles','administer_department'])
-      )
+
+alter table public.personal_rifles add column if not exists workflow_note text;
+
+create or replace function public.record_personal_rifle_status_history()
+returns trigger
+language plpgsql
+security definer
+set search_path = public,tracepoint_auth
+as $$
+declare
+  v_note text;
+  v_action text;
+  v_metadata jsonb := '{}'::jsonb;
+begin
+  if tg_when = 'AFTER' then
+    insert into public.personal_rifle_status_history (
+      department_id, personal_rifle_id, actor_user_id, from_status, to_status, action
+    )
+    values (
+      new.department_id, new.id, tracepoint_auth.subject_id(), null, new.status,
+      case when new.status = 'Draft' then 'Draft Created' else 'Owner Submitted' end
+    );
+    return null;
+  end if;
+
+  v_note := nullif(btrim(new.workflow_note), '');
+  new.workflow_note := null;
+  if tg_op = 'INSERT' then
+    return new;
+  end if;
+
+  if new.status is not distinct from old.status then
+    if new.status = 'Draft'
+       and new.owner_user_id = tracepoint_auth.subject_id()
+       and to_jsonb(new) - array['updated_at','workflow_note'] is distinct from to_jsonb(old) - array['updated_at','workflow_note'] then
+      v_action := 'Owner Saved Draft';
+    else
+      return new;
+    end if;
+  else
+    v_action := case
+      when old.status in ('Draft','Correction Requested') and new.status = 'Draft' then 'Owner Saved Draft'
+      when old.status in ('Draft','Correction Requested') then 'Owner Submitted'
+      when old.status = 'Pending Armorer Review' and new.status = 'Correction Requested' then 'Correction Requested'
+      when old.status = 'Pending Armorer Review' and new.status = 'Armorer Denied' then 'Armorer Denied'
+      when old.status = 'Pending Armorer Review' and new.status in ('Pending Chief Approval','Approved') then 'Armorer Approved'
+      when old.status = 'Pending Chief Approval' and new.status = 'Approved' then 'Chief Approved'
+      when old.status = 'Pending Chief Approval' and new.status = 'Denied' then 'Chief Denied'
+      when old.status = 'Approved' and new.status = 'Suspended' then 'Approval Suspended'
+      when old.status = 'Suspended' and new.status = 'Approved' then 'Approval Reinstated'
+      when new.status = 'Revoked' then 'Approval Revoked'
+      else 'Status Changed'
+    end;
+    if v_action = 'Armorer Approved' then
+      v_metadata := jsonb_build_object(
+        'checklist', coalesce(new.armorer_checklist, '{}'::jsonb),
+        'inspectionDate', new.inspection_date,
+        'qualificationVerified', coalesce(new.qualification_verified, false)
+      );
+    end if;
+  end if;
+
+  insert into public.personal_rifle_status_history (
+    department_id, personal_rifle_id, actor_user_id, from_status, to_status, action, notes, metadata
   )
-);
+  values (
+    new.department_id, new.id, tracepoint_auth.subject_id(), old.status, new.status, v_action, v_note, v_metadata
+  );
+  return new;
+end;
+$$;
+
+-- Named to run after the other before-update triggers (they fire in name
+-- order), so it records the row as it will be stored.
+drop trigger if exists personal_rifles_status_history on public.personal_rifles;
+create trigger personal_rifles_status_history
+before insert or update on public.personal_rifles
+for each row execute function public.record_personal_rifle_status_history();
+drop trigger if exists personal_rifles_status_history_created on public.personal_rifles;
+create trigger personal_rifles_status_history_created
+after insert on public.personal_rifles
+for each row execute function public.record_personal_rifle_status_history();
 
 create or replace function public.guard_ammunition_reconciliation_certifier()
 returns trigger
@@ -117,7 +187,9 @@ with check (
 );
 
 -- Same body as 202608170005 (renamed to _internal by 017), plus the
--- compliance update on a failed inspection.
+-- compliance update on a failed inspection. A missing request raises
+-- no_data_found (P0002), so the route can answer 404 without reading the
+-- request itself.
 create or replace function public.record_off_duty_firearm_inspection_internal(
   p_department_id uuid,
   p_request_id uuid,
@@ -144,7 +216,8 @@ begin
     where id = p_request_id
       and department_id = p_department_id
   ) then
-    raise exception 'Off-duty firearm request was not found.';
+    raise exception 'Off-duty firearm request was not found.'
+      using errcode = 'P0002';
   end if;
 
   insert into public.off_duty_firearm_inspections (

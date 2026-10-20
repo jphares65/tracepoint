@@ -70,3 +70,46 @@ test("ARM-08 display: a firearm held by a separated member names that holder, ma
   // The assignable member list stays active-only.
   assert.deepEqual(data.members.map((member) => member.user_id), ["active"]);
 });
+
+test("B8a Unknown User: on AWS an armorer who cannot read profiles sees the holder's name from the identity lookup, without email", async () => {
+  const { PostgresArmoryReadDataSource } = await import("./read-repository-postgres.ts");
+  // What AWS RLS returns to an armorer with manage_firearms only: their own
+  // membership and profile; firearms and assignments of the agency.
+  const tables: Record<string, Record<string, unknown>[]> = {
+    department_memberships: [{ department_id: "dept", user_id: "armorer", is_active: true, rank_title: null, badge_number: "1", unit_name: null }],
+    profiles: [{ id: "armorer", full_name: "Avery Armorer", email: "armorer@example.test" }],
+    firearm_assignments: [{ id: "a", department_id: "dept", firearm_id: "f", assigned_to_user_id: "officer", returned_at: null }],
+    firearms: [{ id: "f", department_id: "dept", is_active: true, condition_status: "In Service" }],
+  };
+  const rpcs: unknown[] = [];
+  const client = {
+    from(table: string) {
+      const filters: ((row: Record<string, unknown>) => boolean)[] = [];
+      const builder: any = {
+        select: () => builder, order: () => builder, limit: () => builder,
+        eq: (column: string, value: unknown) => { filters.push((row) => row[column] === value); return builder; },
+        is: (column: string, value: unknown) => { filters.push((row) => (row[column] ?? null) === value); return builder; },
+        in: (column: string, values: unknown[]) => { filters.push((row) => values.includes(row[column])); return builder; },
+        then: (resolve: any) => resolve(result((tables[table] ?? []).filter((row) => filters.every((filter) => filter(row))))),
+      };
+      return builder;
+    },
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      rpcs.push([name, args]);
+      return result([
+        { user_id: "armorer", full_name: "Avery Armorer", rank_title: null, badge_number: "1", unit_name: null, is_active: true },
+        { user_id: "officer", full_name: "Olive Officer", rank_title: "Officer", badge_number: "4410", unit_name: "Patrol", is_active: true },
+      ]);
+    },
+  };
+  const repository = new TenantBoundArmoryReadRepository(new PostgresArmoryReadDataSource(client as any), "dept", "armorer");
+  const data = await repository.getFirearmInventory({ departmentId: "dept", userId: "armorer", includeArchived: false, canViewAll: true, canManage: true, canInspect: true });
+  const assignment = data.firearms[0].active_assignment as any;
+  assert.equal(assignment.assigned_to_name, "Olive Officer");
+  assert.equal(assignment.assigned_to_badge_number, "4410");
+  const officer = data.members.find((member) => member.user_id === "officer");
+  assert.equal(officer?.full_name, "Olive Officer");
+  assert.equal(officer?.email, "");
+  assert.equal(data.members.find((member) => member.user_id === "armorer")?.email, "armorer@example.test");
+  assert.deepEqual(rpcs, [["armory_member_identities", { p_department_id: "dept" }]]);
+});
