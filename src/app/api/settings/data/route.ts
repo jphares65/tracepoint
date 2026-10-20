@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { setCognitoMembershipActive } from "@/lib/authentication/cognito-membership-lifecycle";
+import { cognitoInviteAuthorizationContext } from "@/lib/authentication/cognito-invite-authorization-context";
+import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { notificationMode } from "@/lib/email/notification-mode";
-import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { parseDepartmentMemberSave, saveDepartmentMember } from "@/lib/settings/member-save";
+import { accessFailureResponse, resolveServerAccess, type ServerAccessContext } from "@/lib/tracepoint/server-access";
 
 const TABLES = new Set([
   "departments", "department_rules", "department_security_settings", "department_group_members",
   "department_qualification_standards", "department_qualification_standard_components",
   "department_titles", "department_units", "department_groups",
 ]);
-const RPCS = new Set(["update_department_member", "set_department_member_roles", "set_department_group_members"]);
+const RPCS = new Set(["update_department_member", "set_department_member_roles", "set_department_group_members", "save_department_member"]);
 const identifier = /^[a-z][a-z0-9_]*$/;
 const fieldsPattern = /^[a-z0-9_, ]+$/i;
 
@@ -26,6 +29,23 @@ function safeError(value: unknown) {
   };
 }
 
+// Mirrors the update_department_member branch below for the combined member
+// save: an activation change on a Cognito-linked member runs inside the
+// membership lifecycle; anything else is a database-only change.
+async function cognitoActivationChange(context: ServerAccessContext, departmentId: string, userId: string, active: unknown) {
+  if (typeof active !== "boolean" || process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native" ||
+      notificationMode(process.env) !== "normal") return { linked: false as const };
+  const membership = await context.db.from("department_memberships").select("is_active")
+    .eq("department_id", departmentId).eq("user_id", userId).maybeSingle();
+  if (membership.error) return { error: membership.error };
+  const current = membership.data as { is_active?: unknown } | null;
+  const linked = Boolean(current && current.is_active !== active && (await getPostgresPool().query(
+    "select 1 from public.authentication_identity_links where provider='cognito' and tracepoint_user_id=$1 and state in ('pending','active')",
+    [userId],
+  )).rowCount === 1);
+  return { linked, active };
+}
+
 export async function POST(request: NextRequest) {
   const access = await resolveServerAccess();
   if (!access.ok) return accessFailureResponse(access);
@@ -37,6 +57,40 @@ export async function POST(request: NextRequest) {
     const departmentId = String((body.args as Record<string, unknown>).p_department_id ?? "");
     if (departmentId !== access.context.departmentId) return NextResponse.json({ error: "The active agency does not match this command." }, { status: 403 });
     const args = body.args as Record<string, unknown>;
+    if (body.rpc === "save_department_member") {
+      const save = parseDepartmentMemberSave(args);
+      if (!save) return NextResponse.json({ error: "Invalid settings command." }, { status: 400 });
+      if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+        const change = await cognitoActivationChange(access.context, departmentId, save.p_user_id, save.p_is_active);
+        if ("error" in change) return NextResponse.json(safeError(change.error), { status: 400 });
+        try {
+          if (change.linked) {
+            await setCognitoMembershipActive(
+              { actorUserId: access.context.userId, departmentId, targetUserId: save.p_user_id, active: save.p_is_active, supportMode: access.context.isSupportMode },
+              client => saveDepartmentMember(client, save),
+            );
+          } else {
+            await withPostgresAuthorization(getPostgresPool(),
+              cognitoInviteAuthorizationContext({ actorUserId: access.context.userId, departmentId, supportMode: access.context.isSupportMode }),
+              client => saveDepartmentMember(client, save));
+          }
+        } catch (error) {
+          return NextResponse.json(safeError(error), { status: 400 });
+        }
+        return NextResponse.json({ data: null });
+      }
+      // Bridge mode has no request transaction; the three functions run in order as before.
+      const { p_role_codes, p_group_ids, ...member } = save;
+      for (const [name, rpcArgs] of [
+        ["update_department_member", member],
+        ["set_department_member_roles", { p_department_id: departmentId, p_user_id: save.p_user_id, p_role_codes }],
+        ["set_department_group_members", { p_department_id: departmentId, p_user_id: save.p_user_id, p_group_ids }],
+      ] as const) {
+        const result = await access.context.db.rpc(name, rpcArgs);
+        if (result.error) return NextResponse.json(safeError(result.error), { status: 400 });
+      }
+      return NextResponse.json({ data: null });
+    }
     if (body.rpc === "update_department_member" && typeof args.p_is_active === "boolean" &&
         process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native" && notificationMode(process.env) === "normal") {
       // Activation changes use the Cognito membership lifecycle the import path

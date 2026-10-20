@@ -2,9 +2,9 @@
 import type { ReactNode } from "react";
 
 import {
-  requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { hasEnabledFeatures, MODULE_FEATURES } from "@/lib/tracepoint/feature-gates";
 
 export default async function QualificationsLayout({
   children,
@@ -17,13 +17,7 @@ export default async function QualificationsLayout({
     redirect("/");
   }
 
-  const featureError = requireServerFeature(
-    resolved.context,
-    "qualifications",
-    "Qualifications",
-  );
-
-  if (featureError) {
+  if (!hasEnabledFeatures(resolved.context.enabledFeatures, MODULE_FEATURES.qualifications)) {
     redirect("/");
   }
 

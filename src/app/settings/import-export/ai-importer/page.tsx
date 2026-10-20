@@ -9,6 +9,7 @@ import { DOMAIN_LABELS, IMPORT_FIELDS } from "@/lib/ai-importer/catalog";
 import { normalizeLabel } from "@/lib/ai-importer/normalize";
 import { IMPORT_DOMAINS, type ColumnMapping, type FileMetadata, type ImportDomain, type ImportExecutionResult, type ImportInterpretation, type ImportPayload, type ImportPreview, type ParsedSheet, type RemediationScope, type RowDecision, type ValidationIssue, type ValueOverride } from "@/lib/ai-importer/types";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { csvCell as sharedCsvCell } from "@/lib/format/csv";
 
 type Step = "upload" | "interpret" | "map" | "validate" | "review" | "import" | "results";
 type UploadResponse = { file: FileMetadata; sheets: ParsedSheet[]; interpretation: ImportInterpretation; error?: string };
@@ -45,9 +46,7 @@ function suggestMappings(sheet: ParsedSheet, headerRow: number, domain: ImportDo
 }
 
 function csvCell(value: unknown) {
-  let text = String(value ?? "");
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
-  return `"${text.replaceAll('"', '""')}"`;
+  return sharedCsvCell(value, true);
 }
 
 function saveRejected(result: ImportExecutionResult) {

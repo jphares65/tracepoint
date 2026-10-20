@@ -8,6 +8,7 @@ import {
 import { assignCognitoPassword } from "@/lib/authentication/cognito-password-lifecycle";
 import { cognitoPasswordRejection } from "@/lib/authentication/cognito-admin-core";
 import { COGNITO_PASSWORD_MIN_LENGTH, COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 type AssignPasswordRequest = {
   departmentId?: string;
@@ -251,16 +252,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const rejected = cognitoPasswordRejection(error);
     if (rejected) return NextResponse.json({ error: rejected }, { status: 400 });
-    const message =
-      error instanceof Error
-        ? error.message
-        : "The password could not be assigned.";
-
-    return NextResponse.json(
-      {
-        error: message,
-      },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Assign password", error, "The password could not be assigned.");
   }
 }

@@ -20,6 +20,7 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate as formatDisplayDate, formatDateTime as formatDisplayDateTime } from "@/lib/format/date";
+import { csvRow, parseCsvRecords, type CsvValue } from "@/lib/format/csv";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
 import { equipmentHolderName } from "@/lib/equipment/officer-assignments";
@@ -573,53 +574,16 @@ function normalizeHeader(value: string) {
   return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
 }
 
-function splitCsvLine(line: string) {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false
-
-  return values;
-}
-
 function parseCsv(text: string): ParsedCsv {
-  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalized.split("\n").filter((line) => line.trim().length > 0);
+  const records = parseCsvRecords(text);
 
-  if (lines.length === 0) {
+  if (records.length === 0) {
     return { headers: [], rows: [] };
   }
 
-  const parseLine = (line: string) => {
-    const values: string[] = [];
-    let current = "";
-    let inQuotes = false;
+  const headers = records[0].map((header) => header.trim());
 
-    for (let index = 0; index < line.length; index += 1) {
-      const character = line[index];
-      const nextCharacter = line[index + 1];
-
-      if (character === '"' && inQuotes && nextCharacter === '"') {
-        current += '"';
-        index += 1;
-      } else if (character === '"') {
-        inQuotes = !inQuotes;
-      } else if (character === "," && !inQuotes) {
-        values.push(current.trim());
-        current = "";
-      } else {
-        current += character;
-      }
-    }
-
-    values.push(current.trim());
-
-    return values;
-  };
-
-  const headers = parseLine(lines[0]).map((header) => header.trim());
-
-  const rows = lines.slice(1).map((line) => {
-    const values = parseLine(line);
+  const rows = records.slice(1).map((values) => {
     const row: Record<string, string> = {};
 
     headers.forEach((header, index) => {
@@ -1237,22 +1201,6 @@ async function importFirearm(
 }
 
 
-type CsvValue = string | number | boolean | null | undefined;
-
-function csvEscape(value: CsvValue) {
-  const stringValue = value === null || value === undefined ? "" : String(value);
-
-  if (
-    stringValue.includes(",") ||
-    stringValue.includes('"') ||
-    stringValue.includes("\n")
-  ) {
-    return `"${stringValue.replace(/"/g, '""')}"`;
-  }
-
-  return stringValue;
-}
-
 async function recordClientDataExport({
   exportType,
   fileName,
@@ -1306,8 +1254,8 @@ async function downloadCsv(fileName: string, rows: Record<string, CsvValue>[]) {
       : ["No records available for this export."];
 
   const csv = [
-    headers.join(","),
-    ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(",")),
+    csvRow(headers),
+    ...rows.map((row) => csvRow(headers.map((header) => row[header]))),
   ].join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });

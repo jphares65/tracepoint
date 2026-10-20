@@ -6,6 +6,7 @@ import { provisionExistingCognitoUser } from "@/lib/authentication/cognito-exist
 import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
 import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 type ActivationRequest = {
   departmentId?: string;
@@ -209,12 +210,7 @@ export async function POST(request: NextRequest) {
       message: `Activation email sent to ${email}.`,
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Activation email could not be sent.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return unexpectedErrorResponse("Activation", error, "Activation email could not be sent.");
   }
 }
 

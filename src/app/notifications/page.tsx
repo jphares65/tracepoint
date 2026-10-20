@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bell, Check, Clock3, ExternalLink, Loader2, RefreshCw, Settings, ShieldAlert } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
+import NotificationPreferencesPanel from "@/app/settings/components/NotificationPreferencesPanel";
 
 type Item = {
   id: string;
@@ -106,24 +107,6 @@ export default function NotificationsPage() {
     }
   }
 
-  async function savePreferences() {
-    if (!payload) return;
-    setSaving(true);
-    try {
-      const response = await fetch("/api/notifications/preferences", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload.preferences),
-      });
-      if (!response.ok) throw new Error(await errorText(response));
-      await load();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Preferences could not be saved.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <TracePointShell activePage="My Home">
       <div className="mx-auto w-full max-w-[1450px] space-y-5">
@@ -144,27 +127,8 @@ export default function NotificationsPage() {
         {error ? <div className="rounded-2xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200">{error}</div> : null}
         {payload?.sourceErrors?.length ? <div className="rounded-2xl border border-amber-700 bg-amber-950/25 p-4 text-sm text-amber-200">Unavailable sources: {payload.sourceErrors.map((item) => item.source).join(", ")}.</div> : null}
 
-        {showPreferences && payload ? (
-          <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-            <h2 className="font-bold text-white">Preferences</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {[["in_app_enabled", "In-app notifications"], ["email_enabled", "Email notifications"], ["critical_email_only", "Critical email only"]].map(([key, label]) => (
-                <label key={key} className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-                  <input type="checkbox" checked={Boolean(payload.preferences[key as keyof Payload["preferences"]])} onChange={(event) => setPayload((current) => current ? { ...current, preferences: { ...current.preferences, [key]: event.target.checked } } : current)} />
-                  <span className="text-sm text-slate-300">{label}</span>
-                </label>
-              ))}
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {sources.map((item) => (
-                <label key={item} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300">
-                  <input type="checkbox" checked={payload.preferences.source_preferences[item] !== false} onChange={(event) => setPayload((current) => current ? { ...current, preferences: { ...current.preferences, source_preferences: { ...current.preferences.source_preferences, [item]: event.target.checked } } } : current)} />
-                  {item}
-                </label>
-              ))}
-            </div>
-            <button onClick={() => void savePreferences()} disabled={saving} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Save Preferences</button>
-          </section>
+        {showPreferences ? (
+          <NotificationPreferencesPanel sources={sources} onSaved={() => void load()} />
         ) : null}
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">

@@ -4,6 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 import { createPlatformReadRepository } from "@/lib/platform/read-repository";
 import { PlatformAdminOperationError, resolvePlatformAdminAccess, type PlatformAdminRepository } from "@/lib/platform/admin-access";
 
@@ -101,7 +102,7 @@ export async function GET() {
 
   let data;
   try { data = await createPlatformReadRepository(admin, true).listEntitlements(); }
-  catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Platform entitlements could not be loaded." }, { status: 500 }); }
+  catch (error) { return unexpectedErrorResponse("Platform entitlements read", error, "Platform entitlements could not be loaded."); }
 
   return NextResponse.json(
     {
@@ -183,10 +184,7 @@ export async function PATCH(request: NextRequest) {
   ]);
 
   if (departmentResult.error) {
-    return NextResponse.json(
-      { error: departmentResult.error.message },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Platform entitlement update", departmentResult.error, "Platform entitlement could not be updated.");
   }
 
   if (!departmentResult.data) {
@@ -197,10 +195,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (featureResult.error) {
-    return NextResponse.json(
-      { error: featureResult.error.message },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Platform entitlement update", featureResult.error, "Platform entitlement could not be updated.");
   }
 
   if (
@@ -214,10 +209,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (currentResult.error) {
-    return NextResponse.json(
-      { error: currentResult.error.message },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Platform entitlement update", currentResult.error, "Platform entitlement could not be updated.");
   }
 
   const previousEnabled =
@@ -243,10 +235,7 @@ export async function PATCH(request: NextRequest) {
     );
 
   if (entitlementError) {
-    return NextResponse.json(
-      { error: entitlementError.message },
-      { status: 500 },
-    );
+    return unexpectedErrorResponse("Platform entitlement update", entitlementError, "Platform entitlement could not be updated.");
   }
 
   if (previousEnabled !== isEnabled) {
@@ -267,10 +256,7 @@ export async function PATCH(request: NextRequest) {
       });
 
     if (eventError) {
-      return NextResponse.json(
-        { error: eventError.message },
-        { status: 500 },
-      );
+      return unexpectedErrorResponse("Platform entitlement update", eventError, "Platform entitlement could not be updated.");
     }
   }
 
