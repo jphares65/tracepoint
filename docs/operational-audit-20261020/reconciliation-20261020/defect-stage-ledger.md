@@ -1,6 +1,6 @@
 # Defect stage ledger
 
-Updated 2026-10-20. Every defect moves through four separate stages:
+Updated 2026-10-20. Candidate staging code commit: `8574db3` on `claude/integration-defects-20261020`. Every defect moves through four separate stages:
 
 | Stage | Meaning |
 |---|---|
@@ -34,7 +34,10 @@ Updated 2026-10-20. Every defect moves through four separate stages:
 | TRN-26, RNG-28 training visibility | High | R7 T8 | TV | S18 | — | — |
 | EQP-01, EQP-04, EQP-12, ARM-08 (display) separated holder | Critical/High | R5, R2 | B9 | S19 | — | — |
 | TRN-08, TRN-01, TRN-10, TRN-13, TRN-16, TRN-19, TRN-35 notifications | Critical/Med | R4 | B6, separate branch, **not in integration** | (S6, after infrastructure authorization) | — | — |
-| DC2 timestamps arrive as Date (dashboard training lists empty) | Medium | DC inventory | **Not fixed** | — | — | — |
+| DC2 timestamp contract (timestamptz/timestamp/interval arrive as Date/objects: empty dashboard training lists, blank audit times, custody history order, false range-save 409s) | High | DC inventory, DC2 matrix | DC2 (no migration); recommended for the hotfix candidate, subject to S24 | S24 | — | — (**likely live in production**) |
+| B8a: forgeable rifle history (052 as first written), non-atomic firearm status/history, archive ordering, "Unknown User", off-duty inspector 404, rifle reviewer resolution | High/Med | Owner review of B8 | B8a (052 edited in place, 053) | S22a | — | — |
+| ADM-07a Assign Password marked email verified without proof; ADM-07b remedy messages | High/Low | ADM-07 trace | ADM-07 (no migration) | S23-3 (revised) | — | — |
+| ADM-07c invited users who signed in cannot self-reset | Medium | ADM-07 trace | **Owner decision** after S23-3 (revised) step 2 | — | — | — |
 | B7 training records (TRN-02/03/04/11/12/18/27/29/30) | High/Med | R4 | B7 (050) | S20 | — | — |
 | B10 qualification and range roles (RNG-07/09/10/12/14/15/24) | High/Med | R3 | B10 (051) | S21 (run the qualification-status diff report first) | — | — |
 | B8 armory integrity (ARM-06/11/13/16/17/21/22/23/26/28/29/33), plus second-person certification and rifle history write on AWS (new) | High/Med | R2, B8 | B8 (052) | S22 | — | — |
