@@ -88,3 +88,6 @@ ADM-07 merge note: clean merge on top of B11. It replaces B11 S23 step 3 with "S
 | `claude/fix-dc2-timestamp-contract` | `2f4d675895d8c810a89407cf8a32acd7ef6115e3` | — |
 
 DC2 merge note: clean merge on top of ADM-07. The parser change also applies to every earlier batch: re-run S5 (range save concurrency) and S19 (custody history ordering) after DC2.
+| `claude/fix-b8a-armory-access` | `de82a0dccd214e88329947d75f82f28a40478cdf` | 052 (edited in place; unapplied anywhere), 053 |
+
+B8a merge note: clean merge on top of DC2. Merged tree: `tsc` 0 errors; application tests 740/744 (the 4 are the sandbox `xlsx` stub); B8a validator suite extended. This is the candidate code commit for staging (`8574db3`).
