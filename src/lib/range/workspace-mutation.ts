@@ -47,9 +47,9 @@ function relatedToRangeDay(items: WorkspaceRecord[], rangeDayId: string) {
   return items.filter((item) => field(item, "rangeDayId", "range_day_id") === rangeDayId);
 }
 
+// Packet readiness is a planning milestone; only the day status finalizes history.
 function isFinalized(rangeDay: WorkspaceRecord) {
-  return FINAL_STATUSES.has(text(rangeDay.status).toLowerCase()) ||
-    field(rangeDay, "packetStatus", "packet_status").toLowerCase() === "ready";
+  return FINAL_STATUSES.has(text(rangeDay.status).toLowerCase());
 }
 
 function validateTenantReferences(workspace: WorkspaceRecord, departmentId: string) {
@@ -96,20 +96,110 @@ function finalizedHistoryChanged(existing: WorkspaceRecord, next: WorkspaceRecor
   });
 }
 
+function part(item: WorkspaceRecord, ...keys: string[]) {
+  const value = keys.map((key) => item[key]).find((candidate) => candidate !== undefined && candidate !== null);
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+// A saved result is identified for corrections by its range day, drill, run and officer.
+function resultKey(item: WorkspaceRecord) {
+  const parts = [
+    part(item, "rangeDayId", "range_day_id"),
+    part(item, "drillId", "drill_id", "rangeDayDrillId", "range_day_drill_id"),
+    part(item, "runNumber", "run_number"),
+    part(item, "officerId", "officer_id", "officerUserId", "officer_user_id"),
+  ];
+  return parts.every(Boolean) ? parts.join("|") : "";
+}
+
+function malfunctionResultId(item: WorkspaceRecord) {
+  return part(item, "drillRunId", "drillRunResultId", "drill_run_result_id", "drill_run_id");
+}
+
+function present(items: WorkspaceRecord[], item: WorkspaceRecord) {
+  const id = text(item.id);
+  return items.find((candidate) => id ? text(candidate.id) === id : same(candidate, item));
+}
+
+// A removed result is a correction when a new result now holds the same key.
+function replacementFor(existingResults: WorkspaceRecord[], nextResults: WorkspaceRecord[], item: WorkspaceRecord) {
+  const key = resultKey(item);
+  if (!key) return undefined;
+  const existingIds = new Set(existingResults.map((result) => text(result.id)).filter(Boolean));
+  return nextResults.find((candidate) =>
+    resultKey(candidate) === key && Boolean(text(candidate.id)) && !existingIds.has(text(candidate.id)),
+  );
+}
+
+function revisedResultIds(existing: WorkspaceRecord, next: WorkspaceRecord) {
+  const before = collection(existing, "results", "drill_run_results");
+  const after = collection(next, "results", "drill_run_results");
+  return new Set(before.flatMap((item) => {
+    const id = text(item.id);
+    if (!id) return [];
+    const current = present(after, item);
+    if (current) return same(current, item) ? [] : [id];
+    return replacementFor(before, after, item) ? [id] : [];
+  }));
+}
+
 function historicalEvidenceRemoved(existing: WorkspaceRecord, next: WorkspaceRecord) {
-  return [
-    ["results", "drill_run_results"],
-    ["malfunctions", "firearm_malfunctions"],
-  ].some(([camel, snake]) => {
-    const before = collection(existing, camel, snake);
-    const after = collection(next, camel, snake);
-    return before.some((item) => {
-      const id = text(item.id);
-      return !after.some((candidate) => id
-        ? text(candidate.id) === id
-        : same(candidate, item));
-    });
+  const beforeResults = collection(existing, "results", "drill_run_results");
+  const afterResults = collection(next, "results", "drill_run_results");
+  const revised = revisedResultIds(existing, next);
+  const resultRemoved = beforeResults.some((item) =>
+    !present(afterResults, item) && !replacementFor(beforeResults, afterResults, item),
+  );
+  const malfunctionRemoved = collection(existing, "malfunctions", "firearm_malfunctions").some((item) =>
+    !present(collection(next, "malfunctions", "firearm_malfunctions"), item) && !revised.has(malfunctionResultId(item)),
+  );
+  return resultRemoved || malfunctionRemoved;
+}
+
+/**
+ * Returns the workspace to store: the client's document plus the append-only
+ * `resultRevisions` history. The history is rebuilt from the stored copy on every
+ * write, so a client can neither shrink nor rewrite it, and clients that do not
+ * know about it keep working.
+ */
+export function withRangeResultRevisions<T extends object>(input: {
+  existingWorkspace: unknown;
+  nextWorkspace: T;
+  revisedAt: string;
+  revisedByUserId: string;
+}): T & { resultRevisions: WorkspaceRecord[] } {
+  const existing = record(input.existingWorkspace);
+  const next = record(input.nextWorkspace);
+  const history = collection(existing, "resultRevisions", "result_revisions");
+  const revisions: WorkspaceRecord[] = [];
+  const revise = (name: string, previous: WorkspaceRecord, replacedById: string) => revisions.push({
+    id: `revision-${input.revisedAt}-${revisions.length}`,
+    collection: name,
+    recordId: text(previous.id),
+    rangeDayId: field(previous, "rangeDayId", "range_day_id"),
+    replacedById,
+    revisedAt: input.revisedAt,
+    revisedByUserId: input.revisedByUserId,
+    previous,
   });
+
+  const beforeResults = collection(existing, "results", "drill_run_results");
+  const afterResults = collection(next, "results", "drill_run_results");
+  beforeResults.forEach((item) => {
+    const current = present(afterResults, item);
+    if (current && same(current, item)) return;
+    revise("results", item, text((current ?? replacementFor(beforeResults, afterResults, item))?.id));
+  });
+  const afterMalfunctions = collection(next, "malfunctions", "firearm_malfunctions");
+  collection(existing, "malfunctions", "firearm_malfunctions").forEach((item) => {
+    const current = present(afterMalfunctions, item);
+    if (current && same(current, item)) return;
+    revise("malfunctions", item, text(current?.id));
+  });
+
+  const stored: WorkspaceRecord = { ...(input.nextWorkspace as WorkspaceRecord) };
+  delete stored.result_revisions;
+  return { ...stored, resultRevisions: [...history, ...revisions] } as T & { resultRevisions: WorkspaceRecord[] };
 }
 
 export function authorizeRangeWorkspaceMutation(input: {
@@ -153,4 +243,23 @@ export function authorizeRangeWorkspaceMutation(input: {
   }
 
   return { ok: true, mode: canManage ? "manage" : "score" };
+}
+
+export const STALE_RANGE_WORKSPACE_ERROR =
+  "This range workspace was changed on another device or by another user after you loaded it. Reload to see the latest version before saving.";
+
+/**
+ * Optional optimistic concurrency. `baseUpdatedAt` is the `updatedAt` the client
+ * loaded (null when nothing was stored yet). Clients that omit it keep the
+ * previous last-writer-wins behaviour.
+ */
+export function rangeWorkspaceVersionConflict(baseUpdatedAt: unknown, storedUpdatedAt: unknown) {
+  if (baseUpdatedAt === undefined) return false;
+  const stored = storedUpdatedAt === null || storedUpdatedAt === undefined
+    ? null
+    : new Date(storedUpdatedAt as string | Date).getTime();
+  if (baseUpdatedAt === null) return stored !== null;
+  if (typeof baseUpdatedAt !== "string" || stored === null) return true;
+  const base = Date.parse(baseUpdatedAt);
+  return Number.isNaN(base) || base !== stored;
 }

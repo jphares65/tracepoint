@@ -40,8 +40,7 @@ export function removeRangeDayDrill(
   }
 
   const status = text(rangeDay.status).toLowerCase();
-  const packetStatus = field(rangeDay, "packetStatus", "packet_status").toLowerCase();
-  if (["completed", "locked", "archived"].includes(status) || packetStatus === "ready") {
+  if (["completed", "locked", "archived"].includes(status)) {
     return {
       ok: false,
       status: 409,

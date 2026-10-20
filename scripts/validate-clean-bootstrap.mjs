@@ -477,7 +477,9 @@ try {
         and not has_function_privilege('anon', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute')
         and not has_function_privilege('tracepoint_runtime', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute') as department_self_creation_not_executable,
       has_function_privilege('tracepoint_runtime', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute')
-        and not has_function_privilege('authenticated', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute') as first_login_activation_runtime_only
+        and not has_function_privilege('authenticated', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute') as first_login_activation_runtime_only,
+      pg_get_functiondef('public.protect_pilot_range_workspace_mutation()'::regprocedure) not like '%= ''ready''%'
+        and pg_get_functiondef('public.protect_range_day_drill_history()'::regprocedure) not like '%= ''ready''%' as range_packet_ready_not_final
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
