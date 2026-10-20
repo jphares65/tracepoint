@@ -94,7 +94,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
         "Sign in with the new password. Your authenticator app code is still required.",
       ] },
     ],
-    tip: "If no code arrives, check junk mail. If you have not completed your first sign-in, or the reset is refused, ask a department administrator to send activation or assign a password from Settings > Users & Roles.",
+    tip: "If no code arrives, check junk mail. Before your first sign-in, Forgot your password? cannot be used: ask a department administrator to select Send Activation in Settings > Users & Roles. If the reset is refused or no code arrives after your first sign-in, ask a department administrator to assign a password there.",
     route: "/login",
     routeLabel: "Open Sign In",
   },
