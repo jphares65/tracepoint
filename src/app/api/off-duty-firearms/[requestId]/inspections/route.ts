@@ -246,6 +246,30 @@ export async function POST(
     );
   }
 
+  // A failed inspection marks the request non-compliant. On AWS the database
+  // function does this (052); the bridge runtime's function does not.
+  if (
+    result === "Fail" &&
+    process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== "aws-native"
+  ) {
+    const { error: complianceError } = await context.admin
+      .from("off_duty_firearm_requests")
+      .update({ compliance_status: "Non-Compliant" })
+      .eq("id", requestId)
+      .eq("department_id", context.departmentId);
+
+    if (complianceError) {
+      return NextResponse.json(
+        {
+          error:
+            "Inspection was saved, but the request compliance could not be updated: " +
+            complianceError.message,
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     inspection,

@@ -360,6 +360,7 @@ export default function FirearmsPage() {
   const [statusDraft, setStatusDraft] = useState<FirearmStatus>("In Service");
   const [statusNotes, setStatusNotes] = useState("");
   const [archiveReason, setArchiveReason] = useState("");
+  const [notReturnedReason, setNotReturnedReason] = useState("");
 
   const [editMake, setEditMake] = useState("");
   const [editModel, setEditModel] = useState("");
@@ -1348,9 +1349,11 @@ The firearm will return to active inventory and may again be used in operational
       return;
     }
 
-    if (selectedFirearm.active_assignment) {
+    const notReturned = notReturnedReason.trim();
+
+    if (selectedFirearm.active_assignment && !notReturned) {
       setError(
-        "This firearm is currently assigned. Record its return before archiving it.",
+        "This firearm is currently assigned. Record its return, or why it was not returned, before archiving it.",
       );
       return;
     }
@@ -1377,6 +1380,9 @@ The firearm will be removed from active inventory and future operational selecti
           },
           body: JSON.stringify({
             archiveReason: reason,
+            ...(selectedFirearm.active_assignment
+              ? { notReturnedReason: notReturned }
+              : {}),
           }),
         },
       );
@@ -1386,6 +1392,7 @@ The firearm will be removed from active inventory and future operational selecti
       }
 
       setArchiveReason("");
+      setNotReturnedReason("");
       setSelectedFirearmId(null);
       setMessage("Firearm archived. Historical records remain preserved.");
 
@@ -2509,16 +2516,34 @@ The firearm will be removed from active inventory and future operational selecti
                           historical records.
                         </p>
 
-                        {selectedFirearm.active_assignment ? (
-                          <div className="mt-4 rounded-2xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">
-                            This firearm is currently assigned to{" "}
-                            <span className="font-bold">
-                              {getAssignedOfficerDisplayName(selectedFirearm.active_assignment)}
-                            </span>
-                            . Record its return before archiving it.
-                          </div>
-                        ) : (
-                          <div className="mt-4 flex flex-col gap-3">
+                        <div className="mt-4 flex flex-col gap-3">
+                          {selectedFirearm.active_assignment && (
+                            <>
+                              <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-3 text-sm text-amber-200">
+                                This firearm is currently assigned to{" "}
+                                <span className="font-bold">
+                                  {getAssignedOfficerDisplayName(selectedFirearm.active_assignment)}
+                                </span>
+                                . Record its return before archiving it. If it
+                                was lost or stolen, record why it was not
+                                returned; the assignment closes as Not Returned.
+                              </div>
+                              <label className="space-y-1">
+                                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
+                                  Not Returned Reason
+                                </span>
+                                <textarea
+                                  value={notReturnedReason}
+                                  onChange={(event) =>
+                                    setNotReturnedReason(event.target.value)
+                                  }
+                                  rows={2}
+                                  placeholder="Example: Reported stolen from the officer's residence, case 26-0142."
+                                  className="w-full rounded-2xl border border-red-900/70 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none transition focus:border-red-500"
+                                />
+                              </label>
+                            </>
+                          )}
                             <label className="space-y-1">
                               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-300">
                                 Archive Reason
@@ -2537,7 +2562,14 @@ The firearm will be removed from active inventory and future operational selecti
                             <button
                               type="button"
                               onClick={() => void handleArchiveFirearm()}
-                              disabled={saving || !archiveReason.trim()}
+                              disabled={
+                                saving ||
+                                !archiveReason.trim() ||
+                                Boolean(
+                                  selectedFirearm.active_assignment &&
+                                    !notReturnedReason.trim(),
+                                )
+                              }
                               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-red-700 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               {saving ? (
@@ -2547,8 +2579,7 @@ The firearm will be removed from active inventory and future operational selecti
                               )}
                               Archive Firearm
                             </button>
-                          </div>
-                        )}
+                        </div>
                       </div>
                     )}
                       </div>

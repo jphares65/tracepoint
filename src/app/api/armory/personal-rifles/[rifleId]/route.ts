@@ -23,6 +23,16 @@ const REQUIRED_INSPECTION_CHECKS = [
   "trigger_muzzle",
 ] as const;
 
+// Review decisions on a rifle are never made by its owner.
+const REVIEW_ACTIONS = [
+  "request_correction",
+  "armorer_approve",
+  "armorer_deny",
+  "chief_approve",
+  "chief_deny",
+  "reinstate",
+];
+
 function serializeError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
@@ -73,6 +83,16 @@ export async function PATCH(
       return NextResponse.json(
         { error: "Personal rifle record not found." },
         { status: 404 },
+      );
+    }
+
+    if (REVIEW_ACTIONS.includes(action) && rifle.owner_user_id === user.id) {
+      return NextResponse.json(
+        {
+          error:
+            "You cannot review your own personal rifle. Another reviewer must review it.",
+        },
+        { status: 403 },
       );
     }
 

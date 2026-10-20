@@ -609,6 +609,11 @@ export default function ArmoryAmmunitionPage() {
 
     const expected = ammoType.currentOnHand;
     const variance = physical - expected;
+
+    if (variance !== 0 && !countDraft.notes.trim()) {
+      setError("Explain the count variance before confirming the count.");
+      return;
+    }
     const now = new Date().toISOString();
     const nextVerificationDate = calculateNextVerificationDate(
       ammoType.verificationMode,
@@ -1545,7 +1550,7 @@ export default function ArmoryAmmunitionPage() {
                 </Field>
               </div>
 
-              <Field label="Count Notes / Explanation">
+              <Field label="Count Notes / Explanation (required when the count differs)">
                 <textarea
                   value={countDraft.notes}
                   onChange={(event) =>
@@ -1624,6 +1629,7 @@ export default function ArmoryAmmunitionPage() {
                             {formatNumber(item.quantityBefore)} →{" "}
                             {formatNumber(item.quantityAfter)}
                             {item.reference ? ` · ${item.reference}` : ""}
+                            {item.recordedByName ? ` · by ${item.recordedByName}` : ""}
                           </p>
                           {item.notes ? (
                             <p className="mt-2 text-sm text-slate-400">

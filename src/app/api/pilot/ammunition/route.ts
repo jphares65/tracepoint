@@ -7,7 +7,11 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
-import { ammunitionWorkspaceForStorage } from "@/lib/tracepoint/ammunition-persistence";
+import {
+  AmmunitionWorkspaceRejected,
+  ammunitionWorkspaceForStorage,
+  stampAmmunitionWorkspace,
+} from "@/lib/tracepoint/ammunition-persistence";
 import {
   AmmunitionWorkspaceBodyTooLarge,
   readAmmunitionWorkspaceBody,
@@ -78,6 +82,27 @@ export async function PUT(request: Request) {
     return NextResponse.json(
       { error: "Invalid ammunition workspace payload." },
       { status: 400 },
+    );
+  }
+
+  try {
+    const stored = await createRangeReadRepository(admin, departmentId).getAmmunition(departmentId);
+    workspace = stampAmmunitionWorkspace(workspace, stored?.workspace, {
+      userId,
+      name: context.fullName,
+    });
+  } catch (error) {
+    if (error instanceof AmmunitionWorkspaceRejected) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to save ammunition workspace.",
+      },
+      { status: 500 },
     );
   }
 
