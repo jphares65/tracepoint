@@ -125,3 +125,24 @@ test("QR ambiguity is reported only over records the caller can read and never s
   assert.match(route, /records\.failure === "ambiguous"\s*\? NextResponse\.json\(\{ status: "unknown", message: "This code matches more than one record\. Scan the TracePoint label for this item instead\." \}, \{ status: 409/);
   assert.match(route, /lookupQrRecords\(admin, departmentId, parsed, access\)/);
 });
+
+// Fleet has no module entitlement in the feature catalog; agencies' enabled features never include "fleet".
+const catalogFeatures = ["equipment_readiness", "firearms", "qualifications", "range_training"];
+const vehicleRow = { id: record, department_id: department, unit_number: "12" };
+
+test("vehicle QR scans do not depend on a nonexistent fleet feature flag", () => {
+  const inspector = { permissions: ["perform_fleet_inspections"] as never[], enabledFeatures: catalogFeatures, vehicleInspectionEligible: true };
+  assert.equal((qrDecision({ identifier: "12", access: inspector, vehicle: vehicleRow }) as { allowed?: boolean }).allowed, true);
+});
+
+test("vehicle QR decisions follow the fleet inspection-eligibility rule", async () => {
+  // Eligible only through a configured inspection role: visible and allowed, even without fleet permissions.
+  const roleEligible = { userId: officer, permissions: [] as never[], enabledFeatures: catalogFeatures, vehicleInspectionEligible: true };
+  assert.equal((await resolveAs(qrClient({ fleet_vehicles: [vehicleRow] }), "12", roleEligible) as { allowed?: boolean }).allowed, true);
+  // A fleet viewer whose role is not in the configured inspection roles may see the vehicle but is not offered an inspection.
+  const viewerNotEligible = { userId: officer, permissions: ["view_fleet"] as never[], enabledFeatures: catalogFeatures, vehicleInspectionEligible: false };
+  assert.deepEqual(await resolveAs(qrClient({ fleet_vehicles: [vehicleRow] }), "12", viewerNotEligible), { status: "denied", message: "You are not authorized to use this vehicle workflow." });
+  const route = await readFile("src/app/api/mobile/qr/resolve/route.ts", "utf8");
+  assert.match(route, /admin\.rpc\("can_submit_fleet_inspection", \{ p_department_id: departmentId \}\)/);
+  assert.match(route, /canSubmitFleetInspection\(resolved\.context, rules\.data\)/);
+});
