@@ -22,6 +22,7 @@ import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate as formatDisplayDate, formatDateTime as formatDisplayDateTime } from "@/lib/format/date";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
+import { equipmentHolderName } from "@/lib/equipment/officer-assignments";
 import { REPORT_DEFINITIONS, reportCollection } from "@/lib/reports/report-definitions";
 
 type ImportTypeId =
@@ -2876,6 +2877,14 @@ function ImportWizardContent() {
               fullName: string;
               badgeNumber?: string | null;
               rankTitle?: string | null;
+              isActive?: boolean;
+            }>;
+            inactiveHolders?: Array<{
+              userId: string;
+              fullName: string;
+              badgeNumber?: string | null;
+              rankTitle?: string | null;
+              isActive?: boolean;
             }>;
           }>("/api/equipment/assets"),
 
@@ -2918,7 +2927,7 @@ function ImportWizardContent() {
         ]);
 
       const membersById = new Map(
-        (assetsPayload.members ?? []).map((member) => [
+        [...(assetsPayload.members ?? []), ...(assetsPayload.inactiveHolders ?? [])].map((member) => [
           member.userId,
           member,
         ]),
@@ -2981,7 +2990,7 @@ function ImportWizardContent() {
               asset.lot_number,
 
             assignedOfficer:
-              member?.fullName,
+              member ? equipmentHolderName(member) : undefined,
 
             badgeNumber:
               member?.badgeNumber,
@@ -3764,7 +3773,7 @@ function ImportWizardContent() {
 
       for (
         const member of
-        equipmentData.members ?? []
+        [...(equipmentData.members ?? []), ...(equipmentData.inactiveHolders ?? [])]
       ) {
         const id =
           member.userId ??
@@ -3775,9 +3784,9 @@ function ImportWizardContent() {
             String(id),
             {
               name: String(
-                member.fullName ??
-                  member.full_name ??
-                  id,
+                member.fullName
+                  ? equipmentHolderName(member)
+                  : member.full_name ?? id,
               ),
               badge: String(
                 member.badgeNumber ??

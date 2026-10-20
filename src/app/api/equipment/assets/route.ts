@@ -7,7 +7,7 @@ import {
   text,
 } from "@/lib/tracepoint/equipment-server";
 import { createEquipmentReadRepository } from "@/lib/equipment/read-repository";
-import { equipmentAssignment, equipmentIdentifierConflict } from "@/lib/equipment/write-validation";
+import { equipmentAssignment, equipmentDate, equipmentIdentifierConflict } from "@/lib/equipment/write-validation";
 import { sortFleetVehiclesByUnit } from "@/lib/fleet/unit-order";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +17,26 @@ const VALID_LIFECYCLE = new Set([
   "out_of_service",
   "removed",
 ]);
+
+const DATE_FIELDS = [
+  ["issueDate", "issue_date", "Issue date"],
+  ["expirationDate", "expiration_date", "Expiration date"],
+  ["lastInspectionDate", "last_inspection_date", "Last inspection date"],
+  ["nextInspectionDate", "next_inspection_date", "Next inspection date"],
+] as const;
+
+// Supplied dates only; an omitted field keeps the stored value.
+function equipmentDates(body: Record<string, unknown>, existing: Record<string, unknown> = {}) {
+  const dates: Record<string, string | null> = {};
+  for (const [field, column, label] of DATE_FIELDS) {
+    dates[column] = body[field] === undefined ? (existing[column] as string | null) ?? null : equipmentDate(body[field], label);
+  }
+  if ((body.issueDate !== undefined || body.expirationDate !== undefined) &&
+      dates.issue_date && dates.expiration_date && dates.expiration_date < dates.issue_date) {
+    throw new Error("Expiration date cannot be before the issue date.");
+  }
+  return dates;
+}
 
 export async function GET(request: NextRequest) {
   const context = await getEquipmentServerContext(request);
@@ -65,6 +85,9 @@ export async function POST(request: NextRequest) {
   try { assignment = equipmentAssignment(body); }
   catch (assignmentError) { return NextResponse.json({ error: (assignmentError as Error).message }, { status: 400 }); }
   const { assignedUserId, assignedVehicleId, assignedLocation } = assignment;
+  let dates;
+  try { dates = equipmentDates(body); }
+  catch (dateError) { return NextResponse.json({ error: (dateError as Error).message }, { status: 400 }); }
 
   if (!equipmentTypeId) {
     return NextResponse.json(
@@ -169,15 +192,7 @@ export async function POST(request: NextRequest) {
       assigned_vehicle_id: assignedVehicleId,
       assigned_location: assignedLocation,
 
-      issue_date: nullableText(body.issueDate),
-      expiration_date:
-        nullableText(body.expirationDate),
-
-      last_inspection_date:
-        nullableText(body.lastInspectionDate),
-
-      next_inspection_date:
-        nullableText(body.nextInspectionDate),
+      ...dates,
 
       lifecycle_status: lifecycleStatus,
 
@@ -260,18 +275,26 @@ export async function PATCH(request: NextRequest) {
     });
   } catch (assignmentError) { return NextResponse.json({ error: (assignmentError as Error).message }, { status: 400 }); }
   const { assignedUserId, assignedVehicleId, assignedLocation } = assignment;
+  let dates;
+  try { dates = equipmentDates(body, existing); }
+  catch (dateError) { return NextResponse.json({ error: (dateError as Error).message }, { status: 400 }); }
+  // Only a new holder must be active (or a vehicle in service): an item held by a
+  // separated member or a retired vehicle can still change status or be returned.
+  const userChanged = assignedUserId !== (existing.assigned_user_id ?? null);
+  const vehicleChanged = assignedVehicleId !== (existing.assigned_vehicle_id ?? null);
+  const assignmentChanged = userChanged || vehicleChanged || assignedLocation !== (existing.assigned_location ?? null);
 
   const { data: updateType } = await context.db.from("equipment_types").select("id")
     .eq("id", equipmentTypeId).eq("department_id", context.departmentId).eq("is_active", true).maybeSingle();
   if (!updateType) return NextResponse.json({ error: "Equipment type was not found in this agency." }, { status: 400 });
 
-  if (assignedUserId) {
+  if (assignedUserId && userChanged) {
     const { data: member } = await context.db.from("department_memberships").select("user_id")
       .eq("department_id", context.departmentId).eq("user_id", assignedUserId).eq("is_active", true).maybeSingle();
     if (!member) return NextResponse.json({ error: "Assigned officer must be an active department member." }, { status: 400 });
   }
 
-  if (assignedVehicleId) {
+  if (assignedVehicleId && vehicleChanged) {
     const { data: vehicle } = await context.admin.from("fleet_vehicles").select("id")
       .eq("department_id", context.departmentId).eq("id", assignedVehicleId)
       .neq("status", "Retired").maybeSingle();
@@ -291,17 +314,25 @@ export async function PATCH(request: NextRequest) {
 
   const removalReason =
     nullableText(body.removalReason);
+  const lifecycleChanged = lifecycleStatus !== existing.lifecycle_status;
 
   if (
     lifecycleStatus === "removed" &&
     !removalReason &&
-    existing.lifecycle_status !== "removed"
+    lifecycleChanged
   ) {
     return NextResponse.json(
       {
         error:
           "A removal reason is required when removing equipment.",
       },
+      { status: 400 },
+    );
+  }
+
+  if (lifecycleStatus === "out_of_service" && !removalReason && lifecycleChanged) {
+    return NextResponse.json(
+      { error: "A reason is required when taking equipment out of service." },
       { status: 400 },
     );
   }
@@ -336,29 +367,20 @@ export async function PATCH(request: NextRequest) {
           ? existing.lot_number
           : nullableText(body.lotNumber),
 
-      assigned_user_id: assignedUserId,
-      assigned_vehicle_id: assignedVehicleId,
-      assigned_location: assignedLocation,
+      // Unchanged custody is not rewritten, so the custody trigger does not
+      // re-validate a separated holder or retired vehicle. Removal clears the
+      // officer explicitly so the history trigger closes the assignment.
+      ...(assignmentChanged
+        ? {
+            assigned_user_id: lifecycleStatus === "removed" ? null : assignedUserId,
+            assigned_vehicle_id: assignedVehicleId,
+            assigned_location: assignedLocation,
+          }
+        : lifecycleStatus === "removed" && existing.assigned_user_id
+          ? { assigned_user_id: null }
+          : {}),
 
-      issue_date:
-        body.issueDate === undefined
-          ? existing.issue_date
-          : nullableText(body.issueDate),
-
-      expiration_date:
-        body.expirationDate === undefined
-          ? existing.expiration_date
-          : nullableText(body.expirationDate),
-
-      last_inspection_date:
-        body.lastInspectionDate === undefined
-          ? existing.last_inspection_date
-          : nullableText(body.lastInspectionDate),
-
-      next_inspection_date:
-        body.nextInspectionDate === undefined
-          ? existing.next_inspection_date
-          : nullableText(body.nextInspectionDate),
+      ...dates,
 
       lifecycle_status: lifecycleStatus,
 
@@ -382,10 +404,13 @@ export async function PATCH(request: NextRequest) {
           ? existing.removed_by ?? context.user.id
           : null,
 
+      // The out-of-service or removal reason; cleared when the item is active.
       removal_reason:
-        lifecycleStatus === "removed"
-          ? removalReason ?? existing.removal_reason
-          : null,
+        lifecycleStatus === "active"
+          ? null
+          : lifecycleChanged
+            ? removalReason
+            : removalReason ?? existing.removal_reason,
 
       updated_by: context.user.id,
     })

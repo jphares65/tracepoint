@@ -6,6 +6,7 @@ export interface ArmoryReadDataSource {
   listActiveAssignments(departmentId: string, userId?: string): PromiseLike<ArmoryResult>;
   listFirearms(departmentId: string, input: { includeArchived: boolean; firearmIds?: string[] }): PromiseLike<ArmoryResult>;
   listActiveMembers(departmentId: string): PromiseLike<ArmoryResult>;
+  listInactiveMembers(departmentId: string, userIds: string[]): PromiseLike<ArmoryResult>;
   listProfiles(userIds: string[]): PromiseLike<ArmoryResult>;
   listAuthUsers(userIds: string[]): PromiseLike<ArmoryUsersResult>;
   listInspections(departmentId: string): PromiseLike<ArmoryResult>;
@@ -55,17 +56,26 @@ export class TenantBoundArmoryReadRepository {
       ? rows(await this.source.listFirearms(input.departmentId, { includeArchived: input.canViewAll && input.includeArchived, firearmIds: input.canViewAll ? undefined : firearmIds }))
       : [];
     const memberships = rows(await this.source.listActiveMembers(input.departmentId));
-    const userIds = memberships.map((row) => text(row.user_id)).filter(Boolean);
+    const activeIds = new Set(memberships.map((row) => text(row.user_id)).filter(Boolean));
+    // A separated (inactive) holder keeps custody; resolve their name too.
+    const holderIds = [...new Set(assignments.map((row) => text(row.assigned_to_user_id)).filter((id) => id && !activeIds.has(id)))];
+    const inactive = holderIds.length ? rows(await this.source.listInactiveMembers(input.departmentId, holderIds)) : [];
+    const userIds = [...activeIds, ...inactive.map((row) => text(row.user_id)).filter(Boolean)];
     const profiles = userIds.length ? rows(await this.source.listProfiles(userIds)) : [];
     const usersResult = await this.source.listAuthUsers(userIds);
     if (usersResult.error) throw new ArmoryReadRepositoryError(usersResult.error.message);
     const profilesById = new Map(profiles.map((row) => [text(row.id), row]));
     const usersById = new Map((usersResult.data?.users ?? []).map((row) => [text(row.id), row]));
-    const members = memberships.map((membership) => {
+    const person = (membership: ArmoryRow) => {
       const id = text(membership.user_id); const profile = profilesById.get(id); const user = usersById.get(id); const meta = metadata(user);
       return { user_id: id, full_name: text(profile?.full_name) || text(meta.full_name) || text(meta.name) || text(meta.display_name) || text(profile?.email) || text(user?.email) || "Unknown User", email: text(profile?.email) || text(user?.email), rank_title: membership.rank_title ?? null, badge_number: membership.badge_number ?? null, unit_name: membership.unit_name ?? null };
-    }).sort((left, right) => left.full_name.localeCompare(right.full_name));
-    const membersById = new Map(members.map((member) => [member.user_id, member]));
+    };
+    const members = memberships.map(person).sort((left, right) => left.full_name.localeCompare(right.full_name));
+    const membersById = new Map<string, ReturnType<typeof person> & { is_active?: false }>(members.map((member) => [member.user_id, member]));
+    for (const membership of inactive) {
+      const member = person(membership);
+      membersById.set(member.user_id, { ...member, full_name: `${member.full_name} (inactive)`, is_active: false });
+    }
     const assignmentsByFirearmId = new Map(assignments.map((assignment) => {
       const member = membersById.get(text(assignment.assigned_to_user_id));
       return [text(assignment.firearm_id), {
@@ -73,6 +83,7 @@ export class TenantBoundArmoryReadRepository {
         assigned_to_name: member?.full_name ?? "Unknown User",
         assigned_to_badge_number: member?.badge_number ?? null,
         assigned_to_unit_name: member?.unit_name ?? null,
+        ...(member?.is_active === false ? { assigned_to_is_active: false } : {}),
       }];
     }));
     return { departmentId: input.departmentId, firearms: firearms.map((firearm) => ({ ...firearm, condition_status: firearm.condition_status ?? "In Service", active_assignment: assignmentsByFirearmId.get(text(firearm.id)) ?? null })), members: input.canManage ? members : [], access: { canViewAll: input.canViewAll, canManage: input.canManage, canInspect: input.canInspect } };

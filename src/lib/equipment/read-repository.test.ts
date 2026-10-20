@@ -42,6 +42,7 @@ function source(overrides: Partial<EquipmentReadDataSource> = {}): EquipmentRead
     async listTypes() { return []; },
     async listAssets() { return []; },
     async listActiveMembers() { return []; },
+    async listInactiveMembers() { return []; },
     async listProfiles() { return []; },
     async listRequirements() { return []; },
     ...overrides,
@@ -61,6 +62,7 @@ test("preserves tenant filters, projections, visibility filtering, and ordering"
   await adapter.listTypes("agency-a");
   await adapter.listAssets({ departmentId: "agency-a", assignedUserId: "user-a" });
   await adapter.listActiveMembers("agency-a");
+  await adapter.listInactiveMembers("agency-a", ["user-z"]);
   await adapter.listProfiles(["user-a", "user-b"]);
   await adapter.listRequirements("agency-a");
 
@@ -68,6 +70,7 @@ test("preserves tenant filters, projections, visibility filtering, and ordering"
     "from:equipment_types", "select:*", "eq:department_id:agency-a", "order:category:asc", "order:name:asc",
     "from:equipment_assets", "select:*", "eq:department_id:agency-a", "order:created_at:desc", "eq:assigned_user_id:user-a",
     "from:department_memberships", "select:user_id,badge_number,rank_title,unit_name,is_active", "eq:department_id:agency-a", "eq:is_active:true",
+    "from:department_memberships", "select:user_id,badge_number,rank_title,unit_name,is_active,deactivated_at", "eq:department_id:agency-a", "eq:is_active:false", "in:user_id:user-z",
     "from:profiles", "select:id,full_name", "in:id:user-a,user-b",
     "from:department_equipment_requirements", "select:*", "eq:department_id:agency-a", "order:created_at:asc",
   ]);
@@ -107,6 +110,7 @@ test("limits non-department viewers and preserves member display fallbacks", asy
       { userId: "user-b", fullName: "Sergeant", badgeNumber: null, rankTitle: "Sergeant", unitName: null },
       { userId: "user-c", fullName: "Unnamed Officer", badgeNumber: null, rankTitle: null, unitName: null },
     ],
+    inactiveHolders: [],
   });
 });
 
@@ -150,7 +154,7 @@ test("skips profile access for an empty member set and preserves empty results",
   }), "agency-a");
   assert.deepEqual(await repository.listTypes({ departmentId: "agency-a" }), []);
   assert.deepEqual(await repository.listRequirements({ departmentId: "agency-a" }), []);
-  assert.deepEqual(await repository.getAssetDirectory({ departmentId: "agency-a", userId: "user-a", canViewDepartment: true }), { items: [], members: [] });
+  assert.deepEqual(await repository.getAssetDirectory({ departmentId: "agency-a", userId: "user-a", canViewDepartment: true }), { items: [], members: [], inactiveHolders: [] });
   assert.equal(profilesCalled, false);
 });
 
@@ -169,4 +173,36 @@ test("defaults to Supabase and rejects unsupported provider configuration", () =
     () => requireEquipmentReadProvider("aurora"),
     EquipmentReadRepositoryConfigurationError,
   );
+});
+
+test("EQP-01: an item held by a separated member names that holder, marked inactive", async () => {
+  const inactiveInputs: unknown[] = [];
+  const profileInputs: unknown[] = [];
+  const repository = new TenantBoundEquipmentReadRepository(source({
+    async listAssets() {
+      return [
+        { id: "vest", assigned_user_id: "user-gone", lifecycle_status: "active" },
+        { id: "radio", assigned_user_id: "user-gone", lifecycle_status: "out_of_service" },
+        { id: "old-taser", assigned_user_id: "user-removed", lifecycle_status: "removed" },
+        { id: "laptop", assigned_user_id: "user-a", lifecycle_status: "active" },
+      ];
+    },
+    async listActiveMembers() { return [{ user_id: "user-a", badge_number: "17" }]; },
+    async listInactiveMembers(departmentId, userIds) {
+      inactiveInputs.push([departmentId, userIds]);
+      return [{ user_id: "user-gone", badge_number: "44", rank_title: "Officer", unit_name: "Patrol", deactivated_at: "2026-10-01T12:00:00Z" }];
+    },
+    async listProfiles(userIds) { profileInputs.push(userIds); return [{ id: "user-a", full_name: "Alex Able" }, { id: "user-gone", full_name: "Sam Separated" }]; },
+  }), "agency-a");
+
+  const result = await repository.getAssetDirectory({ departmentId: "agency-a", userId: "chief-a", canViewDepartment: true });
+  // Only holders of non-removed items who are not active members are looked up.
+  assert.deepEqual(inactiveInputs, [["agency-a", ["user-gone"]]]);
+  assert.deepEqual(profileInputs, [["user-a", "user-gone"]]);
+  // Active members (the assignment picker) are unchanged; the separated holder is listed apart.
+  assert.deepEqual(result.members.map((member) => member.userId), ["user-a"]);
+  assert.deepEqual(result.inactiveHolders, [{
+    userId: "user-gone", fullName: "Sam Separated", badgeNumber: "44", rankTitle: "Officer", unitName: "Patrol",
+    isActive: false, deactivatedAt: "2026-10-01T12:00:00Z",
+  }]);
 });

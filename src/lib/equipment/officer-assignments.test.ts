@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { groupCurrentOfficerAssignments } from "./officer-assignments.ts";
+import { equipmentCustodyLabel, equipmentHolderName, groupCurrentOfficerAssignments } from "./officer-assignments.ts";
 
 const members = [{ userId: "auth-chief" }, { userId: "auth-officer" }];
 const laptop = (assignedUserId: string | null, lifecycleStatus = "active") => ({
@@ -38,4 +38,37 @@ test("asset writes atomically synchronize assignment history and enforce tenant-
   assert.match(sync, /insert into public\.equipment_asset_assignments/);
   assert.match(guards, /member\.department_id = new\.department_id/);
   assert.match(policies, /assigned_user_id = auth\.uid\(\)/);
+});
+
+test("EQP-01: a separated holder's items stay grouped under that holder and are never shown as Unassigned", () => {
+  const holders = [
+    { userId: "auth-officer", fullName: "Olive Officer" },
+    { userId: "auth-gone", fullName: "Sam Separated", isActive: false },
+  ];
+  const vest = { id: "vest", assigned_user_id: "auth-gone", lifecycle_status: "active" };
+  const radio = { id: "radio", assigned_user_id: "auth-gone", lifecycle_status: "out_of_service" };
+  assert.deepEqual(groupCurrentOfficerAssignments(holders, [vest, radio]).get("auth-gone")?.map((asset) => asset.id), ["vest", "radio"]);
+
+  const holderMap = new Map(holders.map((holder) => [holder.userId, holder]));
+  const vehicles = new Map([["vehicle-1", { unit_number: "3101" }]]);
+  assert.equal(equipmentHolderName(holders[1]), "Sam Separated (inactive)");
+  assert.equal(equipmentCustodyLabel(vest, holderMap, vehicles), "Sam Separated (inactive)");
+  assert.equal(equipmentCustodyLabel({ assigned_user_id: "auth-officer" }, holderMap, vehicles), "Olive Officer");
+  // A holder the viewer cannot resolve, or a vehicle not in the active fleet, is still not "Unassigned".
+  assert.equal(equipmentCustodyLabel({ assigned_user_id: "auth-unknown" }, holderMap, vehicles), "Unrecognized holder");
+  assert.equal(equipmentCustodyLabel({ assigned_vehicle_id: "vehicle-1" }, holderMap, vehicles), "Vehicle 3101");
+  assert.equal(equipmentCustodyLabel({ assigned_vehicle_id: "vehicle-retired" }, holderMap, vehicles), "Assigned vehicle");
+  assert.equal(equipmentCustodyLabel({ assigned_location: "Armory" }, holderMap, vehicles), "Armory");
+  assert.equal(equipmentCustodyLabel({}, holderMap, vehicles), "Unassigned");
+});
+
+test("EQP-01: the equipment page and exports resolve holders through the separated-holder list", async () => {
+  const page = await readFile("src/app/equipment/page.tsx", "utf8");
+  assert.match(page, /\[\.\.\.members, \.\.\.inactiveHolders\]\.map/);
+  assert.match(page, /groupCurrentOfficerAssignments\(holders, assets\)/);
+  assert.match(page, /equipmentCustodyLabel\(asset, memberMap, vehicleMap\)/);
+  assert.doesNotMatch(page, /asset\.assigned_location \?\? "Unassigned"/);
+  const exports = await readFile("src/app/settings/import-export/page.tsx", "utf8");
+  assert.match(exports, /\.\.\.\(assetsPayload\.inactiveHolders \?\? \[\]\)/);
+  assert.match(exports, /\.\.\.\(equipmentData\.inactiveHolders \?\? \[\]\)/);
 });
