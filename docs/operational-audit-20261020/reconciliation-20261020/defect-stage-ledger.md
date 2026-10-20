@@ -35,9 +35,9 @@ Updated 2026-10-20. Every defect moves through four separate stages:
 | EQP-01, EQP-04, EQP-12, ARM-08 (display) separated holder | Critical/High | R5, R2 | B9 | S19 | — | — |
 | TRN-08, TRN-01, TRN-10, TRN-13, TRN-16, TRN-19, TRN-35 notifications | Critical/Med | R4 | B6, separate branch, **not in integration** | (S6, after infrastructure authorization) | — | — |
 | DC2 timestamps arrive as Date (dashboard training lists empty) | Medium | DC inventory | **Not fixed** | — | — | — |
-| B7 training records (TRN-02/03/04/11/12/18/27/29/30) | High/Med | R4 | In progress | — | — | — |
-| B10 qualification and range roles (RNG-07/09/10/12/14/15/24) | High/Med | R3 | In progress | — | — | — |
-| B8 armory integrity, B11 admin correctness | High/Med | R2, R6 | Planned | — | — | — |
+| B7 training records (TRN-02/03/04/11/12/18/27/29/30) | High/Med | R4 | B7 (050) | S20 | — | — |
+| B10 qualification and range roles (RNG-07/09/10/12/14/15/24) | High/Med | R3 | B10 (051) | S21 (run the qualification-status diff report first) | — | — |
+| B8 armory integrity, B11 admin correctness | High/Med | R2, R6 | In progress on `claude/fix-b8-armory-integrity` and `claude/fix-b11-admin-correctness`; merge order B8 then B11 | — | — | — |
 
 **Superseded or not applicable:**
 

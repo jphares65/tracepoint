@@ -98,3 +98,18 @@ Every branch is cut from `555f061` (`codex/staging-mobile-api-release-20261007`)
 **Kept separate, not in integration:** `claude/fix-b6-notification-delivery` (app-side notification fixes plus the scheduler entry points). It waits for the infrastructure proposal decision (`docs/remediation/B6-infrastructure-proposal.md` on that branch).
 
 **Next:** [plan-b7-b11.md](plan-b7-b11.md).
+
+## Update: B9, B7 and B10 merged
+
+| Batch | Branch @ commit | Migration | Integration CI |
+|---|---|---|---|
+| TV training visibility | `claude/fix-tv-training-visibility` @ `3f8f5e2` | 048 | Green |
+| B9 equipment holder | `claude/fix-b9-separated-custody` @ `330ce20` | 049 | Green |
+| B7 training records | `claude/fix-b7-training-records` @ `15867d0` | 050 | Green (run 10) |
+| B10 qualification and range roles | `claude/fix-b10-qualification-range-roles` @ `6e43ab4` | 051 | Run 11 on the merge |
+
+The staging package now covers migrations 038–051 (047 is reserved for B6) and acceptance steps S1–S21. Native contract rows C25–C27 cover B10.
+
+**B10 needs a data-impact step before staging apply:** run `scripts/qualification-status-snapshot.sql` and `scripts/qualification-status-diff.mjs`, and close out completed range days, because passes on open days stop counting.
+
+**In progress:** B8 (migration 052) and B11 (053 if needed), on separate branches. They merge in that order.
