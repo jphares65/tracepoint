@@ -323,3 +323,76 @@ test("both range workspace PUT routes check the client base version and store th
     assert.match(put, /updatedAt[,}]/);
   }
 });
+
+const decideFor = (existingWorkspace: unknown, nextWorkspace: unknown, permissions: string[]) =>
+  authorizeRangeWorkspaceMutation({ existingWorkspace, nextWorkspace, departmentId: "agency-a", permissions });
+const outcome = (decision: ReturnType<typeof authorizeRangeWorkspaceMutation>) => decision.ok ? decision.mode : decision.status;
+
+test("RNG-07: an instructor marks attendance and adds walk-ups but cannot otherwise change the roster or planning", () => {
+  const scheduled = base();
+  const present = { ...scheduled, rangeRoster: [{ ...scheduled.rangeRoster[0], attended: true, attendanceTime: "2026-10-20T13:00:00.000Z" }] };
+  assert.equal(outcome(decideFor(scheduled, present, ["score_range_days"])), "score");
+  assert.equal(outcome(decideFor(present, scheduled, ["score_range_days"])), "score");
+  assert.equal(outcome(decideFor(scheduled, present, ["manage_qualifications"])), "score");
+
+  const open = { ...scheduled, rangeDays: [{ ...scheduled.rangeDays[0], attendanceMode: "Open / Rolling Attendance" }] };
+  const walkUp = { id: "roster-2", rangeDayId: "day-1", officerId: "officer-2", assignedFirearmIds: ["firearm-2"], attended: true, attendanceTime: "2026-10-20T13:05:00.000Z", notes: "Added during open attendance." };
+  assert.equal(outcome(decideFor(open, { ...open, rangeRoster: [...open.rangeRoster, walkUp] }, ["score_range_days"])), "score");
+
+  for (const [label, existing, next] of [
+    ["walk-up on a scheduled day", scheduled, { ...scheduled, rangeRoster: [...scheduled.rangeRoster, walkUp] }],
+    ["walk-up not present", open, { ...open, rangeRoster: [...open.rangeRoster, { ...walkUp, attended: false }] }],
+    ["duplicate officer", open, { ...open, rangeRoster: [...open.rangeRoster, { ...walkUp, officerId: "officer-1" }] }],
+    ["walk-up without id", open, { ...open, rangeRoster: [...open.rangeRoster, { ...walkUp, id: "" }] }],
+    ["roster removal", scheduled, { ...scheduled, rangeRoster: [] }],
+    ["firearm change", scheduled, { ...scheduled, rangeRoster: [{ ...scheduled.rangeRoster[0], assignedFirearmIds: ["firearm-9"] }] }],
+    ["officer change", scheduled, { ...scheduled, rangeRoster: [{ ...scheduled.rangeRoster[0], officerId: "officer-9", attended: true }] }],
+    ["range day change", open, { ...open, rangeDays: [{ ...open.rangeDays[0], title: "Renamed" }], rangeRoster: [...open.rangeRoster, walkUp] }],
+    ["drill change", scheduled, { ...present, rangeDayDrills: [] }],
+    ["library change", scheduled, { ...present, drillLibrary: [] }],
+  ] as const) {
+    assert.equal(outcome(decideFor(existing, next, ["score_range_days"])), 403, label);
+    assert.equal(outcome(decideFor(existing, next, ["manage_range_days"])), label === "roster removal" || label.startsWith("walk-up") || label === "duplicate officer" || label.includes("change") ? "manage" : 403, label);
+  }
+  assert.equal(outcome(decideFor(scheduled, present, [])), 403);
+
+  // Final days stay closed to everyone.
+  const completed = { ...scheduled, rangeDays: [{ ...scheduled.rangeDays[0], status: "Completed" }] };
+  assert.equal(outcome(decideFor(completed, { ...completed, rangeRoster: present.rangeRoster }, ["score_range_days"])), 409);
+});
+
+test("RNG-14: new or changed results must carry possible values for their drill", () => {
+  const existing = {
+    ...base(),
+    rangeDayDrills: [
+      { id: "drill-1", rangeDayId: "day-1", name: "Handgun Qualification", maxScore: 60 },
+      { id: "drill-2", rangeDayId: "day-1", name: "Components", maxScore: 60, qualificationComponents: [{ name: "Day", maximumScore: 50 }] },
+    ],
+    results: [{ id: "legacy", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "officer-9", score: 75 }],
+  };
+  const save = (result: Record<string, unknown>) => decideFor(existing, {
+    ...existing,
+    results: [...existing.results, { id: "result-1", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "officer-1", ...result }],
+  }, ["score_range_days"]);
+  for (const valid of [{ score: 60 }, { score: 0 }, { score: "45" }, { timeSeconds: 4.2 }, { hitCount: 10 }, { score: null }, {}]) {
+    assert.equal(outcome(save(valid)), "score", JSON.stringify(valid));
+  }
+  const invalid: Array<[Record<string, unknown>, RegExp]> = [
+    [{ score: 61 }, /Score 61 for Handgun Qualification is above the maximum of 60\./],
+    [{ score: -1 }, /must be a number of 0 or more/],
+    [{ score: "abc" }, /must be a number of 0 or more/],
+    [{ score: true }, /must be a number of 0 or more/],
+    [{ timeSeconds: 0 }, /Time for Handgun Qualification must be a number of seconds greater than 0\./],
+    [{ hitCount: 2.5 }, /Hit count for Handgun Qualification must be a whole number/],
+    [{ drillId: "drill-2", score: 55 }, /above the maximum of 50/],
+  ];
+  for (const [result, message] of invalid) {
+    const decision = save(result);
+    assert.equal(outcome(decision), 400, JSON.stringify(result));
+    if (!decision.ok) assert.match(decision.error, message);
+  }
+  // Unchanged stored results are not re-judged, so legacy data never blocks a save.
+  assert.equal(outcome(decideFor(existing, { ...existing, rangeRoster: [{ ...existing.rangeRoster[0], attended: true }] }, ["score_range_days"])), "score");
+  // A correction of the legacy value is judged.
+  assert.equal(outcome(decideFor(existing, { ...existing, results: [{ ...existing.results[0], score: 70 }] }, ["manage_range_days"])), 400);
+});

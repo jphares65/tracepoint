@@ -27,6 +27,8 @@ export type QualificationReadinessEvent = {
   runLabel: string;
   component?: QualificationComponent;
   expiresOn?: string | null;
+  /** Save order among records of the same source; breaks same-date ties. */
+  sequence?: number;
 };
 
 export type QualificationReadinessResult = {
@@ -115,6 +117,14 @@ function startOfLocalDay(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
+// Same-date events are ordered by save sequence when both have one; otherwise
+// the date alone decides, as before.
+function compareEvents(a: QualificationReadinessEvent, b: QualificationReadinessEvent) {
+  const byDate = getDateValue(a.date) - getDateValue(b.date);
+  if (byDate || a.sequence === undefined || b.sequence === undefined) return byDate;
+  return a.sequence - b.sequence;
+}
+
 function getDaysSince(date?: string, today = new Date()) {
   const value = getDateValue(date);
   if (!value) return undefined;
@@ -149,6 +159,9 @@ function qualificationStandardFor(
   });
 }
 
+// Only closed range days count toward readiness (the same final set that locks history).
+const FINAL_RANGE_DAY_STATUSES = new Set(["completed", "locked", "archived"]);
+
 function mapWorkspaceAttempts(
   workspacePayload: unknown,
   officerId: string,
@@ -166,7 +179,7 @@ function mapWorkspaceAttempts(
   const rangeDaysById = new Map(rangeDays.map((row) => [text(get(row, "id")), row]));
   const drillsById = new Map(drills.map((row) => [text(get(row, "id")), row]));
 
-  return results.flatMap<CanonicalQualificationAttempt>((result) => {
+  return results.flatMap<CanonicalQualificationAttempt>((result, sequence) => {
     if (text(get(result, "officerId", "officer_id")) !== officerId) return [];
     const drill = drillsById.get(text(get(result, "drillId", "drill_id")));
     const category = normalized(get(drill, "category"));
@@ -181,6 +194,7 @@ function mapWorkspaceAttempts(
     if (!isQualification) return [];
 
     const rangeDay = rangeDaysById.get(text(get(result, "rangeDayId", "range_day_id")));
+    if (!FINAL_RANGE_DAY_STATUSES.has(normalized(get(rangeDay, "status")))) return [];
     const date = text(get(rangeDay, "date", "range_date"));
     if (!date) return [];
     const runNumber = Number(get(result, "runNumber", "run_number") ?? 0);
@@ -196,9 +210,17 @@ function mapWorkspaceAttempts(
     const recordedPass = booleanValue(get(result, "finalPassed", "final_passed"))
       ?? booleanValue(get(result, "passed"));
     const passed = departmentStandardPassed === false ? false : recordedPass;
+    // A drill for "Any" firearm counts toward the class of the firearm recorded on
+    // the result, else the class of the standard it was scored against, else the
+    // class being evaluated.
+    const drillFirearmType = text(get(drill, "firearmType", "firearm_type"));
+    const firearmType = normalized(drillFirearmType) === "any"
+      ? text(get(result, "firearmTypeSnapshot", "firearm_type_snapshot")) || text(standard?.firearmType)
+      : drillFirearmType;
 
     return [{
       id: text(get(result, "id")) || `${officerId}:${date}:${runNumber}`,
+      sequence,
       officerUserId: officerId,
       date,
       runLabel: component === "night" ? "Night Qualification" : component === "day" ? "Day Qualification" : "Qualification",
@@ -207,7 +229,7 @@ function mapWorkspaceAttempts(
       passed,
       score: numberValue(get(result, "score")),
       firearmId: text(get(result, "firearmId", "firearm_id")) || undefined,
-      firearmType: text(get(drill, "firearmType", "firearm_type")) || undefined,
+      firearmType: firearmType || undefined,
       standardId: standard?.id,
       standardName: standard?.name || snapshotName || text(get(drill, "departmentStandardName", "department_standard_name")) || undefined,
       recordOrigin: "range_workspace",
@@ -284,7 +306,7 @@ export function evaluateQualificationReadiness({
 
   const passes = { day: lastDayQualification, night: lastNightQualification };
   const newestActionableFailure = [...failedQualifications]
-    .sort((a, b) => getDateValue(b.date) - getDateValue(a.date))
+    .sort((a, b) => compareEvents(b, a))
     .find((failure) => {
       if (failure.component && !requiredComponents.includes(failure.component)) {
         return false;
@@ -293,8 +315,8 @@ export function evaluateQualificationReadiness({
         ? passes[failure.component]
         : [lastDayQualification, lastNightQualification]
             .filter((event): event is QualificationReadinessEvent => Boolean(event))
-            .sort((a, b) => getDateValue(b.date) - getDateValue(a.date))[0];
-      return getDateValue(failure.date) >= getDateValue(relevantPass?.date);
+            .sort((a, b) => compareEvents(b, a))[0];
+      return !relevantPass || compareEvents(failure, relevantPass) >= 0;
     });
   if (newestActionableFailure) {
     return {
@@ -368,7 +390,7 @@ export function evaluateCanonicalQualificationReadiness({
   const attempts = [
     ...mapWorkspaceAttempts(workspace, officerId, standards),
     ...mapStoredAttempts(qualificationResults, officerUserId),
-  ].sort((a, b) => getDateValue(b.date) - getDateValue(a.date));
+  ].sort((a, b) => compareEvents(b, a));
   const expectedFirearmType = normalized(scope.firearmType ?? "handgun");
   const expectedStandardName = normalized(scope.standardName);
   const activeStandard = standards.find((standard) => {

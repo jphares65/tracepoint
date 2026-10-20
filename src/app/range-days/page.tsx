@@ -9,6 +9,10 @@ import {
   preserveUnsavedBatchRows,
   withStoredCopiesOfUnchangedRecords,
 } from "@/lib/range/workspace-client-state";
+import {
+  resolveRunCompletion,
+  standardFirearmType,
+} from "@/lib/range/scoring-rules";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
 import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
@@ -183,6 +187,7 @@ type ExtendedRangeDayDrill = RangeDayDrill & DepartmentStandardConfig & {
 
 type ExtendedDrillRunResult = DrillRunResult & {
   scoringFormatSnapshot?: ScoringFormat;
+  firearmTypeSnapshot?: string;
   timeSeconds?: number;
   hitCount?: number;
   finalPassed?: boolean;
@@ -885,6 +890,7 @@ function getQualificationStandardMatch(
   standards: QualificationStandardReference[],
   drill: ExtendedRangeDayDrill | undefined,
   runNumber: number,
+  firearmId?: string,
 ) {
   if (!drill || !isQualificationDrill(drill)) return undefined;
 
@@ -913,9 +919,10 @@ function getQualificationStandardMatch(
     };
   }
 
-  const firearmType = String(drill.firearmType ?? "")
-    .trim()
-    .toLowerCase();
+  const firearmType = standardFirearmType(
+    drill.firearmType,
+    getFirearmType(firearmId),
+  );
 
   if (!firearmType) return undefined;
 
@@ -959,11 +966,13 @@ function getQualificationStandardPass({
   drill,
   runNumber,
   metricValue,
+  firearmId,
 }: {
   standards: QualificationStandardReference[];
   drill: ExtendedRangeDayDrill | undefined;
   runNumber: number;
   metricValue: string;
+  firearmId?: string;
 }) {
   if (!metricValue.trim()) return undefined;
 
@@ -971,6 +980,7 @@ function getQualificationStandardPass({
     standards,
     drill,
     runNumber,
+    firearmId,
   );
 
   if (!match) return undefined;
@@ -1009,11 +1019,13 @@ function getQualificationStandardSnapshot(
   standards: QualificationStandardReference[],
   drill: ExtendedRangeDayDrill | undefined,
   runNumber: number,
+  firearmId?: string,
 ): DepartmentStandardConfig | undefined {
   const match = getQualificationStandardMatch(
     standards,
     drill,
     runNumber,
+    firearmId,
   );
 
   if (!match) return undefined;
@@ -1335,6 +1347,10 @@ function formatRangeFirearmType(type?: string | null) {
     default:
       return "Other";
   }
+}
+
+function getFirearmType(firearmId?: string) {
+  return activeFirearmDirectory.find((item) => item.id === firearmId)?.firearm_type ?? undefined;
 }
 
 function getFirearmName(firearmId?: string) {
@@ -1953,6 +1969,9 @@ export default function RangeDaysPage() {
   const selectedRangeDayFinalized = Boolean(selectedRangeDay &&
     ["Completed", "Locked", "Archived"].includes(selectedRangeDay.status));
   const canEditSelectedRangeDay = canManageRangeDays && !selectedRangeDayFinalized;
+  // Instructors who score may run the line: mark attendance and add walk-ups.
+  const canTakeSelectedRangeDayAttendance =
+    (canManageRangeDays || canScoreRangeDays) && !selectedRangeDayFinalized;
 
   const selectedRoster = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -1975,7 +1994,7 @@ export default function RangeDaysPage() {
     attendingCount: attendingRoster.length,
   });
   const canManageOpenAttendance =
-    isOpenAttendance && canEditSelectedRangeDay && canScoreRangeDays;
+    isOpenAttendance && canTakeSelectedRangeDayAttendance && canScoreRangeDays;
 
   const availableRosterOfficers = useMemo(() => {
     if (!selectedRangeDay) return [];
@@ -3109,7 +3128,7 @@ export default function RangeDaysPage() {
   }
 
   function handleAddOpenAttendanceShooter() {
-    if (!canEditSelectedRangeDay) return;
+    if (!canManageOpenAttendance) return;
     if (
       !selectedRangeDay ||
       !openAttendanceOfficerId ||
@@ -3187,7 +3206,7 @@ export default function RangeDaysPage() {
   }
 
   function handleToggleRosterAttendance(rosterEntryId: string) {
-    if (!canEditSelectedRangeDay) return;
+    if (!canTakeSelectedRangeDayAttendance) return;
     setRangeRoster((current) =>
       current.map((entry) =>
         entry.id === rosterEntryId
@@ -3260,6 +3279,9 @@ export default function RangeDaysPage() {
             drill: selectedDrill,
             runNumber: selectedRunNumber,
             metricValue: value,
+            firearmId:
+              currentRow?.firearmId ||
+              attendingRoster.find((entry) => entry.officerId === officerId)?.assignedFirearmIds[0],
           }) ??
           getAutomaticPassValue(
             selectedDrill,
@@ -3413,6 +3435,7 @@ export default function RangeDaysPage() {
             drill: selectedDrill,
             runNumber: selectedRunNumber,
             metricValue: row.metricValue,
+            firearmId,
           }) ??
           getAutomaticPassValue(
             selectedDrill,
@@ -3420,8 +3443,11 @@ export default function RangeDaysPage() {
             row.metricValue,
             row.completed,
           );
-      const finalPassed =
-        typeof row.passed === "boolean" ? row.passed : automaticPass;
+      const { completed, passed: finalPassed } = resolveRunCompletion({
+        scoringFormat,
+        completed: row.completed,
+        passed: typeof row.passed === "boolean" ? row.passed : automaticPass,
+      });
       const malfunctionId =
         row.malfunctionOccurred && firearmId
           ? existingMalfunction?.id ?? `malfunction-${now}-${index}`
@@ -3434,13 +3460,15 @@ export default function RangeDaysPage() {
         qualificationStandards,
         selectedDrill,
         selectedRunNumber,
+        firearmId,
       ) ?? getDepartmentStandardConfig(selectedDrill);
-      const departmentStandardPassed =
+      const departmentStandardPassed = !completed ? false :
       getQualificationStandardPass({
         standards: qualificationStandards,
         drill: selectedDrill,
         runNumber: selectedRunNumber,
         metricValue: row.metricValue,
+        firearmId,
       }) ??
       getDepartmentStandardStatus({
         drill: selectedDrill,
@@ -3458,11 +3486,9 @@ export default function RangeDaysPage() {
         drillId: selectedDrill.id,
         officerId: entry.officerId,
         firearmId,
+        firearmTypeSnapshot: getFirearmType(firearmId),
         runNumber: selectedRunNumber,
-        completed:
-          scoringFormat === "Completion"
-            ? row.completed ?? false
-            : true,
+        completed,
         score:
           (scoringFormat === "Qualification" || scoringFormat === "Points") &&
           typeof numericMetric === "number" &&
@@ -5103,7 +5129,7 @@ export default function RangeDaysPage() {
           )}
 
           {activeRangeDayTab === "roster" && (
-            <div aria-disabled={!canEditSelectedRangeDay} className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
+            <div aria-disabled={!canTakeSelectedRangeDayAttendance} className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canTakeSelectedRangeDayAttendance ? "pointer-events-none opacity-70" : ""}`}>
               <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <h2 className="text-[17px] font-bold text-white">
@@ -5122,7 +5148,7 @@ export default function RangeDaysPage() {
                   <select
                     value={newRosterOfficerId}
                     onChange={(event) => setNewRosterOfficerId(event.target.value)}
-                    disabled={availableRosterOfficers.length === 0}
+                    disabled={!canEditSelectedRangeDay || availableRosterOfficers.length === 0}
                     className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
                   >
                     {availableRosterOfficers.length === 0 ? (
@@ -5139,7 +5165,7 @@ export default function RangeDaysPage() {
                   <button
                     type="button"
                     onClick={handleAddOfficerToRoster}
-                    disabled={availableRosterOfficers.length === 0}
+                    disabled={!canEditSelectedRangeDay || availableRosterOfficers.length === 0}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                   >
                     <Plus size={14} />
@@ -5216,13 +5242,14 @@ export default function RangeDaysPage() {
                                 <button
                                   key={firearm.id}
                                   type="button"
+                                  disabled={!canEditSelectedRangeDay}
                                   onClick={() =>
                                     handleToggleRosterFirearm(
                                       entry.id,
                                       firearm.id,
                                     )
                                   }
-                                  className={`rounded-xl border px-3 py-2 text-left text-[11px] font-semibold transition ${
+                                  className={`rounded-xl border px-3 py-2 text-left text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                                     selected
                                       ? "border-blue-500/60 bg-blue-500/15 text-blue-200"
                                       : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-white"
@@ -5269,8 +5296,9 @@ export default function RangeDaysPage() {
 
                       <button
                         type="button"
+                        disabled={!canEditSelectedRangeDay}
                         onClick={() => handleRemoveOfficerFromRoster(entry.id)}
-                        className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                        className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Remove
                       </button>
@@ -6347,7 +6375,7 @@ export default function RangeDaysPage() {
                       type="button"
                       onClick={handleAddOpenAttendanceShooter}
                       disabled={
-                        !canEditSelectedRangeDay ||
+                        !canManageOpenAttendance ||
                         !openAttendanceOfficerId ||
                         !openAttendanceFirearmId
                       }
@@ -6765,6 +6793,7 @@ export default function RangeDaysPage() {
                             qualificationStandards,
                             selectedDrill,
                             selectedRunNumber,
+                            row.firearmId || entry.assignedFirearmIds[0],
                           );
 
                         const departmentStandardStatus =
@@ -6773,6 +6802,7 @@ export default function RangeDaysPage() {
                             drill: selectedDrill,
                             runNumber: selectedRunNumber,
                             metricValue: row.metricValue,
+                            firearmId: row.firearmId || entry.assignedFirearmIds[0],
                           }) ??
                           getDepartmentStandardStatus({
                             drill: selectedDrill,
