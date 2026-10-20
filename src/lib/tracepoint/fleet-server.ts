@@ -64,6 +64,25 @@ export function canViewNetworkDetails(context: any, rules?: any) {
   );
 }
 
+// Vehicle inspections and issue reports. The same rule is
+// public.can_submit_fleet_inspection (database/aws/045); the session already
+// belongs to an active member.
+type FleetAccess = { permissions?: unknown; roleCodes?: unknown; isSuperAdmin?: boolean } | null | undefined;
+export function canSubmitFleetInspection(context: FleetAccess, rules?: { inspection_role_codes?: unknown } | null) {
+  const permissions: unknown[] = Array.isArray(context?.permissions) ? context.permissions : [];
+  if (context?.isSuperAdmin || ["manage_fleet", "administer_department", "perform_fleet_inspections"].some((code) => permissions.includes(code)))
+    return true;
+  const inspectionRoles: unknown[] = Array.isArray(rules?.inspection_role_codes) ? rules.inspection_role_codes : [];
+  if (!inspectionRoles.length) return permissions.includes("view_fleet");
+  const roleCodes: unknown[] = Array.isArray(context?.roleCodes) ? context.roleCodes : [];
+  return roleCodes.some((role) => inspectionRoles.includes(role));
+}
+
+// Maintenance cost information goes only to fleet managers, mechanics and administrators.
+export function canViewFleetCosts(context: FleetAccess) {
+  return canPerformFleetMaintenance(context);
+}
+
 export async function auditFleet(
   context: any,
   action: string,
