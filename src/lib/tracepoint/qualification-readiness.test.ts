@@ -43,7 +43,7 @@ function workspaceAttempt({
   const rangeDayId = `range-${id}`;
   const component = runNumber === 2 ? "Night Course" : "Day Course";
   return {
-    rangeDay: { id: rangeDayId, date },
+    rangeDay: { id: rangeDayId, date, status: "Completed" },
     drill: {
       id: drillId,
       name: `${firearmType} Qualification`,
@@ -218,4 +218,54 @@ test("unrequired components cannot create missing or failed readiness", () => {
     today,
   });
   assert.equal(noneRequired.status, "Current");
+});
+
+test("RNG-09: an Any-firearm qualification counts toward the class of the firearm used or the standard scored", () => {
+  const anyDay = workspaceAttempt({ id: "day", runNumber: 1, firearmType: "Any" });
+  const anyNight = workspaceAttempt({ id: "night", runNumber: 2, firearmType: "Any" });
+  assert.equal(readiness([anyDay, anyNight]).status, "Current");
+
+  const rifleUsed = workspaceAttempt({ id: "night-rifle", runNumber: 2, firearmType: "Any", standardName: "Retired - Night" });
+  Object.assign(rifleUsed.result, { firearmTypeSnapshot: "Rifle" });
+  const handgunUsed = workspaceAttempt({ id: "day-handgun", runNumber: 1, firearmType: "Any", standardName: "Retired - Day" });
+  Object.assign(handgunUsed.result, { firearmTypeSnapshot: "Handgun" });
+  const unscoped = evaluateCanonicalQualificationReadiness({
+    workspace: workspace(handgunUsed, rifleUsed),
+    qualificationResults: [],
+    qualificationStandards: [],
+    officerId: "officer-a",
+    qualificationValidDays: 365,
+    qualificationDueSoonDays: 30,
+    today,
+  });
+  assert.equal(unscoped.status, "Missing Night");
+  assert.equal(unscoped.excluded.wrongFirearm, 1);
+  assert.equal(unscoped.matchingAttempts[0].firearmType, "Handgun");
+});
+
+test("RNG-10: a same-day re-shoot saved after a failure clears it; a failure saved after a pass still fails", () => {
+  const failed = workspaceAttempt({ id: "first-day", runNumber: 1, date: "2026-09-01", passed: false });
+  const reshoot = workspaceAttempt({ id: "remedial-day", runNumber: 1, date: "2026-09-01" });
+  const night = workspaceAttempt({ id: "night", runNumber: 2, date: "2026-09-01" });
+  assert.equal(readiness([failed, reshoot, night]).status, "Current");
+  assert.equal(readiness([reshoot, failed, night]).status, "Failed");
+  // Records from different sources on the same date keep the conservative rule.
+  const importedPass = { id: "import-day", officerUserId: "officer-a", qualificationDate: "2026-09-01", lightingCondition: "day", passed: true, score: 50 };
+  assert.equal(readiness([failed, night], [importedPass]).status, "Failed");
+});
+
+test("RNG-24: only Completed, Locked and Archived range days count toward readiness", () => {
+  const onDay = (status: string, passed = true) => [
+    workspaceAttempt({ id: `day-${status}`, runNumber: 1, passed }),
+    workspaceAttempt({ id: `night-${status}`, runNumber: 2, passed }),
+  ].map((entry) => ({ ...entry, rangeDay: { ...entry.rangeDay, status } }));
+  for (const status of ["Planned", "In Progress"]) {
+    const open = readiness(onDay(status));
+    assert.equal(open.status, "No Record", status);
+    assert.equal(open.attempts.length, 0, status);
+  }
+  for (const status of ["Completed", "Locked", "Archived"]) assert.equal(readiness(onDay(status)).status, "Current", status);
+  // A failure on a day still open does not count either.
+  assert.equal(readiness([...onDay("Completed"), workspaceAttempt({ id: "open-fail", runNumber: 1, date: "2026-09-01", passed: false })]
+    .map((entry) => entry.result.id === "open-fail" ? { ...entry, rangeDay: { ...entry.rangeDay, status: "In Progress" } } : entry)).status, "Current");
 });

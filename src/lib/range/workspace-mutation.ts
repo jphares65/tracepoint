@@ -2,11 +2,13 @@ type WorkspaceRecord = Record<string, unknown>;
 
 export type RangeWorkspaceMutationDecision =
   | { ok: true; mode: "manage" | "score" }
-  | { ok: false; status: 403 | 409; error: string };
+  | { ok: false; status: 400 | 403 | 409; error: string };
 
 const MANAGE_PERMISSION = "manage_range_days";
 const SCORE_PERMISSIONS = new Set(["score_range_days", "manage_qualifications"]);
 const FINAL_STATUSES = new Set(["completed", "locked", "archived"]);
+const OPEN_ATTENDANCE = "Open / Rolling Attendance";
+const ATTENDANCE_FIELDS = ["attended", "attendanceTime", "attendance_time"];
 
 function record(value: unknown): WorkspaceRecord {
   return value && typeof value === "object" ? value as WorkspaceRecord : {};
@@ -202,6 +204,73 @@ export function withRangeResultRevisions<T extends object>(input: {
   return { ...stored, resultRevisions: [...history, ...revisions] } as T & { resultRevisions: WorkspaceRecord[] };
 }
 
+function withoutAttendance(item: WorkspaceRecord) {
+  const rest = { ...item };
+  ATTENDANCE_FIELDS.forEach((key) => delete rest[key]);
+  return rest;
+}
+
+/**
+ * Running a line: a scorer may mark attendance on existing roster entries and add
+ * present walk-ups to an Open / Rolling Attendance day. Removing or otherwise
+ * editing roster entries stays range management.
+ */
+function scorerRosterChangeAllowed(existing: WorkspaceRecord, next: WorkspaceRecord) {
+  const before = collection(existing, "rangeRoster", "range_roster");
+  const after = collection(next, "rangeRoster", "range_roster");
+  const unchangedExceptAttendance = before.every((item) => {
+    const current = present(after, item);
+    return Boolean(current) && same(withoutAttendance(current!), withoutAttendance(item));
+  });
+  if (!unchangedExceptAttendance) return false;
+  const beforeIds = new Set(before.map((item) => text(item.id)).filter(Boolean));
+  const rangeDays = collection(next, "rangeDays", "range_days");
+  const added = after.filter((item) => !present(before, item));
+  return added.every((item) => {
+    const rangeDayId = field(item, "rangeDayId", "range_day_id");
+    const officerId = field(item, "officerId", "officer_id");
+    const day = rangeDays.find((candidate) => text(candidate.id) === rangeDayId);
+    return Boolean(text(item.id)) && !beforeIds.has(text(item.id)) && Boolean(officerId) &&
+      item.attended === true &&
+      text(day?.attendanceMode ?? day?.attendance_mode) === OPEN_ATTENDANCE &&
+      after.filter((candidate) =>
+        field(candidate, "rangeDayId", "range_day_id") === rangeDayId &&
+        field(candidate, "officerId", "officer_id") === officerId,
+      ).length === 1;
+  });
+}
+
+function measurement(item: WorkspaceRecord, key: string) {
+  const value = item[key];
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+// RNG-14: a new or changed result must carry possible values for its drill.
+function invalidResultMessage(existing: WorkspaceRecord, next: WorkspaceRecord) {
+  const before = collection(existing, "results", "drill_run_results");
+  const drills = collection(next, "rangeDayDrills", "range_day_drills");
+  for (const item of collection(next, "results", "drill_run_results")) {
+    const stored = present(before, item);
+    if (stored && same(stored, item)) continue;
+    const drill = drills.find((candidate) => text(candidate.id) === part(item, "drillId", "drill_id", "rangeDayDrillId", "range_day_drill_id"));
+    const runNumber = Number(part(item, "runNumber", "run_number"));
+    const components = Array.isArray(drill?.qualificationComponents) ? drill.qualificationComponents as WorkspaceRecord[] : [];
+    const component = Number.isInteger(runNumber) && runNumber > 0 ? record(components[runNumber - 1]) : {};
+    const maximum = [component.maximumScore, drill?.maxScore].find((value) => typeof value === "number" && Number.isFinite(value)) as number | undefined;
+    const drillName = text(drill?.name) || "this drill";
+    const score = measurement(item, "score");
+    if (score !== undefined && (Number.isNaN(score) || score < 0)) return `Score for ${drillName} must be a number of 0 or more.`;
+    if (score !== undefined && maximum !== undefined && score > maximum) return `Score ${score} for ${drillName} is above the maximum of ${maximum}.`;
+    const time = measurement(item, "timeSeconds");
+    if (time !== undefined && (Number.isNaN(time) || time <= 0)) return `Time for ${drillName} must be a number of seconds greater than 0.`;
+    const hits = measurement(item, "hitCount");
+    if (hits !== undefined && (Number.isNaN(hits) || hits < 0 || !Number.isInteger(hits))) return `Hit count for ${drillName} must be a whole number of 0 or more.`;
+  }
+  return "";
+}
+
 export function authorizeRangeWorkspaceMutation(input: {
   existingWorkspace: unknown;
   nextWorkspace: unknown;
@@ -232,15 +301,20 @@ export function authorizeRangeWorkspaceMutation(input: {
       ["rangeDays", "range_days"],
       ["drillLibrary", "drill_library"],
       ["rangeDayDrills", "range_day_drills"],
-      ["rangeRoster", "range_roster"],
     ] as const;
     const planningChanged = protectedCollections.some(([camel, snake]) =>
       !same(collection(existing, camel, snake), collection(next, camel, snake)),
+    ) || (
+      !same(collection(existing, "rangeRoster", "range_roster"), collection(next, "rangeRoster", "range_roster")) &&
+      !scorerRosterChangeAllowed(existing, next)
     );
     if (planningChanged) {
       return { ok: false, status: 403, error: "Range-day planning and drill-library changes require range management permission." };
     }
   }
+
+  const invalidResult = invalidResultMessage(existing, next);
+  if (invalidResult) return { ok: false, status: 400, error: invalidResult };
 
   return { ok: true, mode: canManage ? "manage" : "score" };
 }

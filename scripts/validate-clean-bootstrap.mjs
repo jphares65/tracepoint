@@ -529,6 +529,12 @@ try {
     await client.query("rollback").catch(() => {});
     throw new Error(`AWS-native training closeout failed: ${error.message}`, { cause: error });
   }
+  try {
+    await client.query(await readFile("scripts/validate-local-range-instructor-line.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native range instructor line actions failed: ${error.message}`, { cause: error });
+  }
 
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {
