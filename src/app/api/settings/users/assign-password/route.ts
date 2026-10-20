@@ -6,6 +6,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { assignCognitoPassword } from "@/lib/authentication/cognito-password-lifecycle";
+import { cognitoPasswordRejection } from "@/lib/authentication/cognito-admin-core";
 import { COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
 
 type AssignPasswordRequest = {
@@ -248,6 +249,8 @@ export async function POST(request: NextRequest) {
       message: `A new password was assigned to ${targetEmail}.`,
     });
   } catch (error) {
+    const rejected = cognitoPasswordRejection(error);
+    if (rejected) return NextResponse.json({ error: rejected }, { status: 400 });
     const message =
       error instanceof Error
         ? error.message

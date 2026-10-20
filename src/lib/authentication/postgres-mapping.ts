@@ -9,6 +9,20 @@ export class PostgresIdentityMappingStore implements IdentityMappingStore {
   }
 }
 
+// Initial PKCE callback only. A pending
+// link is offered for mapping; the session store activates it, with the
+// membership check, inside its registration transaction or rejects it.
+export class FirstLoginIdentityMappingStore implements IdentityMappingStore {
+  constructor(private readonly active: IdentityMappingStore, private readonly pool: Pick<Pool, 'query'>) {}
+  async findActive(issuer: string, subject: string): Promise<{ userId: string } | null> {
+    const existing = await this.active.findActive(issuer, subject);
+    if (existing) return existing;
+    const pending = await this.pool.query(`select tracepoint_user_id from public.authentication_identity_links
+      where provider='cognito' and issuer=$1 and subject=$2 and state='pending'`, [issuer, subject]);
+    return pending.rowCount === 1 ? { userId: pending.rows[0].tracepoint_user_id } : null;
+  }
+}
+
 // Used only by the isolated initial PKCE callback. Ordinary access/refresh
 // validation continues to require an active link. The session store repeats
 // every eligibility check and promotes inside its access-session transaction.

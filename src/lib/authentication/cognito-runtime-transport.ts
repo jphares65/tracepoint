@@ -6,7 +6,7 @@ import { createCognitoRefreshRotator } from "./cognito-refresh";
 import { parseCognitoRuntimeConfiguration } from "./cognito-runtime-configuration-core";
 import { createCognitoTokenEndpoint } from "./cognito-token-endpoint";
 import { createCognitoTransport } from "./cognito-transport";
-import { PostgresIdentityMappingStore, RehearsalInitialIdentityMappingStore } from "./postgres-mapping";
+import { FirstLoginIdentityMappingStore, PostgresIdentityMappingStore, RehearsalInitialIdentityMappingStore } from "./postgres-mapping";
 import { PostgresCognitoRefreshStore, RefreshSessionSealer } from "./postgres-refresh-sessions";
 import { PostgresCognitoSessionStore } from "./postgres-sessions";
 import { AuthenticationStateSealer, PostgresAuthorizationTransactionStore } from "./postgres-transactions";
@@ -26,15 +26,17 @@ export function createRuntimeCognitoTransport(environment = process.env) {
     environment.TRACEPOINT_NOTIFICATION_MODE === 'shadow' &&
     environment.NEXT_PUBLIC_SITE_URL === 'https://shadow-rehearsal.tracepointhq.com' &&
     configuration.verification.userPoolId === 'us-east-1_wZwXHpznS';
-  const initialMapping = rehearsalFirstLogin ? new RehearsalInitialIdentityMappingStore(mapping,pool) : mapping;
+  const initialMapping = rehearsalFirstLogin ? new RehearsalInitialIdentityMappingStore(mapping,pool) : new FirstLoginIdentityMappingStore(mapping,pool);
   const sessions = new PostgresCognitoSessionStore(pool,rehearsalFirstLogin);
+  // Only the initial PKCE callback may activate a pending identity; refresh rotation never does.
+  const initialSessions = new PostgresCognitoSessionStore(pool,rehearsalFirstLogin,!rehearsalFirstLogin);
   const refresh = new PostgresCognitoRefreshStore(
     pool,
     new RefreshSessionSealer(configuration.refresh.active, configuration.refresh.keys),
     { issuer, clientId: configuration.verification.clientId },
   );
   const endpoint = createCognitoTokenEndpoint(configuration.verification);
-  const establish = createCognitoSessionEstablisher(configuration.verification, initialMapping, sessions, refresh);
+  const establish = createCognitoSessionEstablisher(configuration.verification, initialMapping, initialSessions, refresh);
   const rotate = createCognitoRefreshRotator(
     configuration.verification,
     mapping,
