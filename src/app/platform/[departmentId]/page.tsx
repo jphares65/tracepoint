@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -20,6 +21,13 @@ export default async function PlatformAgencyPage({ params }: PageProps) {
   const detail = await access.repository.getAgency(departmentId);
   if (!detail) notFound();
   const { agency: department, members: memberships } = detail;
+  // aws-native Send Activation runs in the agency's context, which a platform
+  // administrator has only in Support Mode for this agency (Access Agency).
+  const cookieStore = await cookies();
+  const requiresSupportMode =
+    process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native" &&
+    !(cookieStore.get("tracepoint_support_department_id")?.value === departmentId &&
+      cookieStore.get("tracepoint_department_id")?.value === departmentId);
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
@@ -87,6 +95,7 @@ export default async function PlatformAgencyPage({ params }: PageProps) {
                         departmentId={departmentId}
                         userId={membership.user_id}
                         activationStatus={membership.activation_status}
+                        requiresSupportMode={requiresSupportMode}
                       />
                       <AdministratorButton
                         departmentId={departmentId}

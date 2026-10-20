@@ -480,6 +480,9 @@ try {
         and not has_function_privilege('authenticated', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute') as first_login_activation_runtime_only,
       pg_get_functiondef('public.protect_pilot_range_workspace_mutation()'::regprocedure) not like '%= ''ready''%'
         and pg_get_functiondef('public.protect_range_day_drill_history()'::regprocedure) not like '%= ''ready''%' as range_packet_ready_not_final,
+      pg_get_functiondef('public.attach_existing_cognito_personnel_import(uuid,text,text,text,text,text,text)'::regprocedure) like '%if v_created then%'
+        and pg_get_functiondef('public.update_cognito_personnel_import(uuid,uuid,text,text,text,text,text,text,text)'::regprocedure) like '%coalesce(nullif(btrim(p_badge_number),''''),badge_number)%'
+        and pg_get_functiondef('tracepoint_auth.prepare_cognito_membership_operation(uuid,text,uuid,uuid)'::regprocedure) like '%Only a department Administrator may modify an Administrator account%' as personnel_reimport_preserves_existing_members,
       exists (
         select 1 from pg_trigger
         where tgname = 'fleet_vehicle_inspections_audit_outbox'

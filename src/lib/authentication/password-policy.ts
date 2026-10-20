@@ -1,4 +1,4 @@
-export const COGNITO_PASSWORD_MIN_LENGTH = 10;
+export const COGNITO_PASSWORD_MIN_LENGTH = 14;
 export const COGNITO_PASSWORD_MAX_LENGTH = 256;
 // Cognito's documented required-symbol set; an interior space can also satisfy it.
 const COGNITO_SYMBOLS = new Set([
@@ -15,4 +15,4 @@ export function isCognitoCompliantPassword(value: string) {
 }
 
 export const COGNITO_PASSWORD_REQUIREMENTS =
-  "Password must contain at least 10 characters (maximum 256), including an uppercase letter, a lowercase letter, a number, and a symbol.";
+  "Password must contain at least 14 characters (maximum 256), including an uppercase letter, a lowercase letter, a number, and a symbol.";
