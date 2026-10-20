@@ -6,7 +6,7 @@ export const DOCUMENT_QUALIFICATION_FIELDS = "id,officer_user_id,qualification_d
 export type DocumentQualificationRow = {
   id: string;
   officer_user_id: string;
-  /** Text from Supabase; a Date from node-postgres on the AWS-native runtime. */
+  /** yyyy-mm-dd text; a Date only from a node-postgres client without the runtime DATE parser. */
   qualification_date: string | Date | null;
   score: number | string | null;
   passed: boolean | null;

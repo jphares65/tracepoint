@@ -3,9 +3,10 @@
  *
  * The two runtimes return DATE columns differently:
  * - Supabase/PostgREST returns the text "2026-09-14";
- * - node-postgres (the AWS-native runtime) returns a Date built at local
- *   midnight of that day, which serializes as "2026-09-14T00:00:00.000Z" on a
- *   UTC host.
+ * - node-postgres's default parser returns a Date built at local midnight of
+ *   that day, which serializes as "2026-09-14T00:00:00.000Z" on a UTC host.
+ *   The AWS-native pool now returns DATE as text (postgres-type-parsers.ts);
+ *   this stays as a safeguard for any client without that parser.
  *
  * A Date is read with its local getters because that is how node-postgres built
  * it, so the calendar day never moves whatever the host time zone. A string

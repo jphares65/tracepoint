@@ -158,8 +158,8 @@ try {
 
     $previousService = Assert-StagingRuntimeHealth
     $previousTaskDefinition = [string]$previousService.taskDefinition
-    # Revision 185 runs a3fa985 (digest sha256:c264dab7...), deployed 2026-10-14 and observed read-only on 2026-10-19.
-    if ($previousTaskDefinition -notmatch ':185$') { throw "Expected the reviewed pre-release staging task revision 185; found '$previousTaskDefinition'." }
+    # Revision 187 runs 0d9a5677 (digest sha256:d5a19dd2...), deployed 2026-10-19 14:03 UTC and observed read-only before this release.
+    if ($previousTaskDefinition -notmatch ':187$') { throw "Expected the reviewed pre-release staging task revision 187; found '$previousTaskDefinition'." }
     $null = Assert-RdsPitr
 
     Write-Host "Building and scanning application image for $ApplicationCommit; no ECS service update occurs in this step."
