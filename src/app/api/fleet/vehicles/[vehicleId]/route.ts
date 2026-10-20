@@ -127,10 +127,21 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const update: Record<string, unknown> = { updated_by_user_id: context.user.id, updated_at: new Date().toISOString() };
   const fields: Array<[string, string]> = [["status","status"],["assignedTo","assigned_to"],["homeLocation","home_location"],["comments","comments"]];
   for (const [input, column] of fields) if (body[input] !== undefined) update[column] = nullableText(body[input], 5000);
+  const invalidReading = (input: string) => {
+    const raw = body[input];
+    if (raw === undefined || raw === null || String(raw).trim() === "") return false;
+    const reading = Number(raw);
+    return !Number.isFinite(reading) || reading < 0 || reading > 10_000_000 || (input === "currentMileage" && !Number.isInteger(reading));
+  };
+  if (invalidReading("currentMileage") || invalidReading("currentHours")) return NextResponse.json({ error: "Mileage must be a whole number and engine hours a number, from 0 to 10,000,000." }, { status: 400 });
   const currentMileage = optionalNumeric(body.currentMileage);
   const currentHours = optionalNumeric(body.currentHours);
-  if (currentMileage !== null) update.current_mileage = Math.round(currentMileage);
+  if (currentMileage !== null) update.current_mileage = currentMileage;
   if (currentHours !== null) update.current_hours = currentHours;
+  // Lowering a reading corrects an odometer error: it needs its own reason and is audited as a correction.
+  const correction = (currentMileage !== null && currentMileage < (Number(previous.current_mileage) || 0)) || (currentHours !== null && currentHours < (Number(previous.current_hours) || 0));
+  const correctionReason = text(body.mileageCorrectionReason, 1000);
+  if (correction && !correctionReason) return NextResponse.json({ error: "Lowering the mileage or engine hours is a correction. Enter a reason for the correction." }, { status: 400 });
   if (body.nextServiceDate !== undefined) update.next_service_date = nullableDate(body.nextServiceDate);
   if (body.nextServiceMileage !== undefined) update.next_service_mileage = numeric(body.nextServiceMileage) || null;
   if (body.nextServiceHours !== undefined) update.next_service_hours = numeric(body.nextServiceHours) || null;
@@ -140,7 +151,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { data, error } = await context.admin.from("fleet_vehicles").update(update).eq("department_id", context.departmentId).eq("id", vehicleId).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  try { await auditFleet(context, "fleet_vehicle_updated", "fleet_vehicle", vehicleId, { reason, previous, current: data }); }
+  const mileageCorrection = correction ? { mileage_correction: { reason: correctionReason, previous_mileage: previous.current_mileage, new_mileage: data.current_mileage, previous_hours: previous.current_hours, new_hours: data.current_hours } } : {};
+  try { await auditFleet(context, correction ? "fleet_odometer_corrected" : "fleet_vehicle_updated", "fleet_vehicle", vehicleId, { reason, previous, current: data, ...mileageCorrection }); }
   catch (auditError) { await context.admin.from("fleet_vehicles").update(previous).eq("department_id", context.departmentId).eq("id", vehicleId); return NextResponse.json({ error: auditError instanceof Error ? auditError.message : "Audit failed; update reversed." }, { status: 500 }); }
   try { await refreshFleetVehicle(context, vehicleId); }
   catch (refreshError) { return NextResponse.json({ error: `The vehicle update was saved, but its readiness was not recalculated. ${refreshError instanceof Error ? refreshError.message : ""}`.trim() }, { status: 500 }); }

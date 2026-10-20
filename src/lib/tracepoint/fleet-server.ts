@@ -96,7 +96,18 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const equipment = equipmentResult.data ?? [];
   const criticalIssue = work.some((item: any) => item.priority === "Critical" || item.affects_availability === true);
   const criticalEquipment = equipment.some((item: any) => item.is_critical && ["Missing", "Out of Service"].includes(item.status));
-  const outOfService = (rules.critical_issue_out_of_service !== false && criticalIssue) || (rules.critical_equipment_out_of_service !== false && criticalEquipment);
+  // A critical inspection whose defect work order was never created is still an unresolved critical defect.
+  let unrecordedCriticalInspection = false;
+  if (rules.inspection_defect_creates_work_order !== false) {
+    const { data: latest, error: inspectionError } = await context.admin.from("fleet_vehicle_inspections").select("id,critical_defect_count,created_at").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (inspectionError) throw new Error(`Vehicle readiness could not be refreshed: ${inspectionError.message}`);
+    if (Number(latest?.critical_defect_count) > 0) {
+      const { data: defectOrders, error: defectError } = await context.admin.from("fleet_work_orders").select("id").eq("department_id", context.departmentId).eq("vehicle_id", vehicleId).eq("record_type", "Inspection").gte("created_at", latest.created_at).limit(1);
+      if (defectError) throw new Error(`Vehicle readiness could not be refreshed: ${defectError.message}`);
+      unrecordedCriticalInspection = !defectOrders?.length;
+    }
+  }
+  const outOfService = (rules.critical_issue_out_of_service !== false && (criticalIssue || unrecordedCriticalInspection)) || (rules.critical_equipment_out_of_service !== false && criticalEquipment);
   const openIssueCount = work.length;
 
   const { data: vehicle, error: vehicleError } = await context.admin.from("fleet_vehicles").select("status,status_override_active").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
@@ -117,4 +128,38 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const { error: updateError } = await context.admin.from("fleet_vehicles").update({ status, open_issue_count: openIssueCount, updated_at: new Date().toISOString() }).eq("department_id", context.departmentId).eq("id", vehicleId);
   if (updateError) throw new Error(`Vehicle readiness could not be refreshed: ${updateError.message}`);
   return { status, openIssueCount };
+}
+
+type FleetContext = Parameters<typeof auditFleet>[0];
+const missingFunction = (error: { code?: unknown } | null | undefined) => ["42883", "PGRST202"].includes(String(error?.code ?? ""));
+
+export type FleetAuditOutcome = { status: "recorded" } | { status: "pending" | "unrecorded"; message: string };
+
+// The inspection's audit entry is queued with the inspection (database/aws/043) and
+// delivered here. Without the outbox (bridge mode) it is written directly. A failure
+// never reverses the inspection; it is reported as pending (queued) or unrecorded.
+export async function recordInspectionAudit(context: FleetContext, inspection: { id: string; vehicle_id: string }, workOrderId: string | null): Promise<FleetAuditOutcome> {
+  const { data, error } = await context.admin.rpc("deliver_fleet_audit_outbox", { p_inspection_id: inspection.id, p_details: { work_order_id: workOrderId } });
+  if (!error && data !== null && data !== undefined) return { status: "recorded" };
+  if (!error || !missingFunction(error)) {
+    console.error("Fleet inspection audit delivery failed; entry remains queued.", { inspectionId: inspection.id, error: error?.message ?? "not delivered" });
+    return { status: "pending", message: "The inspection was saved, but its audit entry could not be recorded yet. It is queued and will be recorded automatically the next time fleet records are used." };
+  }
+  try {
+    await auditFleet(context, "fleet_vehicle_inspected", "fleet_vehicle", inspection.vehicle_id, { inspection, work_order_id: workOrderId });
+    return { status: "recorded" };
+  } catch (auditError) {
+    console.error("Fleet inspection audit entry could not be recorded.", { inspectionId: inspection.id, error: auditError instanceof Error ? auditError.message : auditError });
+    return { status: "unrecorded", message: "The inspection was saved, but its audit entry could not be recorded or queued. Tell a fleet manager so the audit history can be completed." };
+  }
+}
+
+// Retries queued inspection audit entries for the agency; failures are only logged.
+export async function reconcileFleetAudit(context: FleetContext) {
+  try {
+    const { error } = await context.admin.rpc("deliver_pending_fleet_audit", { p_department_id: context.departmentId });
+    if (error && !missingFunction(error)) console.error("Queued fleet audit entries could not be reconciled.", { error: error.message });
+  } catch (error) {
+    console.error("Queued fleet audit entries could not be reconciled.", { error: error instanceof Error ? error.message : error });
+  }
 }

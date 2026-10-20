@@ -494,6 +494,16 @@ function FleetManagementContent() {
       setError("Enter a reason for this vehicle update.");
       return;
     }
+    const original = editingVehicleId ? vehicles.find((vehicle) => vehicle.id === editingVehicleId) : undefined;
+    const lowered = (input: string, stored: number | null | undefined) =>
+      input.trim() !== "" && Number(input) < Number(stored ?? 0);
+    let mileageCorrectionReason: string | undefined;
+    if (original && (lowered(form.currentMileage, original.current_mileage) || lowered(form.currentHours, original.current_hours))) {
+      mileageCorrectionReason = window.prompt(
+        `Lowering the mileage or engine hours of Unit ${original.unit_number} is a correction. Why is the recorded reading wrong?`,
+      )?.trim();
+      if (!mileageCorrectionReason) return;
+    }
     setSaving(true);
     setError("");
     setMessage("");
@@ -502,7 +512,7 @@ function FleetManagementContent() {
         method: editingVehicleId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify(editingVehicleId ? { ...form, id: editingVehicleId } : form),
+        body: JSON.stringify(editingVehicleId ? { ...form, id: editingVehicleId, mileageCorrectionReason } : form),
       });
       if (!response.ok) throw new Error(await responseError(response));
       const wasEditing = Boolean(editingVehicleId);

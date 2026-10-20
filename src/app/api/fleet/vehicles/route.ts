@@ -4,7 +4,7 @@ import {
   accessFailureResponse,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
-import { canManageFleet, refreshFleetVehicle } from "@/lib/tracepoint/fleet-server";
+import { canManageFleet, reconcileFleetAudit, refreshFleetVehicle } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 import { FleetReadRepositoryError } from "@/lib/fleet/read-repository-core";
 
@@ -118,7 +118,10 @@ export async function GET(request: NextRequest) {
   const resolved = access.context;
   try {
     const { rules, items } = await createFleetReadRepository(resolved.admin, resolved.departmentId).getVehicleList({ departmentId: resolved.departmentId, vehicleFields: VEHICLE_SELECT });
-    return NextResponse.json({ items, canManage: canManageFleet(resolved, rules) });
+    const canManage = canManageFleet(resolved, rules);
+    // Fleet managers opening the fleet list retry any queued inspection audit entries.
+    if (canManage) await reconcileFleetAudit(resolved);
+    return NextResponse.json({ items, canManage });
   } catch (error) {
     const providerError = error instanceof FleetReadRepositoryError ? { code: error.code, message: error.message } : null;
     return NextResponse.json(
@@ -288,6 +291,20 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  const invalidReading = (input: string) => {
+    const raw = body[input];
+    if (raw === undefined || raw === null || String(raw).trim() === "") return false;
+    const reading = Number(raw);
+    return !Number.isFinite(reading) || reading < 0 || reading > 10_000_000
+      || (input === "currentMileage" && !Number.isInteger(reading));
+  };
+  if (invalidReading("currentMileage") || invalidReading("currentHours")) {
+    return NextResponse.json(
+      { error: "Mileage must be a whole number and engine hours a number, from 0 to 10,000,000." },
+      { status: 400 },
+    );
+  }
+
   const nextStatus = body.status === undefined
     ? existing.status as FleetStatus
     : normalizeStatus(body.status);
@@ -339,6 +356,17 @@ export async function PATCH(request: NextRequest) {
     updated_at: updatedAt,
   };
 
+  // Lowering a reading corrects an odometer error: it needs its own reason and is audited as a correction.
+  const correction = update.current_mileage < (Number(existing.current_mileage) || 0)
+    || update.current_hours < (Number(existing.current_hours) || 0);
+  const correctionReason = clean(body.mileageCorrectionReason, 1000);
+  if (correction && !correctionReason) {
+    return NextResponse.json(
+      { error: "Lowering the mileage or engine hours is a correction. Enter a reason for the correction." },
+      { status: 400 },
+    );
+  }
+
   const unchanged = Object.entries(update).every(([column, next]) =>
     ["updated_by_user_id", "updated_at"].includes(column) || existing[column] === next,
   );
@@ -365,13 +393,14 @@ export async function PATCH(request: NextRequest) {
   const { error: auditError } = await resolved.admin.from("audit_events").insert({
     department_id: resolved.departmentId,
     actor_user_id: resolved.user.id,
-    action: "fleet_vehicle_updated",
+    action: correction ? "fleet_odometer_corrected" : "fleet_vehicle_updated",
     entity_type: "fleet_vehicle",
     entity_id: id,
     details: {
       reason,
       previous: existing,
       current: data,
+      ...(correction ? { mileage_correction: { reason: correctionReason, previous_mileage: existing.current_mileage, new_mileage: data.current_mileage, previous_hours: existing.current_hours, new_hours: data.current_hours } } : {}),
       support_mode: resolved.isSupportMode,
     },
   });

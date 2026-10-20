@@ -472,7 +472,18 @@ try {
         where conname = 'equipment_assets_lifecycle_status_check'
           and pg_get_constraintdef(oid) like '%out_of_service%'
       ) as equipment_out_of_service_allowed,
-      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable
+      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable,
+      exists (
+        select 1 from pg_trigger
+        where tgname = 'fleet_vehicle_inspections_audit_outbox'
+          and tgrelid = 'public.fleet_vehicle_inspections'::regclass and tgenabled <> 'D'
+      ) as fleet_inspection_audit_outbox_trigger,
+      coalesce(
+        not has_function_privilege('authenticated', to_regprocedure('public.fleet_audit_outbox_deliver_internal(uuid,uuid)'), 'execute')
+        and has_function_privilege('authenticated', to_regprocedure('public.deliver_fleet_audit_outbox(uuid,jsonb)'), 'execute')
+        and not has_table_privilege('authenticated', to_regclass('public.fleet_audit_outbox'), 'insert,update,delete'),
+        false
+      ) as fleet_audit_outbox_privileges
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);

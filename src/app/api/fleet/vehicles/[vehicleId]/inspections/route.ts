@@ -6,9 +6,10 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import {
-  auditFleet,
   numeric,
   optionalNumeric,
+  reconcileFleetAudit,
+  recordInspectionAudit,
   refreshFleetVehicle,
   text,
 } from "@/lib/tracepoint/fleet-server";
@@ -34,6 +35,7 @@ export async function POST(
   const context = access.context;
   const { vehicleId } = await params;
   const body = (await request.json().catch(() => ({}))) as any;
+  await reconcileFleetAudit(context);
 
   const { data: vehicle, error: vehicleError } = await context.admin
     .from("fleet_vehicles")
@@ -218,24 +220,76 @@ export async function POST(
     return NextResponse.json({ error: error.message }, { status: 500 });
 
   // The data client cannot span statements in one transaction, so every side
-  // effect is checked and, when one fails, the earlier ones are reversed and the
-  // officer is told the inspection was not saved.
+  // effect is checked. A critical inspection is a safety record: it is never
+  // reversed, and the vehicle is held Out of Service when a later step fails.
+  // Other inspections reverse the earlier steps and are reported as not saved.
   const undo: Array<() => Promise<unknown>> = [
     async () => (await context.admin.from("fleet_vehicle_inspections").delete().eq("department_id", context.departmentId).eq("id", inspection.id)).error,
   ];
+  let workOrder: any = null;
   const fail = async (step: string, cause: unknown) => {
-    let reversed = true;
-    for (const action of undo.reverse()) {
-      try { if (await action()) reversed = false; }
-      catch { reversed = false; }
-    }
     const detail = cause instanceof Error ? cause.message : text((cause as any)?.message, 500);
+    if (critical.length) {
+      const held = await holdOutOfService(step);
+      const audit = await recordInspectionAudit(context, inspection, workOrder?.id ?? null);
+      console.error("Critical fleet inspection incomplete.", { inspectionId: inspection.id, step, detail, held });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `The inspection and its critical defect were saved, but ${step} failed${detail ? ` (${detail})` : ""}. ${held ? "The vehicle is Out of Service." : "The vehicle could not be marked Out of Service: do not use it and tell a fleet manager now."} Do not submit the inspection again; tell a fleet manager.`,
+          inspection,
+          workOrder,
+          vehicleOutOfService: held,
+          audit,
+        },
+        { status: 500 },
+      );
+    }
+    let reversed = true;
+    let inspectionKept = false;
+    for (const [index, action] of [...undo.entries()].reverse()) {
+      let failed = true;
+      try { failed = Boolean(await action()); }
+      catch { failed = true; }
+      if (failed) reversed = false;
+      if (failed && index === 0) inspectionKept = true;
+    }
+    if (reversed)
+      return NextResponse.json(
+        { error: `The inspection was not saved because ${step} failed${detail ? ` (${detail})` : ""}. No changes were kept; submit the inspection again.` },
+        { status: 500 },
+      );
+    // The inspection record could not be removed, so its audit entry is still due.
+    const audit = inspectionKept ? await recordInspectionAudit(context, inspection, null) : undefined;
     return NextResponse.json(
       {
-        error: `The inspection was not saved because ${step} failed${detail ? ` (${detail})` : ""}. ${reversed ? "No changes were kept; submit the inspection again." : "Some changes could not be reversed; tell a fleet manager before submitting again."}`,
+        ok: false,
+        error: `The inspection could not be completed because ${step} failed${detail ? ` (${detail})` : ""}. Some changes could not be reversed${inspectionKept ? " and the inspection record was kept" : ""}. Do not submit it again; tell a fleet manager.`,
+        ...(inspectionKept ? { inspection, audit } : {}),
       },
       { status: 500 },
     );
+  };
+  // Writes only status and status_reason, and only to take the vehicle out of
+  // service; it never restores or relaxes anything.
+  const holdOutOfService = async (step: string) => {
+    const { data: current } = await context.admin.from("fleet_vehicles").select("status").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
+    if (current && !["Available", "Attention"].includes(current.status)) return true;
+    const { data: heldVehicle } = await context.admin
+      .from("fleet_vehicles")
+      .update({
+        status: "Out of Service",
+        status_reason: `Critical inspection defect; ${step} did not complete. Review before returning to service.`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("department_id", context.departmentId)
+      .eq("id", vehicleId)
+      .in("status", ["Available", "Attention"])
+      .select("status")
+      .maybeSingle();
+    if (heldVehicle) return true;
+    const { data: after } = await context.admin.from("fleet_vehicles").select("status").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
+    return Boolean(after && !["Available", "Attention"].includes(after.status));
   };
 
   for (const item of checklist.filter((entry: any) => entry.equipmentId)) {
@@ -267,7 +321,6 @@ export async function POST(
       .eq("id", item.equipmentId)).error);
   }
 
-  let workOrder = null;
   if (defects.length && rules?.inspection_defect_creates_work_order !== false) {
     const description = defects
       .map((item: any) => `${item.label}: ${item.note}`)
@@ -341,19 +394,11 @@ export async function POST(
     return fail("recalculating vehicle readiness", refreshError);
   }
 
-  try {
-    await auditFleet(
-      context,
-      "fleet_vehicle_inspected",
-      "fleet_vehicle",
-      vehicleId,
-      { inspection, work_order_id: workOrder?.id ?? null },
-    );
-  } catch (auditError) {
-    return fail("recording the audit entry", auditError);
-  }
+  // The inspection and its safety status stand even when the audit entry
+  // cannot be written yet; the response says so instead of reversing them.
+  const audit = await recordInspectionAudit(context, inspection, workOrder?.id ?? null);
   return NextResponse.json(
-    { ok: true, inspection, workOrder, readiness },
+    { ok: true, inspection, workOrder, readiness, audit },
     { status: 201 },
   );
 }
