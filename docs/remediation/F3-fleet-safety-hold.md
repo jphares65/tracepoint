@@ -4,6 +4,8 @@ Base: `claude/integration-defects-20261020` (B0–B5) @ `d5b8ea8`. This batch im
 
 > **Superseded in part by F6a** (`F6a-fleet-safety-decisions.md`): the owner chose option (b) for the automation settings, a conservative audited baseline, and no clearance while a critical work order is open. 046 was edited in place. The *Owner decision needed* section below is resolved there.
 
+> **046 edited in place again (release safety, `RELEASE-SAFETY-rollback-compatibility.md` §5).** `fleet_audit_outbox_deliver_internal` now locks the entry and, when `audit_events` already holds a `fleet_vehicle_inspected` row for the same department, entity and inspection (`details->'inspection'->>'id'`), it marks the entry delivered, links that row and sets the new column `delivered_by_existing_audit`. It inserts nothing in that case. This is how the previous image audits its own inspections while rolled back, so a re-upgrade no longer duplicates the audit. Everything else in 046 (baseline, guard, enqueue, `work_order_id`, five-minute rule) is unchanged. 046 is still unapplied anywhere. Test: `scripts/validate-local-fleet-audit-outbox.sql`.
+
 The owner approved B4's four outbox deviations, subject to testing; the tests below cover them. Nothing here is deployed.
 
 ## Owner decisions and how they are met

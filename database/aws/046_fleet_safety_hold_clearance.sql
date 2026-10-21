@@ -141,6 +141,14 @@ for each row execute function public.guard_fleet_safety_hold_clearance();
 -- The inspection's defect work order, kept with its queued audit entry.
 alter table public.fleet_audit_outbox
   add column if not exists work_order_id uuid references public.fleet_work_orders(id) on delete set null;
+-- True when the entry was settled by an audit row the inspection already had.
+alter table public.fleet_audit_outbox
+  add column if not exists delivered_by_existing_audit boolean not null default false;
+
+-- An older image audits its own inspections (fleet_vehicle_inspected with the
+-- inspection in details) while the trigger also queues an entry, for example
+-- after an image rollback. Delivery then links that audit row instead of
+-- writing a second one. The entry is locked, so a delivery happens once.
 
 create or replace function public.fleet_audit_outbox_deliver_internal(p_outbox_id uuid, p_work_order_id uuid)
 returns bigint
@@ -153,8 +161,21 @@ declare
   v_event_id bigint;
   v_details jsonb;
 begin
-  select * into v_row from public.fleet_audit_outbox where id = p_outbox_id;
+  select * into v_row from public.fleet_audit_outbox where id = p_outbox_id for update;
   if v_row.delivered_at is not null then return v_row.audit_event_id; end if;
+  select e.id into v_event_id from public.audit_events e
+  where e.department_id = v_row.department_id and e.action = v_row.action
+    and e.entity_type = v_row.entity_type and e.entity_id is not distinct from v_row.entity_id
+    and e.details -> 'inspection' ->> 'id' = v_row.inspection_id::text
+  order by e.id
+  limit 1;
+  if v_event_id is not null then
+    update public.fleet_audit_outbox
+    set delivered_at = now(), audit_event_id = v_event_id, delivered_by_existing_audit = true,
+      attempts = attempts + 1, last_error = null
+    where id = p_outbox_id;
+    return v_event_id;
+  end if;
   v_details := v_row.details || jsonb_build_object(
     'support_mode', tracepoint_auth.is_platform_supporting(v_row.department_id),
     'queued_at', v_row.created_at,

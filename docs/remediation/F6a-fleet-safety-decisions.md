@@ -4,6 +4,8 @@ Base: `claude/integration-defects-20261020` @ `97a4710`. This batch implements t
 
 **Migration policy.** `database/aws/046_fleet_safety_hold_clearance.sql` has **not** been applied to any environment: the staging and production ledgers stop at 037, and the integration package is not deployed. On the owner's instruction 046 is therefore **edited in place** instead of adding a new migration. 038–045 are not touched, and 047 (reserved by another branch) is not used. If any environment had applied F3's 046, the hash-checked ledger would report `MIGRATION_DRIFT` for it; that environment would need a new forward migration instead. `STAGING-VERIFICATION.md` (migration table, S12, rollback) is updated.
 
+> **046 edited in place again (release safety, `RELEASE-SAFETY-rollback-compatibility.md` §5).** `fleet_audit_outbox_deliver_internal` now locks the entry and, when `audit_events` already holds a `fleet_vehicle_inspected` row for the same department, entity and inspection (`details->'inspection'->>'id'`), it marks the entry delivered, links that row and sets the new column `delivered_by_existing_audit`. It inserts nothing in that case. This is how the previous image audits its own inspections while rolled back, so a re-upgrade no longer duplicates the audit. Everything else in 046 (baseline, guard, enqueue, `work_order_id`, five-minute rule) is unchanged. 046 is still unapplied anywhere. Test: `scripts/validate-local-fleet-audit-outbox.sql`.
+
 ## Owner decisions and how they are met
 
 | # | Decision | Change | Test |

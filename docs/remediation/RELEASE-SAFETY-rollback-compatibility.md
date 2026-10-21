@@ -8,7 +8,7 @@ Owner directive: "Confirm that the staging deployment's automatic rollback canno
 
 **Result:**
 - **053 was the only incompatible migration.** It is now edited in place to an expand-only form, and its contract step moved to a separate `054`. 053 has never been applied anywhere: the staging and production ledgers stop at 037 (precedent: F6a/046, B8a/052).
-- **One item in 038–051 needs a runbook step: 043.** After a rollback and a later re-upgrade, the old image's fleet inspections end up with a duplicate audit row. It is not edited; the step is in "Re-upgrade after a rollback" below.
+- **043/046: duplicate fleet audit rows (now fixed in the database).** After a rollback and a later re-upgrade, an inspection the old image made would have got a second audit row. **046 is edited in place again** (unapplied anywhere; it already redefines the outbox delivery function), so delivery links the audit row the old image wrote instead of writing another. No runbook step is needed.
 - Nothing else in 038–053 breaks the previous image or corrupts its records.
 
 ## 1. Why the previous image matters
@@ -48,7 +48,7 @@ Nothing in 038–053 renames an object or changes a function signature or return
 | 040 | New permissive fleet policies. New guard triggers on `fleet_vehicles` and `fleet_vehicle_equipment`. | The guards return immediately for `manage_fleet`/`administer_department`, the only roles that could update these tables at 037. Old inspector writes that matched 0 rows at 037 now succeed for workflow fields only. | **yes** (improved) |
 | 041 | New custody pool SELECT policy and `operate_equipment_self_custody` | Additive | **yes** |
 | 042 | `protect_pilot_range_workspace_mutation`, `protect_range_day_drill_history`: Ready no longer locks | Loosened only. The B3 `resultRevisions` caution (STAGING-VERIFICATION §5) is app JSON, not schema. | **yes** |
-| 043 | New `fleet_audit_outbox` with an AFTER INSERT trigger on `fleet_vehicle_inspections` (queues the audit entry; a Critical inspection takes the vehicle Out of Service) | The old inspection route writes its own `fleet_vehicle_inspected` audit row. The queued entry stays pending under the old image. After a re-upgrade, the new image's `deliver_pending_fleet_audit` writes a **second** row (harness §3: 2 rows for one inspection). | **degraded: duplicate audit row on re-upgrade.** Safe with the runbook step below (harness: 1 row). |
+| 043 | New `fleet_audit_outbox` with an AFTER INSERT trigger on `fleet_vehicle_inspections` (queues the audit entry; a Critical inspection takes the vehicle Out of Service) | The old inspection route writes its own `fleet_vehicle_inspected` audit row. The queued entry stays pending under the old image. After a re-upgrade, the new image's `deliver_pending_fleet_audit` writes a **second** row (harness §3: 2 rows for one inspection). **Fixed by the 046 edit:** delivery now links the existing row (harness: 1 row). | **yes** (after the 046 edit; without it: duplicate audit row) |
 | 044 | Personnel-import function bodies: blank cells keep stored values; Officer is added only to a new membership; only an Administrator may change an Administrator in the import lifecycle | Same signatures. The old import keeps working, preserves data it would have blanked, and is refused on Administrator targets by non-administrators. | **degraded-but-safe** (pause imports while rolled back, §5) |
 | 045 | `can_submit_fleet_inspection`; additive inspection, issue and read policies; the guard's inspector branch uses the helper | The 037 `fleet_inspections_insert` policy is unchanged, so policies only add. Note: the §5 "F2 under the old image" caution is not a regression from 037. Members without an inspection permission were already refused by the 037 policy. | **yes** |
 | 046 | Clearance columns and their guard (fires only when the clearance columns change). `enqueue_fleet_inspection_audit` puts critical vehicles Out of Service whatever the automation settings. Outbox `work_order_id`. | The old code never writes clearance columns. The F3 hold rule lives in the new app, so under the old image holds behave as at 037. | **yes** |
@@ -62,7 +62,6 @@ Nothing in 038–053 renames an object or changes a function signature or return
 
 ### Proposals (not implemented; owner decision)
 
-- **043 duplicates.** Either keep the runbook step, or edit 046's `fleet_audit_outbox_deliver_internal` in place (it is unapplied anywhere). The edit would mark an entry delivered, without inserting, when `audit_events` already holds a row for the same action, entity and `details->'inspection'->>'id'`.
 - **Old rifle route 500 (pre-existing at 037).** Returning 200 to the old image needs an INSERT grant on `personal_rifle_status_history`, plus a trigger that absorbs a direct row matching the one the database just wrote and refuses anything else. That grant would go beyond the 037 state, which the owner excluded, so it is not done. Under the expand schema the old route's change and its history are both stored; only the response is wrong, as it already is today. The reviewer's note is kept on the rifle row (`chief_decision_notes` etc.); the trigger row's `notes` is null because the old route does not send `workflow_note`.
 
 ## 3. Previous-image harness on real PostgreSQL
@@ -97,7 +96,7 @@ Nothing in 038–053 renames an object or changes a function signature or return
 | Reconciliation: submit, then certify by the submitter | 200 / **200** (self-certified) | 200 / **500**; stays Submitted (B8 refusal) |
 | Reconciliation: certify by a second armorer | **500** | **200**; certified_by = B |
 | Fleet Critical inspection (administrator) | 201; Out of Service; 1 audit row | 201; Out of Service; 1 audit row + 1 pending outbox entry |
-| After re-upgrade reconciliation | — | **2 audit rows**. With the runbook step: **1**. |
+| After re-upgrade reconciliation | — | **1 audit row**. The outbox entry is delivered with `delivered_by_existing_audit = true`, linked to the old image's row. Before the 046 edit there were **2**. |
 
 Raw outputs are in `scratchpad/expand/harness-*.txt`.
 
@@ -125,28 +124,29 @@ Raw outputs are in `scratchpad/expand/harness-*.txt`.
 
 Every later image must contain `054` once it is applied: the runner reports `MIGRATION_DRIFT` for a ledger row with no file.
 
-## 5. Re-upgrade after a rollback (043 runbook step)
+## 5. Re-upgrade after a rollback: fleet audit outbox (043/046)
 
-Before the new image is deployed again after any period on the previous image, run this as the migration role:
+**The fix.** `fleet_audit_outbox_deliver_internal` (046, edited in place again) settles an outbox entry from an existing audit row. Both `deliver_fleet_audit_outbox` (each request) and `deliver_pending_fleet_audit` (reconciliation) go through it.
+- It locks the entry (`for update`; the callers also lock it) and returns at once if the entry is already delivered.
+- It then looks for an `audit_events` row with the same department, action, entity type and entity, whose `details->'inspection'->>'id'` is the entry's inspection. `inspection_id` is unique in the outbox.
+- If it finds one, it marks the entry delivered, links that row (`audit_event_id`), sets the new column `delivered_by_existing_audit = true`, and inserts nothing.
+- Otherwise it writes the audit row as before, with the F3/F6a `work_order_id`.
+- The old image's own audit write is unchanged. The B8a image never writes that row directly on this schema, so its inspections still get exactly one row from the outbox.
+
+**Residual.** An old-image inspection whose own audit write came more than five minutes after the inspection could be reconciled first. That would be the old route's request taking over five minutes between two consecutive statements. Inspections whose old audit write failed are delivered normally, once.
+
+**No runbook step is needed.** The query below is kept only as a **diagnostic**: before a re-upgrade it lists entries an older image already audited. After the upgrade they show `delivered_by_existing_audit = true`. Do not run it as an `update`.
 
 ```sql
-with matched as (
-  select distinct on (o.id) o.id, e.id as event_id
-  from public.fleet_audit_outbox o
-  join public.audit_events e
-    on e.department_id = o.department_id and e.action = o.action
-   and e.entity_type = o.entity_type and e.entity_id = o.entity_id
-   and e.details->'inspection'->>'id' = o.inspection_id::text
-  where o.delivered_at is null
-  order by o.id, e.id)
-update public.fleet_audit_outbox o
-set delivered_at = now(), audit_event_id = m.event_id,
-    last_error = 'delivered by the old image (rollback window)'
-from matched m where o.id = m.id
-returning o.id;
+select o.department_id, o.inspection_id, min(e.id) as existing_audit_event_id
+from public.fleet_audit_outbox o
+join public.audit_events e
+  on e.department_id = o.department_id and e.action = o.action
+ and e.entity_type = o.entity_type and e.entity_id = o.entity_id
+ and e.details->'inspection'->>'id' = o.inspection_id::text
+where o.delivered_at is null
+group by o.department_id, o.inspection_id;
 ```
-
-Entries that it does not match are inspections whose old-image audit write failed. They are delivered normally after the upgrade.
 
 Other cautions while rolled back are unchanged (STAGING-VERIFICATION §5): export `resultRevisions` and freeze range edits (B3), and pause personnel imports (B1/F1).
 
@@ -158,8 +158,10 @@ Other cautions while rolled back are unchanged (STAGING-VERIFICATION §5): expor
 | Validator shim (`validate-clean-bootstrap.mjs`) | "Clean bootstrap passed: 79 ordered migrations and 52 AWS-native migrations", including the armory stage | Same, with 53 AWS-native migrations; the contract cases pass |
 | Catalog diff against 037 | `firearm_status_history`: grants and policies identical to 037. `personal_rifle_status_history`: grants identical (SELECT only), plus the 052 triggers. | `firearm_status_history`: `authenticated` SELECT only; no insert policy |
 | Armory validator, fail before / pass after | New cases fail on the reviewed 053 and pass on the expand 053. The reviewed cases fail on the expand 053. | Contract cases pass on 054 |
+| Fleet outbox validator (`scripts/validate-local-fleet-audit-outbox.sql`, new, in the AWS stage), fail before / pass after | Four inspections: two audited directly in the old image's shape, two not. Each goes through reconciliation or the request's delivery, twice. Each ends with exactly 1 audit row and is linked to it; `delivered_by_existing_audit` is true exactly for the directly audited ones. **Before the 046 edit** (previous function bodies): fails with "2 audit rows". | Same |
+| `fleet-audit-outbox-native` and `fleet-safety-hold-native` (embedded PostgreSQL) | Not run in this root sandbox (environment). Their stub schemas include `audit_events.details`, which the new lookup reads. | — |
 | Previous-image harness (§3) | Identical to 037 for the firearm status route and the firearm list; other differences as listed | Old firearm status route → 500, reverted, no history (expected after the window closes) |
 | `npx tsc --noEmit` | 0 errors | — (no code change) |
 | `node scripts/run-application-tests.mjs` | 744 tests, 740 pass. The 4 failures are the `xlsx`-stub importer tests (environment). 20 embedded-PostgreSQL files ran no tests in this root sandbox (environment). | — |
 | `node --test --test-concurrency=1 scripts/*.test.mjs` | 351 tests, 350 pass; the failure is the SheetJS XLSX round trip (environment) | — |
-| `npx eslint` on changed files | No TypeScript or JavaScript files changed (SQL and Markdown only) | — |
+| `npx eslint` on changed files | `scripts/validate-clean-bootstrap.mjs` (runs the new fleet outbox validator): clean. The other changes are SQL and Markdown. | — |
