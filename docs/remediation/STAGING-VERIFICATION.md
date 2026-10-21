@@ -2,7 +2,7 @@
 
 **Status:** Ready for owner review. Nothing in this package has been executed.
 
-**Candidate code commit:** `edc6541` on `claude/fix-b8a-expand-contract`. It is `8574db3` (merge of B8a) plus the expand-only 053 and its validator cases (release safety, `RELEASE-SAFETY-rollback-compatibility.md`). Once merged, the merge commit becomes the candidate. Later commits must be documentation-only. Before building, confirm `git diff --stat <candidate> <deploy-sha> -- . ':!docs'` prints nothing, and record the deploy SHA in G1. **The deploy SHA must not contain `database/aws/054_*`.**
+**Candidate code commit:** `70717ba` on `claude/fix-b8a-expand-contract`. It is `8574db3` (merge of B8a) plus the expand-only 053, the 046 outbox-delivery edit and their validator cases (release safety, `RELEASE-SAFETY-rollback-compatibility.md`). Once merged, the merge commit becomes the candidate. Later commits must be documentation-only. Before building, confirm `git diff --stat <candidate> <deploy-sha> -- . ':!docs'` prints nothing, and record the deploy SHA in G1. **The deploy SHA must not contain `database/aws/054_*`.**
 
 **Contents:** B0, B1, B1a, B2, B3, B4, B5, F1–F6b, DC, TV, B9, B7, B10, B8, B11, ADM-07, DC2, B8a (source commits in `INTEGRATION.md`). **Not included:** B6 (separate authorization) and the hotfix candidate branch.
 
