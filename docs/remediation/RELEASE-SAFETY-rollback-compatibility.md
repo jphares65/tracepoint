@@ -9,6 +9,7 @@ Owner directive: "Confirm that the staging deployment's automatic rollback canno
 **Result:**
 - **053 was the only incompatible migration.** It is now edited in place to an expand-only form, and its contract step moved to a separate `054`. 053 has never been applied anywhere: the staging and production ledgers stop at 037 (precedent: F6a/046, B8a/052).
 - **043/046: duplicate fleet audit rows (now fixed in the database).** After a rollback and a later re-upgrade, an inspection the old image made would have got a second audit row. **046 is edited in place again** (unapplied anywhere; it already redefines the outbox delivery function), so delivery links the audit row the old image wrote instead of writing another. No runbook step is needed.
+- **046: critical safety hold under the previous image (now enforced in the database).** The previous image releases a hold when the work order is closed: its readiness refresh writes Available. **046 is edited in place a third time** (unapplied anywhere): a trigger keeps a held vehicle Out of Service whoever writes it, and audits the prevented change. The safety restriction no longer depends on a runbook instruction during an automatic rollback (§5b).
 - Nothing else in 038–053 breaks the previous image or corrupts its records.
 
 ## 1. Why the previous image matters
@@ -51,7 +52,7 @@ Nothing in 038–053 renames an object or changes a function signature or return
 | 043 | New `fleet_audit_outbox` with an AFTER INSERT trigger on `fleet_vehicle_inspections` (queues the audit entry; a Critical inspection takes the vehicle Out of Service) | The old inspection route writes its own `fleet_vehicle_inspected` audit row. The queued entry stays pending under the old image. After a re-upgrade, the new image's `deliver_pending_fleet_audit` writes a **second** row (harness §3: 2 rows for one inspection). **Fixed by the 046 edit:** delivery now links the existing row (harness: 1 row). | **yes** (after the 046 edit; without it: duplicate audit row) |
 | 044 | Personnel-import function bodies: blank cells keep stored values; Officer is added only to a new membership; only an Administrator may change an Administrator in the import lifecycle | Same signatures. The old import keeps working, preserves data it would have blanked, and is refused on Administrator targets by non-administrators. | **degraded-but-safe** (pause imports while rolled back, §5) |
 | 045 | `can_submit_fleet_inspection`; additive inspection, issue and read policies; the guard's inspector branch uses the helper | The 037 `fleet_inspections_insert` policy is unchanged, so policies only add. Note: the §5 "F2 under the old image" caution is not a regression from 037. Members without an inspection permission were already refused by the 037 policy. | **yes** |
-| 046 | Clearance columns and their guard (fires only when the clearance columns change). `enqueue_fleet_inspection_audit` puts critical vehicles Out of Service whatever the automation settings. Outbox `work_order_id`. | The old code never writes clearance columns. The F3 hold rule lives in the new app, so under the old image holds behave as at 037. | **yes** |
+| 046 | Clearance columns and their guard (fires only when the clearance columns change). `enqueue_fleet_inspection_audit` puts critical vehicles Out of Service whatever the automation settings. Outbox `work_order_id`. Status guard `fleet_vehicles_safety_hold_status_guard` (§5b). | The old code never writes clearance columns. Without the status guard, the old refresh released a hold when the work order was closed (Available), as at 037. With it, the old writes succeed but the held vehicle stays Out of Service, with a `fleet_safety_hold_status_kept` audit row (§5b). | **yes** (hold enforced by the database) |
 | 048 | SELECT policies narrowed to own-or-authorized: certifications, agency-training attendee/requirement/certificate tables, qualification and drill results, range roster and packets, remediation recommendations, qualification attachments | Officers see only their own rows (intended, TRN-26). Every 037 write policy's permission appears in the matching read list, so no read-then-write path sees fewer rows. The runtime role has no direct grants. | **degraded-but-safe** (intended) |
 | 049 | Equipment trigger bodies loosened; `profiles` policy widened (drops `is_active`) | Additive | **yes** |
 | 050 | Closeout refuses Completed/Passed without Present; issue date in the department zone; superseded tracking | Same wrapper RPCs. The refused case raises before any write. | **degraded-but-safe** |
@@ -150,6 +151,68 @@ group by o.department_id, o.inspection_id;
 
 Other cautions while rolled back are unchanged (STAGING-VERIFICATION §5): export `resultRevisions` and freeze range edits (B3), and pause personnel imports (B1/F1).
 
+## 5b. Critical safety hold under the previous image (046)
+
+Owner directive: "I do not want a critical vehicle safety restriction dependent solely on a runbook instruction during an automatic rollback. Determine whether this can be prevented at the database level or through a reliable rollback safeguard."
+
+**Finding** (rollback harness, previous image `555f061` on 038–053). Completing or cancelling the critical work order of a held vehicle returned it to Available. The 046 clearance guard protected only the clearance columns. The new image put the hold back on its next refresh, but until then, during a rollback or a rolling deploy, the vehicle looked usable.
+
+**Every path that writes a held vehicle's status:**
+
+| Path | Image | Session | Columns written | Outcome before (released?) |
+|---|---|---|---|---|
+| Work order complete or cancel (`work-orders` PATCH), then `refreshFleetVehicle` | old | `authenticated` through RLS (mechanic: 040/045 field policy and guard; manager: `fleet_vehicles_manage`) | `fleet_work_orders` row; `fleet_vehicles` service readings (`updateVehicleService`); then `status`, `open_issue_count`, `updated_at`. The old refresh has no hold rule and ignores the update error. | **Yes:** Available (or Attention or Maintenance when other work is open) |
+| Work order create (issue or maintenance), equipment add, inspection: each followed by `refreshFleetVehicle` | old | `authenticated` | same refresh columns | **Yes**, once no critical work order is open |
+| Vehicle detail PATCH (status override) | old and new | `authenticated`, `manage_fleet`/`administer_department` | `status`, `status_reason`, `status_override_active = true`, other fields; then the refresh. On audit failure, the previous row is written back. | Old: **yes** (Available with override; the old refresh skips overridden vehicles). New: no, its refresh escalates an overridden Available/Attention vehicle to Out of Service in the next statement |
+| Fleet list PATCH (status) | old and new | `authenticated`, manager | `status`, `status_reason`, `status_override_active`, other fields | Old: **yes**. New: refresh escalates |
+| Inspection with a critical defect | both | `authenticated`; 043/046 definer trigger | trigger sets Out of Service from Available/Attention | No (safe direction) |
+| Inspection without critical defects | both | `authenticated` | inspection row, then the refresh | Releases a hold by design (re-inspection) |
+| Clearance (`clearSafetyHold`) | new only | `authenticated`, manager; 046 clearance guard | clearance columns, then the refresh | Releases by design (reason required, audited) |
+| Document upload (registration date), AI importer vehicle update | both | `authenticated` | `registration_expiration_date`; importer: any listed column including `status` | Importer: **yes** if it sets Available |
+| Automation | — | none: there is no scheduled job; automation is the refresh above | — | — |
+
+**Change (046, edited in place a third time).** A `BEFORE UPDATE` trigger `fleet_vehicles_safety_hold_status_guard` (function `guard_fleet_safety_hold_status()`) runs after the 040/045 field guard and the clearance guard (trigger names fire in alphabetical order). When a write would leave the vehicle **Available or Attention**, it computes the hold as `findSafetyHold`/`refreshFleetVehicle` do:
+- held if a Critical or availability-affecting work order is open; or
+- held if the latest critical condition (inspection with `critical_defect_count > 0`, or a Critical or availability-affecting work order in any status) is not followed, strictly later, by an inspection without critical defects or by `safety_hold_cleared_at`.
+
+If the vehicle is held, the trigger sets `status = 'Out of Service'` and lets the rest of the write proceed. It writes one `audit_events` row: action `fleet_safety_hold_status_kept`, actor = the session subject (`tracepoint_auth.subject_id()`), details `{attempted_status, previous_status, status, hold: {since, open_critical_work_order}, support_mode}`. Nothing else changes: the hold, the clearance columns, `status_reason` and `status_override_active`.
+
+- **Keep, not refuse.** A refusal would make the old refresh fail silently (it ignores the error), so `open_issue_count` would go stale. The old work-order PATCH would still answer 200, because its work-order update is a separate statement. Keeping the status lets the old work-order completion, its audit and its readings succeed as at 037; only the status change is neutralized.
+- **Available and Attention only.** Maintenance, Out of Service and Retired are not in service, and the new image already keeps a manager's Maintenance or Retired on a held vehicle (B2 amendment, F6a). Available/Attention → Out of Service is unaffected.
+- **Every writer.** The trigger has no role exception. It is `SECURITY DEFINER`, as 043/046's `enqueue_fleet_inspection_audit`, so the hold is read from every record of the vehicle, whatever the writer may read, and the audit row is written whatever the writer's audit policy. EXECUTE is revoked from `public`, `anon`, `authenticated` and `service_role`. No grant or policy changes.
+- **Release paths unchanged.** Only a later inspection without critical defects (either image records it) or a manager clearance with a reason (new image, 046 guard) releases a recorded hold. The new image never writes Available/Attention to a held vehicle, so its flows (S2, S11, S12) write no extra rows. One exception: a manager's status override to Available on a held vehicle now ends Out of Service in the override's own statement, with a `fleet_safety_hold_status_kept` row, instead of in the refresh that follows. The final state is the same: Out of Service, the override and its reason kept.
+
+**Defense in depth (not required).** The runbook item "no fleet work-order completions on held vehicles while rolled back" is no longer a safety control. It is kept only as advice: the old image's responses report the status it tried to write. For example, the work-order PATCH's `readiness.status` says Available, while every read shows Out of Service. Read-only check after a rollback:
+
+```sql
+select v.department_id, v.unit_number, e.created_at, e.actor_user_id, e.details->>'attempted_status' as attempted
+from public.audit_events e join public.fleet_vehicles v on v.id = e.entity_id
+where e.action = 'fleet_safety_hold_status_kept' order by e.created_at desc limit 50;
+```
+
+**Residuals (not changed; owner decision if wanted).**
+- In both images, a mechanic or manager can edit a hold's *work order* to priority Normal with `affects_availability` false (work-order PATCH). If that order was the only critical condition (a manual issue report, not a critical inspection), the hold is gone in both `findSafetyHold` and the trigger. A critical inspection still holds, because its row is unchanged. This is the existing new-image rule, not a rollback regression.
+- The trigger mirrors the hold rule in SQL. If `findSafetyHold` changes, change both; a comment there says so.
+
+**Verification (local, synthetic; PostgreSQL 16 on 127.0.0.1:55671):**
+
+| Test | Before (046 at `628b609`) | After |
+|---|---|---|
+| Validator `scripts/validate-local-safety-hold-rollback.sql` (new, AWS stage, after the outbox stage), with the runtime session shape. Mechanic completes vehicle 1's critical work order, then writes Available like the old refresh. Vehicle 2 (critical WO already completed) gets Available. Vehicle 4 (open critical WO, later passing inspection) gets Attention. Manager override Available on vehicle 1. Vehicle 3 has no hold. Then: Maintenance on a held vehicle; a clearance with a blank reason; a clearance with a reason; a passing inspection; completion of vehicle 4's work order. | **Fails:** "HR-1 is Available (override t, open issues 0), 0 kept audit rows" | **Passes:** the work order is Completed; vehicles 1, 2 and 4 stay Out of Service (`open_issue_count` updated); 4 audit rows by the mechanic and the manager; vehicle 3 Attention with none. Maintenance is allowed. The blank-reason clearance gets `22023`. The clearance, the passing inspection and the work-order completion each release (Available) with no further audit row. `authenticated` cannot execute the function. |
+| Full validator (`validate-clean-bootstrap.mjs` via the local shim) | Fails at the new stage with the message above | "Clean bootstrap passed: 79 ordered migrations and 52 AWS-native migrations" |
+| Clean apply, and 046 applied a second time | — | 131/131; the re-application succeeds |
+| Previous-image harness (scratch `holdrb/`, from the rollback harness): 037 template, then 038–053 through the runner shim as `tracepoint_migrator`. The real `555f061` and `628b609` route modules run as `tracepoint_runtime` → `authenticated`. | | |
+| ↳ New image: critical inspection on v1, v2, v4. Old image: mechanic completes v1's WO; manager cancels v2's; manager completes v4's | 200 each; v1, v2, v4 **Available** | 200 each; WOs Completed/Cancelled; v1, v2, v4 **Out of Service**; 1 kept row each, actor = the session user |
+| ↳ Old admin detail PATCH v4 Available (override), then old list PATCH v4 Attention | 200; Available, then **Attention** | 200; Out of Service (override kept); kept rows by admin and manager |
+| ↳ Old manual work order on v1, old equipment add on v2 (both refresh) | v1 Attention, v2 Available | Out of Service both |
+| ↳ Old full fleet workflow on v3 (critical inspection, complete WO, manual WO, passing inspection) | Available after the completion | Out of Service after the completion and the manual WO; **Attention** after the passing inspection (released, one Normal WO open) |
+| ↳ Mixed fleet: three fleet workflows with old/new alternating per request | every old completion → Available | every old completion → Out of Service; new steps write no kept row; each ends Attention after the passing inspection |
+| ↳ New image after rollback: re-inspection pass on v1 | — (already Attention) | Attention (released; one Normal WO open) |
+| ↳ New clearance on v2: blank reason / mechanic / manager with reason | 400 / 403 / 200 | 400 / 403 / **200 → Available** |
+| ↳ New clearance on v4 (old override active), then clear the override | — | 200, Out of Service (the manager's old override stays, as without the guard), then Available |
+| Fleet native tests (`fleet-safety-hold-native`, `fleet-audit-outbox-native`, `vehicle-documents-native`) through the local-server runner | — | 6/6, 5/5, 2/2 |
+| Fleet handler tests (`src/lib/fleet/*.test.ts` except native) | — | 40/40 |
+
 ## 6. Tests and checks (local, synthetic; PostgreSQL 16 on 127.0.0.1:55667)
 
 | Check | Expand branch | 054 branch |
@@ -165,3 +228,4 @@ Other cautions while rolled back are unchanged (STAGING-VERIFICATION §5): expor
 | `node scripts/run-application-tests.mjs` | 744 tests, 740 pass. The 4 failures are the `xlsx`-stub importer tests (environment). 20 embedded-PostgreSQL files ran no tests in this root sandbox (environment). | — |
 | `node --test --test-concurrency=1 scripts/*.test.mjs` | 351 tests, 350 pass; the failure is the SheetJS XLSX round trip (environment) | — |
 | `npx eslint` on changed files | `scripts/validate-clean-bootstrap.mjs` (runs the new fleet outbox validator): clean. The other changes are SQL and Markdown. | — |
+| §5b safety hold status guard (same checks, PostgreSQL 16 on 127.0.0.1:55671) | `npx tsc --noEmit` 0 errors. `run-application-tests.mjs`: 744 tests, 740 pass; the 4 failures are the `xlsx`-stub importer tests, and 20 embedded-PostgreSQL files ran no tests (environment; the three fleet ones ran through the local runner, §5b). `scripts/*.test.mjs`: 350/351 (the SheetJS round trip). `npx eslint scripts/validate-clean-bootstrap.mjs`: clean. `src/lib/tracepoint/fleet-server.ts` (one comment line pointing at the SQL rule) has the same 12 existing `no-explicit-any` errors as the base. | — |

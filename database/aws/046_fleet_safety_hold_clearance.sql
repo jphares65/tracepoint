@@ -4,9 +4,12 @@ begin;
 -- work order) is released only by a later inspection without critical defects
 -- or by an audited fleet-manager clearance, never by closing the work order
 -- (src/lib/tracepoint/fleet-server.ts findSafetyHold). It applies whatever the
--- agency's automation settings. The latest clearance is kept on the vehicle;
--- its history is in audit_events. The inspection audit outbox also keeps the
--- defect work order, so reconciliation records it. Idempotent.
+-- agency's automation settings, and in the database too: a write that would
+-- leave a held vehicle Available or Attention keeps it Out of Service and is
+-- audited, so an older image cannot release it either. The latest clearance
+-- is kept on the vehicle; its history is in audit_events. The inspection audit
+-- outbox also keeps the defect work order, so reconciliation records it.
+-- Idempotent.
 
 do $$
 begin
@@ -137,6 +140,67 @@ drop trigger if exists fleet_vehicles_safety_hold_clearance_guard on public.flee
 create trigger fleet_vehicles_safety_hold_clearance_guard
 before update on public.fleet_vehicles
 for each row execute function public.guard_fleet_safety_hold_clearance();
+
+-- While a vehicle is held (an open Critical or availability-affecting work
+-- order, or its latest critical condition not followed by an inspection without
+-- critical defects or by a clearance; findSafetyHold), no write leaves it
+-- Available or Attention, whoever writes. The status is kept Out of Service, the
+-- rest of the write proceeds, and the prevented change is audited. An older
+-- image, which releases holds by closing the work order, therefore cannot
+-- return a held vehicle to service during an image rollback or a rolling
+-- deploy. Definer, as enqueue_fleet_inspection_audit: the hold is read from
+-- every record of the vehicle and the audit row is written whatever the
+-- writer's own read and audit policies.
+create or replace function public.guard_fleet_safety_hold_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, tracepoint_auth
+as $$
+declare
+  v_since timestamptz;
+  v_open boolean;
+begin
+  if coalesce(new.status, '') not in ('Available', 'Attention') then
+    return new;
+  end if;
+  select max(c.created_at) into v_since from (
+    select i.created_at from public.fleet_vehicle_inspections i
+    where i.department_id = old.department_id and i.vehicle_id = old.id and i.critical_defect_count > 0
+    union all
+    select w.created_at from public.fleet_work_orders w
+    where w.department_id = old.department_id and w.vehicle_id = old.id and (w.priority = 'Critical' or w.affects_availability)) c;
+  if v_since is null then
+    return new;
+  end if;
+  v_open := exists (select 1 from public.fleet_work_orders w
+    where w.department_id = old.department_id and w.vehicle_id = old.id
+      and w.status not in ('Completed', 'Cancelled')
+      and (w.priority = 'Critical' or w.affects_availability));
+  if not v_open
+     and (new.safety_hold_cleared_at > v_since
+          or exists (select 1 from public.fleet_vehicle_inspections i
+                     where i.department_id = old.department_id and i.vehicle_id = old.id
+                       and i.critical_defect_count = 0 and i.created_at > v_since)) then
+    return new;
+  end if;
+  insert into public.audit_events(department_id, actor_user_id, action, entity_type, entity_id, summary, details)
+  values (old.department_id, tracepoint_auth.subject_id(), 'fleet_safety_hold_status_kept', 'fleet_vehicle', old.id,
+    'Vehicle kept Out of Service: a critical safety hold is active.',
+    jsonb_build_object('attempted_status', new.status, 'previous_status', old.status, 'status', 'Out of Service',
+      'hold', jsonb_build_object('since', v_since, 'open_critical_work_order', v_open),
+      'support_mode', tracepoint_auth.is_platform_supporting(old.department_id)));
+  new.status := 'Out of Service';
+  return new;
+end;
+$$;
+
+revoke all on function public.guard_fleet_safety_hold_status() from public, anon, authenticated, service_role;
+
+drop trigger if exists fleet_vehicles_safety_hold_status_guard on public.fleet_vehicles;
+create trigger fleet_vehicles_safety_hold_status_guard
+before update on public.fleet_vehicles
+for each row execute function public.guard_fleet_safety_hold_status();
 
 -- The inspection's defect work order, kept with its queued audit entry.
 alter table public.fleet_audit_outbox
