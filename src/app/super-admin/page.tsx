@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
+import { initialSuperAdminDepartment } from "@/lib/platform/super-admin-selection";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 
 type Department = {
@@ -62,7 +63,7 @@ export default function SuperAdminPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  async function load(activeDepartmentId: string) {
     setLoading(true);
     setError(null);
 
@@ -82,18 +83,13 @@ export default function SuperAdminPage() {
 
       setPayload(nextPayload);
 
-      setDepartmentId((current) => {
-        if (
-          current &&
-          nextPayload.departments.some(
-            (department) => department.id === current,
-          )
-        ) {
-          return current;
-        }
-
-        return nextPayload.departments[0]?.id ?? "";
-      });
+      setDepartmentId((current) =>
+        initialSuperAdminDepartment(
+          current,
+          nextPayload.departments,
+          activeDepartmentId,
+        ),
+      );
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -113,8 +109,8 @@ export default function SuperAdminPage() {
       return;
     }
 
-    void load();
-  }, [access.loading, access.isSuperAdmin]);
+    void load(access.departmentId);
+  }, [access.loading, access.isSuperAdmin, access.departmentId]);
 
   const entitlementMap = useMemo(() => {
     const map = new Map<string, boolean>();
