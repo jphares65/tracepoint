@@ -46,10 +46,11 @@ test("Fleet list, detail, and inspection routes enforce the policy on the backen
   assert.match(detail, /hasServerFeature\(context, "fleet"\)/);
   assert.match(detail, /canReadFleet\(context\)/);
   assert.match(inspection, /hasServerFeature\(context, "fleet"\)/);
-  assert.match(inspection, /canPerformFleetInspection\(context, permittedRoles\)/);
+  // One inspection rule, mirrored by can_submit_fleet_inspection (migration 055).
+  assert.match(inspection, /canSubmitFleetInspection\(context, rules\)/);
   assert.match(inspection, /if \(rulesError\)/);
   assert.match(evidence, /hasServerFeature\(context, "fleet"\)/);
   assert.match(qr, /resolveServerAccess\(request\)/);
   assert.match(qr, /from\("fleet_rules"\)[\s\S]*?inspection_role_codes/);
-  assert.match(qr, /permittedInspectionRoleCodes/);
+  assert.match(qr, /vehicleInspectionEligible = canSubmitFleetInspection\(resolved\.context, rules\.data\)/);
 });

@@ -11,13 +11,12 @@ function normalizedText(value: unknown) {
 }
 
 /**
- * Range Day history is immutable after it has been closed or its packet is
- * ready. This deliberately accepts the legacy database spelling for packet
- * status because persisted workspaces predate the client model.
+ * Range Day history is immutable after it has been closed. A packet marked
+ * Ready is not final (RNG-03; database/aws/052): corrections stay possible
+ * until the day is Completed, Locked or Archived.
  */
 export function isImmutableRangeDay(rangeDay: RangeDayStateRecord) {
-  return IMMUTABLE_STATUSES.has(normalizedText(rangeDay.status)) ||
-    normalizedText(rangeDay.packetStatus ?? rangeDay.packet_status) === "ready";
+  return IMMUTABLE_STATUSES.has(normalizedText(rangeDay.status));
 }
 
 /**

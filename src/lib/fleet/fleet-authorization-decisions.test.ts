@@ -14,6 +14,8 @@ stub(require.resolve("server-only"), {});
 stub(require.resolve("../tracepoint/server-access.ts"), {
   resolveServerAccess: async () => (globalThis as any).__fleetDecisionAccess,
   accessFailureResponse: () => Response.json({ error: "denied" }, { status: 403 }),
+  hasServerFeature: (context: any, code: string) => (context.enabledFeatures ?? []).includes(code),
+  featureDisabledResponse: (name = "This TracePoint module") => Response.json({ error: `${name} is not enabled for this agency.`, code: "FEATURE_NOT_ENABLED" }, { status: 403 }),
   hasAnyServerPermission: (context: any, codes: string[]) => context.permissions.includes("administer_department") || codes.some((code) => context.permissions.includes(code)),
   permissionDeniedResponse: (error: string) => Response.json({ error }, { status: 403 }),
 });
@@ -77,7 +79,7 @@ const fleet = (inspectionRoles: string[] = []) => ({
   audit_events: [{ ...history }], attachments: [], profiles: [],
 });
 const params = (value: Row) => ({ params: Promise.resolve(value) as any });
-const signIn = (db: any, permissions: string[], roleCodes: string[] = []) => { (globalThis as any).__fleetDecisionAccess = { ok: true, context: { admin: db, db, departmentId: "dept-1", user: { id: "user-1" }, permissions, roleCodes, isSuperAdmin: false, isSupportMode: false } }; };
+const signIn = (db: any, permissions: string[], roleCodes: string[] = []) => { (globalThis as any).__fleetDecisionAccess = { ok: true, context: { admin: db, db, departmentId: "dept-1", user: { id: "user-1" }, permissions, roleCodes, isSuperAdmin: false, isSupportMode: false, enabledFeatures: ["fleet"] } }; };
 const checklist = (critical?: string) => ["body", "tires", "lights", "controls", "fluids", "interior"].map((id) => id === critical ? { id, condition: "Critical", note: "Brakes fail" } : { id, condition: "Pass" });
 const noCosts = (row: Row, label: string) => { for (const field of COSTS) assert.equal(field in row, false, `${label} carries ${field}`); };
 
@@ -170,7 +172,9 @@ test("vehicle detail (web and mobile) and the fleet report withhold costs withou
   const { request, vehicleRoute, mobileVehicleRoute, report } = await load();
   for (const [permissions, costs] of [
     [["perform_fleet_inspections"], false], [["view_fleet"], false],
-    [["manage_fleet_maintenance"], true], [["manage_fleet"], true], [["administer_department"], true],
+    // Reading Fleet needs a Fleet permission (canReadFleet); an administrator holds view_fleet through
+    // the role and sees costs through administer_department.
+    [["manage_fleet_maintenance"], true], [["manage_fleet"], true], [["administer_department", "view_fleet"], true],
   ] as const) {
     for (const [route, url] of [[vehicleRoute, `/api/fleet/vehicles/${V}`], [mobileVehicleRoute, `/api/mobile/fleet/vehicles/${V}`]] as const) {
       const db = createDb(fleet());

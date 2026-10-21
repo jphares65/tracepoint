@@ -38,8 +38,10 @@ test("the runtime pool returns DATE columns as the stored calendar day in every 
       assert.equal(rows[0].qualification_date, "2026-09-14", zone);
       assert.deepEqual(rows[0].history, ["2026-09-14", "2024-02-29"], zone);
       assert.equal(JSON.stringify(rows[0].qualification_date), '"2026-09-14"', zone);
-      assert.ok(rows[0].recorded_at instanceof Date, zone);
-      assert.equal(rows[0].recorded_at.toISOString(), "2026-09-14T12:00:00.000Z", zone);
+      // DC2: timestamptz is ISO text with its offset (the server's session zone), the same instant.
+      assert.equal(typeof rows[0].recorded_at, "string", zone);
+      assert.match(rows[0].recorded_at, /^2026-09-1\dT\d\d:00:00[+-]\d\d:\d\d$/, zone);
+      assert.equal(new Date(rows[0].recorded_at).toISOString(), "2026-09-14T12:00:00.000Z", zone);
       assert.equal(rows[1].qualification_date, null, zone);
       assert.equal(rows[1].history, null, zone);
     }

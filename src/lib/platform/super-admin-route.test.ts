@@ -4,30 +4,26 @@ import test from "node:test";
 
 const routePath = "src/app/api/super-admin/route.ts";
 
-test("postgres-mode entitlement reads and writes use the platform administrator functions", async () => {
+// Every provider goes through the platform administrator repository (its
+// functions), never a direct department_features write that authenticated
+// cannot perform.
+test("entitlement reads and writes use the platform administrator repository", async () => {
   const route = await readFile(routePath, "utf8");
   const get = route.slice(route.indexOf("export async function GET"), route.indexOf("export async function PATCH"));
   const patch = route.slice(route.indexOf("export async function PATCH"));
-  const postgresBranch = 'if (process.env.TRACEPOINT_DATA_PROVIDER === "postgres") {';
-
-  // The postgres branch is taken before the tenant-scoped access and the
-  // direct department_features upsert that authenticated cannot perform.
-  assert.ok(get.indexOf(postgresBranch) >= 0 && get.indexOf(postgresBranch) < get.indexOf("resolveSuperAdmin()"));
-  assert.ok(patch.indexOf(postgresBranch) >= 0 && patch.indexOf(postgresBranch) < patch.indexOf(".upsert("));
-  assert.match(get, /platform\.repository\.listEntitlements\(\)/);
-  assert.match(patch, /postgresPatch\(request, platform\.repository\)/);
-
-  const postgresPatch = route.slice(route.indexOf("async function postgresPatch"), route.indexOf("async function resolveSuperAdmin"));
-  assert.match(postgresPatch, /repository\.setEntitlement\(\{ departmentId, featureCode, isEnabled, reason \}\)/);
-  assert.doesNotMatch(postgresPatch, /department_features|department_feature_events/);
-  assert.match(postgresPatch, /typeof body\.isEnabled !== "boolean"/);
-  assert.match(postgresPatch, /"P0002"[\s\S]*status: 404/);
-  assert.match(route, /resolvePlatformAdminAccess\(\)/);
+  assert.match(get, /resolvePlatformAdminAccess\(\)/);
+  assert.match(get, /access\.repository\.listEntitlements\(\)/);
+  assert.match(patch, /resolvePlatformAdminAccess\(\)/);
+  assert.match(patch, /access\.repository\.setEntitlement\(\{/);
+  assert.match(patch, /typeof body\.isEnabled !== "boolean"/);
+  assert.doesNotMatch(route, /from\("department_features"\)|from\("department_feature_events"\)/);
 });
 
-test("supabase-mode entitlement writes keep the existing service-role path", async () => {
+test("entitlement errors map to 404/403 and never return database messages (ADM-32)", async () => {
   const route = await readFile(routePath, "utf8");
   const patch = route.slice(route.indexOf("export async function PATCH"));
-  assert.match(patch, /\.from\("department_features"\)\s*\.upsert\(/);
-  assert.match(patch, /\.from\("department_feature_events"\)\s*\.insert\(/);
+  assert.match(patch, /code === "P0002" \|\| code === "22P02"[\s\S]*status: 404/);
+  assert.match(patch, /code === "42501" \? 403 : 500/);
+  assert.match(route, /unexpectedErrorResponse\(/);
+  assert.doesNotMatch(route, /error\.message/);
 });

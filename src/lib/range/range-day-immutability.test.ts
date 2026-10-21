@@ -7,10 +7,10 @@ import {
 } from "./range-day-immutability.ts";
 import { authorizeRangeWorkspaceMutation } from "./workspace-mutation.ts";
 
-test("recognizes immutable Range Days from both workspace field spellings", () => {
+test("only a closed Range Day is immutable; a Ready packet is not final (RNG-03)", () => {
   assert.equal(isImmutableRangeDay({ status: "Completed" }), true);
-  assert.equal(isImmutableRangeDay({ packetStatus: "Ready" }), true);
-  assert.equal(isImmutableRangeDay({ packet_status: "READY" }), true);
+  assert.equal(isImmutableRangeDay({ packetStatus: "Ready" }), false);
+  assert.equal(isImmutableRangeDay({ packet_status: "READY" }), false);
   assert.equal(isImmutableRangeDay({ status: "Planned", packetStatus: "In Progress" }), false);
 });
 

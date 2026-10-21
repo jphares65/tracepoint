@@ -82,9 +82,12 @@ test('staging image sources include every file the staging Dockerfile and builds
  assert.ok(stagingArchive,'deploy-app staging archive list');
  const stagingMigrationPaths=migrations.match(/\$paths = @\(([^)]*'buildspec\.staging-image\.yml')\)/);
  assert.ok(stagingMigrationPaths,'apply-app-migrations staging path list');
+ // The staging lineage archives the complete scripts tree, which contains these files.
+ const deployBase=deploy.match(/\$archivePaths = @\(([^)]*)\)/);
+ assert.ok(deployBase,'deploy-app base archive list');
  for(const file of ['scripts/mobile-route-image-contract-core.mjs','scripts/test-staging-image-mobile-routes.sh']){
-  assert.ok(stagingArchive[1].includes(`'${file}'`),`deploy-app staging archive includes ${file}`);
-  assert.ok(stagingMigrationPaths[1].includes(`'${file}'`),`migration staging archive includes ${file}`);
+  assert.ok(stagingArchive[1].includes(`'${file}'`)||deployBase[1].includes("'scripts'"),`deploy-app staging archive includes ${file}`);
+  assert.ok(stagingMigrationPaths[1].includes(`'${file}'`)||stagingMigrationPaths[1].includes("'scripts'"),`migration staging archive includes ${file}`);
  }
 });
 

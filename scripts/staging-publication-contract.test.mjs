@@ -31,7 +31,9 @@ test('staging publisher, buildspec, deployment, and workflows share the immutabl
   assert.match(operationsWorkflow, /ACCEPTED_COMMIT: \$\{\{ steps\.request\.outputs\.imageCommit \}\}/);
   assert.match(operationsWorkflow, /--image "\$env:ACCEPTED_COMMIT-aws-native-staging"/);
   assert.match(oidcWorkflow, /ACCEPTED_IMAGE: [0-9a-f]{40}-aws-native-staging/);
-  assert.match(deployApp, /ImageSuffix = '-aws-native-staging'/);
+  // deploy-app takes the tag from the one shared contract, which appends -aws-native-<environment>.
+  assert.match(deployApp, /\$imageTag = Get-ApplicationImageTag -Environment \$Environment -Commit \$commit/);
+  assert.match(await read('scripts/deploy-app-rollout-core.ps1'), /return "\$Commit-aws-native-\$\(\$Environment\.ToLowerInvariant\(\)\)"/);
 });
 
 test('staging image source archive contains the Docker and CodeBuild test inputs', async () => {

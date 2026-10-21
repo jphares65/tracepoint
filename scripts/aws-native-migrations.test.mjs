@@ -1331,7 +1331,8 @@ test("migration versions are unique and 038-047 hold the reconciled lineage with
     assert.ok(names.includes(filename), `${filename} is version ${version}`);
     assert.equal(normalizedSha256(await readFile(new URL(filename, directory), "utf8")), sha256, `${filename} contents are unchanged`);
   }
-  assert.deepEqual(versions, Array.from({ length: 47 }, (_, index) => index + 1), "migrations are 001-047 contiguous");
+  // 048-062 are the defect-remediation sequence renumbered after the staging lineage (database/aws/MANIFEST.json).
+  assert.deepEqual(versions, Array.from({ length: 62 }, (_, index) => index + 1), "migrations are 001-062 contiguous");
   assert.equal(names.find((name) => name.startsWith("042_")), "042_default_module_entitlements.sql", "042 holds the default module entitlements");
   const crlfSha256 = async (filename) => createHash("sha256").update((await readFile(new URL(filename, directory), "utf8")).replace(/\r\n/g, "\n").replace(/\n/g, "\r\n")).digest("hex");
   assert.equal(await crlfSha256("038_agency_documents_template_builder.sql"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a", "038 staging ledger (CRLF archive) hash");

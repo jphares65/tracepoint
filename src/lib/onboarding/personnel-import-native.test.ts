@@ -7,6 +7,7 @@ import pg from "pg";
 import EmbeddedPostgres from "embedded-postgres";
 
 import { localPostgresPort } from "../../test-support/local-postgres-port.mjs";
+import { isAwsNativeSchemaFile } from "../../test-support/aws-native-schema-files.mjs";
 import { supabasePrerequisites } from "../../../scripts/postgres-bootstrap-prerequisites.mjs";
 
 // F1: personnel re-import on the full AWS-native schema (Supabase lineage plus
@@ -29,7 +30,7 @@ before(async () => {
   owner = new pg.Pool({ host: "127.0.0.1", port, user: "postgres", password: "synthetic-local-only", database: databaseName });
   await owner.query(supabasePrerequisites);
   for (const folder of ["supabase/migrations", "database/aws"]) {
-    for (const file of (await readdir(folder)).filter((name) => /^\d+_.+\.sql$/.test(name)).sort()) {
+    for (const file of (await readdir(folder)).filter(isAwsNativeSchemaFile).sort()) {
       await owner.query((await readFile(path.join(folder, file), "utf8")).replace(/^﻿/, ""));
     }
   }

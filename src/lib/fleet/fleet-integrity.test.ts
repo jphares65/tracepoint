@@ -14,6 +14,10 @@ stub(require.resolve("server-only"), {});
 stub(require.resolve("../tracepoint/server-access.ts"), {
   resolveServerAccess: async () => (globalThis as any).__fleetIntegrityAccess,
   accessFailureResponse: () => Response.json({ error: "denied" }, { status: 403 }),
+  hasServerFeature: (context: any, code: string) => (context.enabledFeatures ?? []).includes(code),
+  featureDisabledResponse: (name = "This TracePoint module") => Response.json({ error: `${name} is not enabled for this agency.`, code: "FEATURE_NOT_ENABLED" }, { status: 403 }),
+  hasAnyServerPermission: (context: any, codes: string[]) => context.permissions.includes("administer_department") || codes.some((code) => context.permissions.includes(code)),
+  permissionDeniedResponse: (error: string) => Response.json({ error }, { status: 403 }),
 });
 
 type Row = Record<string, any>;
@@ -105,7 +109,7 @@ const criticalOrder = { id: "wo-critical", department_id: "dept-1", vehicle_id: 
 const checklist = (critical?: string) => ["body", "tires", "lights", "controls", "fluids", "interior"].map((id) => id === critical ? { id, condition: "Critical", note: "Brakes fail" } : { id, condition: "Pass" });
 const fleet = (vehicles: Row[], workOrders: Row[] = []) => ({ fleet_rules: [], fleet_vehicles: vehicles, fleet_work_orders: workOrders, fleet_vehicle_equipment: [], fleet_vehicle_inspections: [], audit_events: [] });
 const params = (value: Row) => ({ params: Promise.resolve(value) as any });
-const signIn = (db: any, permissions: string[]) => { (globalThis as any).__fleetIntegrityAccess = { ok: true, context: { admin: db, db, departmentId: "dept-1", user: { id: "user-1" }, permissions, roleCodes: [], isSuperAdmin: false, isSupportMode: false } }; };
+const signIn = (db: any, permissions: string[]) => { (globalThis as any).__fleetIntegrityAccess = { ok: true, context: { admin: db, db, departmentId: "dept-1", user: { id: "user-1" }, permissions, roleCodes: [], isSuperAdmin: false, isSupportMode: false, enabledFeatures: ["fleet"] } }; };
 
 async function load() {
   const { NextRequest } = await import("next/server");

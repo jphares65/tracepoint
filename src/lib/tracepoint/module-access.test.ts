@@ -73,7 +73,7 @@ test("the UI cannot treat platform support as an agency module entitlement", asy
   assert.equal(canAccessModule({ permissions: allPermissions, enabledFeatures: new Set(), featureCode: "firearms", requirement: armoryRequirement }), false);
   assert.match(shell, /return canAccessModule\(\{/);
   assert.doesNotMatch(shell, /isSuperAdmin\s*\|\|\s*canAccessModule/);
-  assert.match(accessHook, /isAgencyFeatureEnabled\(featureSet, featureCode\)/);
+  assert.match(accessHook, /hasEnabledFeatures\(featureSet, \[featureCode\]\)/);
   assert.doesNotMatch(accessHook, /access\.isSuperAdmin\s*\|\|\s*featureSet/);
 });
 
@@ -97,8 +97,8 @@ test("direct Analytics, Range & Training, and Ammunition routes match sidebar po
     readFile("src/app/api/armory/ammunition/route.ts", "utf8"),
   ]);
   assert.match(analyticsLayout, /hasAnyServerPermission\(resolved\.context, \["view_analytics"\]\)/);
-  assert.match(analyticsLayout, /"analytics",\s*"Analytics"/);
-  assert.match(rangeLayout, /"range_training",\s*"Range & Training"/);
+  assert.match(analyticsLayout, /hasEnabledFeatures\(resolved\.context\.enabledFeatures, MODULE_FEATURES\.analytics\)/);
+  assert.match(rangeLayout, /hasEnabledFeatures\(resolved\.context\.enabledFeatures, MODULE_FEATURES\.rangeTraining\)/);
   assert.match(ammunitionLayout, /hasAnyServerPermission\(resolved\.context, \["manage_firearms"\]\)/);
   assert.match(ammunitionLayout, /"ammunition",\s*"Ammunition"/);
   const ammunitionNav = shell.slice(shell.indexOf('label: "Ammunition"'), shell.indexOf('label: "Reconciliation"'));

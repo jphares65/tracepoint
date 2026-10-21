@@ -37,6 +37,10 @@ before(async()=>{
     grant select,update on public.authentication_identity_links to tracepoint_runtime;
     grant select,insert on public.authentication_access_sessions to tracepoint_runtime;
     grant select on public.authentication_session_revocations to tracepoint_runtime;
+    -- Session registration checks the baseline grant as authenticated (no platform administrators here).
+    create function public.is_platform_admin() returns boolean language sql stable as 'select false';
+    grant execute on function public.is_platform_admin() to authenticated;
+    grant select on public.department_memberships to authenticated;
   `);
   await admin.query(await readFile('database/aws/049_account_access_remediation.sql','utf8'));
   runtime=new pg.Pool({host:'127.0.0.1',port,user:'tracepoint_runtime',password:'synthetic-runtime-only',database:'postgres'});

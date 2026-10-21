@@ -1,4 +1,5 @@
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
+import { awsNativeSupersededBridgeMigrations } from "../src/test-support/aws-native-schema-files.mjs";
 import { catalogSql, manifestSql } from "./staging-management-manifest.mjs";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
@@ -68,10 +69,6 @@ try {
     "create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)",
   );
 
-  // The Supabase-bridge copy of the module entitlement seed. AWS-native
-  // environments receive it as database/aws/042 (tracepoint_auth.subject_id()
-  // instead of auth.uid()); here tracepoint_auth does not exist yet.
-  const awsNativeSupersededBridgeMigrations = new Set(["202610120001_default_module_entitlements.sql"]);
   for (const file of migrationFiles) {
     if (awsNativeSupersededBridgeMigrations.has(file)) {
       console.log(`Skipping ${file} (superseded by database/aws/042 on AWS-native environments)`);

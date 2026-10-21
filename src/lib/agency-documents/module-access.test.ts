@@ -38,5 +38,5 @@ test("Agency Documents pages and navigation are gated by the module", async () =
   ]);
   assert.match(layout, /hasAnyServerPermission\(resolved\.context, \[\s+"view_agency_documents",\s+"generate_agency_documents",\s+"manage_document_templates",\s+\]\)/);
   assert.match(layout, /if \(agencyDocumentsDisabledResponse\(resolved\.context\)\) \{\s+redirect\("\/"\);/);
-  assert.match(shell, /label: "Agency Documents",\s+href: "\/agency-documents",\s+icon: FileText,\s+featureCode: MODULE_FEATURE\.AGENCY_DOCUMENTS,/);
+  assert.match(shell, /label: "Agency Documents",\s+href: "\/agency-documents",\s+icon: FileText,\s+features: \[MODULE_FEATURE\.AGENCY_DOCUMENTS\],/);
 });
