@@ -24,7 +24,27 @@ The first attempt (tooling `75499335`) built and scanned the image and accepted 
 rerun's `status` confirmed 001–045 applied and 046 pending. Because ECR tags are immutable, a rerun
 could not push the tag again; the release now reuses an image whose exact tag already exists.
 
-The authenticated checks below are still to do.
+Authenticated checks, 2026-10-21 UTC, Demo Township PD synthetic data:
+- `/api/qualifications` returns `qualificationDate: "2026-09-14"` (was `"2026-09-14T00:00:00.000Z"`).
+- **Default off:** before enabling, `/api/agency-documents/templates` returned 403
+  `FEATURE_NOT_ENABLED` and `/agency-documents` redirected home.
+- **Enabled for Demo Township PD only** through `PATCH /api/super-admin` as platform admin (01:44:35
+  UTC, both calls 200). John Doe then sees Administration → Agency Documents, and templates return
+  200 (`601d47e3…` v2, `43794618…` v1).
+- **Qualification picker:** `670f30ba…` is labelled `09/14/2026` (was "Undated").
+- **Generation:** review mode fills Qualification Date `09/14/2026`; the "no valid date recorded"
+  failure is gone. The remaining missing fields are the template's manual inputs.
+
+Issues found during the checks:
+- **Wrong-agency toggles.** `/super-admin` always preselected the first agency (AWS Native
+  Acceptance `84b7ae99…`), whatever agency's Support Mode banner was shown. Two toggles made
+  "for Demo Township" were saved for `84b7ae99…`; the stray change was reverted at 01:44:35.
+  Fixed in `6dcbc685`, which preselects the active or Support Mode agency; not deployed yet.
+- **Home "sources unavailable".** Internal loopback fetches fail because Fargate overrides
+  `HOSTNAME`. This predates the release (revision 187 had it too). Fixed separately in `3480cae0`
+  on `claude/fix-notifications-loopback-bind`; not deployed.
+- **In-app browser sign-in.** One Cognito callback returned `authorization_rejected`. A fresh
+  sign-in worked, and Edge worked throughout.
 
 ### Release contents
 
