@@ -85,4 +85,93 @@ begin
 end;
 $$;
 
+-- RNG-01 correction history must survive a writer that does not keep it. The
+-- previous image's PUT /api/pilot/range-workspace rebuilds the document from
+-- six collections, so during a rollback or a mixed deployment its next save
+-- would drop workspace.resultRevisions, and its own corrections would leave no
+-- revision. Before each update the stored history is kept in front of what the
+-- write sends (append-only: entries already stored keep their stored value;
+-- new entries are appended). Every stored result or malfunction the write
+-- changes or removes without a sent revision of that stored version gets one,
+-- marked recordedBy = database, by the session subject. The current image
+-- sends those revisions itself, so its writes are stored unchanged. Removals
+-- stay removals.
+create or replace function public.keep_range_result_revisions()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public, tracepoint_auth
+as $$
+declare
+  v_old jsonb := coalesce(old.workspace, '{}'::jsonb);
+  v_new jsonb := new.workspace;
+  v_history jsonb;
+  v_added jsonb;
+  v_at text;
+  v_actor uuid;
+  v_collection text;
+  v_before jsonb;
+  v_after jsonb;
+  v_item jsonb;
+  v_current jsonb;
+  v_id text;
+begin
+  if jsonb_typeof(v_new) is distinct from 'object' then return new; end if;
+  v_history := public.range_workspace_collection(v_old, 'resultRevisions', 'result_revisions');
+  if jsonb_typeof(v_history) is distinct from 'array' then v_history := '[]'::jsonb; end if;
+
+  select coalesce(jsonb_agg(i.entry order by i.ord), '[]'::jsonb) into v_added
+  from jsonb_array_elements(case when jsonb_typeof(v_new -> 'resultRevisions') = 'array'
+    then v_new -> 'resultRevisions' else '[]'::jsonb end) with ordinality i(entry, ord)
+  where not exists (
+    select 1 from jsonb_array_elements(v_history) h(entry)
+    where h.entry = i.entry or (jsonb_typeof(i.entry -> 'id') = 'string' and h.entry -> 'id' = i.entry -> 'id'));
+
+  v_at := to_char(new.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+  v_actor := coalesce(tracepoint_auth.subject_id(), new.updated_by_user_id);
+  foreach v_collection in array array['results', 'malfunctions'] loop
+    v_before := public.range_workspace_collection(v_old, v_collection,
+      case v_collection when 'results' then 'drill_run_results' else 'firearm_malfunctions' end);
+    v_after := public.range_workspace_collection(v_new, v_collection,
+      case v_collection when 'results' then 'drill_run_results' else 'firearm_malfunctions' end);
+    if jsonb_typeof(v_before) is distinct from 'array' then continue; end if;
+    if jsonb_typeof(v_after) is distinct from 'array' then v_after := '[]'::jsonb; end if;
+    for v_item in select b.item from jsonb_array_elements(v_before) with ordinality b(item, ord)
+      where jsonb_typeof(b.item) = 'object' order by b.ord loop
+      v_id := case when jsonb_typeof(v_item -> 'id') = 'string' then btrim(v_item ->> 'id') else '' end;
+      select a.item into v_current from jsonb_array_elements(v_after) with ordinality a(item, ord)
+      where jsonb_typeof(a.item) = 'object' and case when v_id <> ''
+        then jsonb_typeof(a.item -> 'id') = 'string' and btrim(a.item ->> 'id') = v_id
+        else a.item = v_item end
+      order by a.ord limit 1;
+      if v_current is not null and v_current = v_item then continue; end if;
+      if exists (select 1 from jsonb_array_elements(v_added) r(entry)
+        where r.entry -> 'previous' = v_item and r.entry ->> 'collection' = v_collection) then continue; end if;
+      v_added := v_added || jsonb_build_array(jsonb_build_object(
+        'id', 'revision-' || v_at || '-db-' || (jsonb_array_length(v_history) + jsonb_array_length(v_added)),
+        'collection', v_collection,
+        'recordId', v_id,
+        'rangeDayId', case when jsonb_typeof(coalesce(nullif(v_item -> 'rangeDayId', 'null'::jsonb), v_item -> 'range_day_id')) = 'string'
+          then btrim(coalesce(nullif(v_item -> 'rangeDayId', 'null'::jsonb), v_item -> 'range_day_id') #>> '{}') else '' end,
+        'replacedById', case when v_current is null then '' else v_id end,
+        'revisedAt', v_at,
+        'revisedByUserId', v_actor,
+        'recordedBy', 'database',
+        'previous', v_item));
+    end loop;
+  end loop;
+
+  if (v_history || v_added) = '[]'::jsonb and not (v_new ? 'resultRevisions') then return new; end if;
+  if v_new -> 'resultRevisions' is distinct from v_history || v_added then
+    new.workspace := v_new || jsonb_build_object('resultRevisions', v_history || v_added);
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.keep_range_result_revisions() from public, anon, authenticated, service_role;
+drop trigger if exists pilot_range_workspaces_keep_result_revisions on public.pilot_range_workspaces;
+create trigger pilot_range_workspaces_keep_result_revisions
+before update on public.pilot_range_workspaces
+for each row execute function public.keep_range_result_revisions();
+
 commit;

@@ -547,6 +547,12 @@ try {
     await client.query("rollback").catch(() => {});
     throw new Error(`AWS-native fleet audit outbox delivery failed: ${error.message}`, { cause: error });
   }
+  try {
+    await client.query(await readFile("scripts/validate-local-rollback-json-preservation.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native rollback JSON preservation failed: ${error.message}`, { cause: error });
+  }
 
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {
