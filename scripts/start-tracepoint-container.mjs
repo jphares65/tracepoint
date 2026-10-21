@@ -1,4 +1,4 @@
-import { validateTracePointRuntimeConfig } from "./validate-tracepoint-runtime-config.mjs";
+import { bindAllInterfaces, validateTracePointRuntimeConfig } from "./validate-tracepoint-runtime-config.mjs";
 
 try {
   validateTracePointRuntimeConfig();
@@ -7,4 +7,5 @@ try {
   process.exit(1);
 }
 
+bindAllInterfaces();
 await import("./server.js");

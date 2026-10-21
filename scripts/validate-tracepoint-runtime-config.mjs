@@ -64,6 +64,14 @@ function validateAwsNative(environment) {
   }
   if (missing.length || invalid.length) throw new Error(`TracePoint AWS-native runtime configuration is invalid (missing: ${[...new Set(missing)].join(', ')}; invalid: ${[...new Set(invalid)].join(', ')}).`);
 }
+// Fargate (awsvpc) replaces the image's HOSTNAME=0.0.0.0 with the task's DNS
+// name, so the Next.js standalone server would listen only on the ENI address.
+// AWS-native notification reads call http://127.0.0.1:$PORT, which then fails
+// with ECONNREFUSED ("fetch failed"). Always listen on every interface.
+export function bindAllInterfaces(environment=process.env) {
+  environment.HOSTNAME = '0.0.0.0';
+  return environment;
+}
 export function validateTracePointRuntimeConfig(environment=process.env) {
   if (environment.TRACEPOINT_RUNTIME_PROVIDER_MODE === 'aws-native' || environment.TRACEPOINT_DATA_PROVIDER === 'postgres') {
     return validateAwsNative(environment);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateTracePointRuntimeConfig } from "./validate-tracepoint-runtime-config.mjs";
+import { readFileSync } from "node:fs";
+import { bindAllInterfaces, validateTracePointRuntimeConfig } from "./validate-tracepoint-runtime-config.mjs";
 
 const valid = {
   SUPABASE_SECRET_KEY: "present",
@@ -101,4 +102,16 @@ test('AWS-native production origin requires SES delivery configuration and no le
  assert.throws(()=>validateTracePointRuntimeConfig({...native,NEXT_PUBLIC_SITE_URL:'https://shadow.tracepointhq.com'}),/NEXT_PUBLIC_SITE_URL/);
  assert.throws(()=>validateTracePointRuntimeConfig({...native,TRACEPOINT_SES_CONFIGURATION_SET:''}),/TRACEPOINT_SES_CONFIGURATION_SET/);
  assert.throws(()=>validateTracePointRuntimeConfig({...native,NEXT_PUBLIC_SUPABASE_URL:'https://izlkwggluhlhzlumtzes.supabase.co'}),/NEXT_PUBLIC_SUPABASE_URL/);
+});
+
+test("container launcher listens on all interfaces despite the Fargate task hostname", () => {
+  // Regression: staging logged "Local: http://ip-10-40-0-215.ec2.internal:3000", so the
+  // notification route's loopback reads to 127.0.0.1:3000 failed with "fetch failed".
+  const environment = { HOSTNAME: "ip-10-40-0-215.ec2.internal", PORT: "3000" };
+  assert.equal(bindAllInterfaces(environment).HOSTNAME, "0.0.0.0");
+  assert.equal(environment.PORT, "3000");
+  const launcher = readFileSync(new URL("./start-tracepoint-container.mjs", import.meta.url), "utf8");
+  const bind = launcher.indexOf("bindAllInterfaces();");
+  assert.ok(bind > launcher.indexOf("validateTracePointRuntimeConfig();"));
+  assert.ok(bind < launcher.indexOf('await import("./server.js")'));
 });
