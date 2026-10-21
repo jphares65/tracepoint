@@ -91,3 +91,8 @@ DC2 merge note: clean merge on top of ADM-07. The parser change also applies to 
 | `claude/fix-b8a-armory-access` | `de82a0dccd214e88329947d75f82f28a40478cdf` | 052 (edited in place; unapplied anywhere), 053 |
 
 B8a merge note: clean merge on top of DC2. Merged tree: `tsc` 0 errors; application tests 740/744 (the 4 are the sandbox `xlsx` stub); B8a validator suite extended. This is the candidate code commit for staging (`8574db3`).
+| `claude/fix-staging-release-order` | `ef5122f` | — (release tooling) |
+| `claude/fix-safety-hold-rollback` | `9e8c659` | 046 (edited in place) |
+| `claude/fix-b8a-expand-contract` | `06d414b` (code `8c9ac59`) | 042, 046, 052, 053 (edited in place; unapplied anywhere) |
+
+**Final release candidate (code):** `5b9ec98d3dc1304f1f9849c5ae6c279428c92026`, the merge of `claude/fix-b8a-expand-contract`. It does not contain 054 (kept on `claude/fix-b8a-contract-054`). Conflicts in the validator (both new stages kept: safety-hold status guard, then JSON preservation) and in two docs were resolved by keeping both sides.
