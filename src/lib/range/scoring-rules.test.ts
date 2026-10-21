@@ -46,5 +46,5 @@ test("RNG-07: the page lets scorers take attendance and add walk-ups but keeps o
   for (const handler of ["handleAddOfficerToRoster", "handleRemoveOfficerFromRoster", "handleToggleRosterFirearm"]) {
     assert.match(page, new RegExp(`function ${handler}\\([^)]*\\) \\{\\n    if \\(!canEditSelectedRangeDay\\) return;`), handler);
   }
-  assert.match(page, /disabled=\{!canEditSelectedRangeDay\}\n                        onClick=\{\(\) => handleRemoveOfficerFromRoster\(entry\.id\)\}/);
+  assert.match(page, /disabled=\{!canEditSelectedRangeDay\}\s+onClick=\{\(\) =>\s*handleRemoveOfficerFromRoster\(entry\.id\)\s*\}/);
 });

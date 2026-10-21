@@ -163,7 +163,7 @@ test("routes that return other officers' records apply the mapped filter", () =>
 
 test("department-wide summary and scoring routes stay gated to their permissions", () => {
   assert.match(source("../../app/api/readiness/certifications/route.ts"), /hasAnyServerPermission\(context, \["manage_certifications", "view_command_dashboard", "view_analytics"\]\)/);
-  assert.match(source("../../app/api/pilot/performance-summary/route.ts"), /if \(!hasAnyServerPermission\(resolved\.context, TRAINING_ALERTS_FEED_PERMISSIONS\)\) \{/);
+  assert.match(source("../../app/api/pilot/performance-summary/route.ts"), /if \(\s*!hasAnyServerPermission\(resolved\.context, TRAINING_ALERTS_FEED_PERMISSIONS\)\s*\) \{/);
   assert.match(source("../../app/api/command-dashboard/operations/route.ts"), /"view_command_dashboard",\s*"administer_department",/);
   assert.match(source("../../app/api/agency-training/events/[eventId]/report/route.ts"), /if \(!hasAnyServerPermission\(context, \["manage_training"\]\)\) \{/);
   for (const route of ["../../app/api/mobile/range-workspace/route.ts", "../../app/api/mobile/range-days/route.ts", "../../app/api/mobile/range-days/[rangeDayId]/route.ts"]) {

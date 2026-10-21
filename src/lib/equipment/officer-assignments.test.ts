@@ -70,5 +70,5 @@ test("EQP-01: the equipment page and exports resolve holders through the separat
   assert.doesNotMatch(page, /asset\.assigned_location \?\? "Unassigned"/);
   const exports = await readFile("src/app/settings/import-export/page.tsx", "utf8");
   assert.match(exports, /\.\.\.\(assetsPayload\.inactiveHolders \?\? \[\]\)/);
-  assert.match(exports, /\.\.\.\(equipmentData\.inactiveHolders \?\? \[\]\)/);
+  assert.match(exports, /\.\.\.(\(equipmentData\.inactiveHolders \?\? \[\]\)|reportRecords\(equipmentData\.inactiveHolders\))/);
 });
