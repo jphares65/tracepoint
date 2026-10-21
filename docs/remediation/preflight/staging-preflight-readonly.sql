@@ -1,5 +1,6 @@
 -- TracePoint staging preflight: read-only kit (docs/remediation/preflight/README.md).
--- Candidate code commit 70717ba (046 and 053 differ from 8574db3). Pending set: database/aws 038-046 and 048-053 (no 047).
+-- Final candidate code commit 5b9ec98 (042, 046 and 052 differ from 70717ba; 046 and 053 differ from 8574db3).
+-- Pending set: database/aws 038-046 and 048-053 (no 047, no 054).
 -- Every statement below is a SELECT. Each gate runs in its own
 -- `begin transaction read only; ... rollback;` block, so an error in one gate
 -- does not hide the others. Nothing is written: no temporary tables, no
@@ -23,7 +24,7 @@ begin transaction read only;
 \echo '-- G2.1 ledger rows (expect 001-037 before apply; 001-046 and 048-053 after)'
 select version, filename, content_sha256, applied_at, application_git_sha, environment, application_context, is_baseline
 from public.tracepoint_aws_schema_migrations order by version;
-\echo '-- G2.2 each repository file at 70717ba against the ledger (sha256 of the file bytes, as the runner computes)'
+\echo '-- G2.2 each repository file at 5b9ec98 against the ledger (sha256 of the file bytes, as the runner computes)'
 \echo '--      GO before apply: 001-037 "applied, hash matches"; 038-046,048-053 "pending"; no DRIFT, no unexpected row'
 \echo '--      GO after apply: every row "applied, hash matches"'
 with expected(version, filename, sha256) as (values
@@ -68,16 +69,16 @@ with expected(version, filename, sha256) as (values
   (39, '039_account_access_remediation.sql', '041a0a0a2f1ee3113d5e2ee9fc0bdf972f5f6cc652db7df2531a685e4c3a8162'),
   (40, '040_fleet_field_write_authorization.sql', '6746a6b6e6b82b2953a3e8723965e3077a5a931099ba5f4d3afdf2d90685a9c0'),
   (41, '041_equipment_self_custody.sql', '7c1cc8aac0e83314c0e3ab553fcb412fd9576ec6999e5922fe1b6132f641a604'),
-  (42, '042_range_packet_ready_is_not_final.sql', '7f645286aadf9e7985c8cbf59b88e95177ff30e0afd1f6b9105cb55748ad6e7c'),
+  (42, '042_range_packet_ready_is_not_final.sql', '3dee6dcb1ed3fadf7c4b9b35e0cd10065b7cd6b2b57065a4d8909b9dfce44707'),
   (43, '043_fleet_inspection_audit_outbox.sql', 'e6916dbccc80a600ee39a2cffbe268674558b7a8ca72fa4825e3d545e6a690c1'),
   (44, '044_personnel_import_preservation.sql', '78895dd9f0fd5bf85f60a4a3cd2b4f5c6eeb172b6596cea4e034cba18d7c7655'),
   (45, '045_fleet_inspection_eligibility.sql', '8f55e6c366736fe73aeffd31e742582f4a57c81965bfc2d698afcc57bb617aad'),
-  (46, '046_fleet_safety_hold_clearance.sql', 'c00da25ed9da8922db4845f9426895f2424ea9b01429bc843c9f2dbb8c4afb6f'),
+  (46, '046_fleet_safety_hold_clearance.sql', '5f4916fdbd8969e1da5ad176fe995b31e5d2ff1b1a7e326fbba7d4a2369a6991'),
   (48, '048_training_record_visibility.sql', '04fc6a4629ce3090af17925971da513e55fd6a4a0bfa1ff16600f91b862e2322'),
   (49, '049_equipment_separated_holder.sql', 'd3e6f807623a317f134a06861ac894e1a82ad3a42dfe35798b980bbb0e69b3fc'),
   (50, '050_training_closeout_records.sql', '7a58352487d58216f6e5dd7af704727d615d05feff6225dfa3408a654296ef9d'),
   (51, '051_range_instructor_line_actions.sql', '967a228e5098d2621e6f997861d96dced0f05c077b5819b490acc0b16d52986f'),
-  (52, '052_armory_separation_of_duties.sql', 'dd12683cc38a37c24b49a62d17cca66dc652e2535aba3bce521f7eafccae2a65'),
+  (52, '052_armory_separation_of_duties.sql', '798422b938cde2998c92a137a357c6d9abc4b89b42983c69d1a8ef75b1ae76fd'),
   (53, '053_armory_audit_and_access.sql', '76f6af92b373f89051473064581bd9e71f0935209749045ce1a357324800067c')
 ), ledger as (
   select version, filename, content_sha256 from public.tracepoint_aws_schema_migrations
@@ -85,7 +86,7 @@ with expected(version, filename, sha256) as (values
 select coalesce(e.version, l.version) as version, coalesce(e.filename, l.filename) as filename,
   case
     when l.version is null then 'pending'
-    when e.version is null then 'DRIFT: ledger row has no file at 70717ba'
+    when e.version is null then 'DRIFT: ledger row has no file at 5b9ec98'
     when l.filename is distinct from e.filename then 'DRIFT: filename differs'
     when l.content_sha256 is distinct from e.sha256 then 'DRIFT: hash differs'
     else 'applied, hash matches' end as state,
@@ -135,23 +136,23 @@ with expected(version, filename, sha256) as (values
   (39, '039_account_access_remediation.sql', '041a0a0a2f1ee3113d5e2ee9fc0bdf972f5f6cc652db7df2531a685e4c3a8162'),
   (40, '040_fleet_field_write_authorization.sql', '6746a6b6e6b82b2953a3e8723965e3077a5a931099ba5f4d3afdf2d90685a9c0'),
   (41, '041_equipment_self_custody.sql', '7c1cc8aac0e83314c0e3ab553fcb412fd9576ec6999e5922fe1b6132f641a604'),
-  (42, '042_range_packet_ready_is_not_final.sql', '7f645286aadf9e7985c8cbf59b88e95177ff30e0afd1f6b9105cb55748ad6e7c'),
+  (42, '042_range_packet_ready_is_not_final.sql', '3dee6dcb1ed3fadf7c4b9b35e0cd10065b7cd6b2b57065a4d8909b9dfce44707'),
   (43, '043_fleet_inspection_audit_outbox.sql', 'e6916dbccc80a600ee39a2cffbe268674558b7a8ca72fa4825e3d545e6a690c1'),
   (44, '044_personnel_import_preservation.sql', '78895dd9f0fd5bf85f60a4a3cd2b4f5c6eeb172b6596cea4e034cba18d7c7655'),
   (45, '045_fleet_inspection_eligibility.sql', '8f55e6c366736fe73aeffd31e742582f4a57c81965bfc2d698afcc57bb617aad'),
-  (46, '046_fleet_safety_hold_clearance.sql', 'c00da25ed9da8922db4845f9426895f2424ea9b01429bc843c9f2dbb8c4afb6f'),
+  (46, '046_fleet_safety_hold_clearance.sql', '5f4916fdbd8969e1da5ad176fe995b31e5d2ff1b1a7e326fbba7d4a2369a6991'),
   (48, '048_training_record_visibility.sql', '04fc6a4629ce3090af17925971da513e55fd6a4a0bfa1ff16600f91b862e2322'),
   (49, '049_equipment_separated_holder.sql', 'd3e6f807623a317f134a06861ac894e1a82ad3a42dfe35798b980bbb0e69b3fc'),
   (50, '050_training_closeout_records.sql', '7a58352487d58216f6e5dd7af704727d615d05feff6225dfa3408a654296ef9d'),
   (51, '051_range_instructor_line_actions.sql', '967a228e5098d2621e6f997861d96dced0f05c077b5819b490acc0b16d52986f'),
-  (52, '052_armory_separation_of_duties.sql', 'dd12683cc38a37c24b49a62d17cca66dc652e2535aba3bce521f7eafccae2a65'),
+  (52, '052_armory_separation_of_duties.sql', '798422b938cde2998c92a137a357c6d9abc4b89b42983c69d1a8ef75b1ae76fd'),
   (53, '053_armory_audit_and_access.sql', '76f6af92b373f89051473064581bd9e71f0935209749045ce1a357324800067c')
 ), ledger as (
   select version, filename, content_sha256 from public.tracepoint_aws_schema_migrations
 )
 select
   (select count(*) from ledger) as ledger_rows,
-  (select count(*) from ledger l join expected e using (version) where l.filename = e.filename and l.content_sha256 = e.sha256) as rows_matching_70717ba,
+  (select count(*) from ledger l join expected e using (version) where l.filename = e.filename and l.content_sha256 = e.sha256) as rows_matching_5b9ec98,
   (select count(*) from ledger l left join expected e using (version) where e.version is null or l.filename is distinct from e.filename or l.content_sha256 is distinct from e.sha256) as drift_rows,
   (select count(*) from expected e where not exists (select 1 from ledger l where l.version = e.version)) as pending_files,
   (select count(*) from ledger where version = 47) as rows_for_047,
@@ -226,7 +227,7 @@ from (values
   ('040,041,043,045,046,053', 'function', 'tracepoint_auth.department_id()'),
   ('043,046', 'function', 'tracepoint_auth.is_platform_supporting(uuid)'),
   ('039,044', 'function', 'tracepoint_auth.prepare_cognito_membership_operation(uuid,text,uuid,uuid)'),
-  ('039,040,041,043,044,045,046,048,049,051,052,053', 'function', 'tracepoint_auth.subject_id()'),
+  ('039,040,041,042,043,044,045,046,048,049,051,052,053', 'function', 'tracepoint_auth.subject_id()'),
   ('044', 'function', 'public.update_cognito_personnel_import(uuid,uuid,text,text,text,text,text,text,text)'),
   ('049', 'function', 'public.validate_equipment_asset_assignment()'),
   ('048,050', 'relation', 'public.agency_training_attendees'),
@@ -263,8 +264,9 @@ from (values
   ('052', 'relation', 'public.off_duty_firearm_requests'),
   ('052,053', 'relation', 'public.personal_rifle_status_history'),
   ('052,053', 'relation', 'public.personal_rifles'),
-  ('048,051', 'relation', 'public.pilot_range_workspaces'),
-  ('044,049,053', 'relation', 'public.profiles'),
+  ('052', 'relation', 'public.pilot_ammunition_workspaces'),
+  ('042,048,051', 'relation', 'public.pilot_range_workspaces'),
+  ('044,049,052,053', 'relation', 'public.profiles'),
   ('048,051', 'relation', 'public.qualification_results'),
   ('048', 'relation', 'public.range_day_roster'),
   ('042', 'relation', 'public.range_days'),
@@ -294,7 +296,9 @@ from (values
   ('training_certifications.source_training_event_id'), ('training_certifications.source_training_attendee_id'),
   ('agency_training_events.starts_at'), ('agency_training_events.reopened_at'), ('departments.timezone'),
   ('attachments.entity_key'), ('attachments.uploaded_by_user_id'), ('qualification_results.officer_user_id'),
-  ('pilot_range_workspaces.workspace'), ('pilot_range_workspaces.updated_at'),
+  ('pilot_range_workspaces.workspace'), ('pilot_range_workspaces.updated_at'), ('pilot_range_workspaces.updated_by_user_id'),
+  ('pilot_ammunition_workspaces.department_id'), ('pilot_ammunition_workspaces.workspace'), ('pilot_ammunition_workspaces.updated_by'),
+  ('profiles.full_name'), ('profiles.email'),
   ('notification_events.kind'), ('notification_events.detail'), ('notification_events.source_created_at'),
   ('notification_email_queue.status'), ('notification_email_queue.notification_key')
 ) c(name)
@@ -307,7 +311,7 @@ where t.schemaname = 'public' and t.tablename in ('agency_training_attendees','a
   'ammunition_reconciliations','attachments','audit_events','drill_run_results','equipment_asset_assignments','equipment_assets','firearm_status_history',
   'fleet_rules','fleet_vehicle_equipment','fleet_vehicle_inspections','fleet_vehicles','fleet_work_orders','off_duty_firearm_requests',
   'personal_rifle_status_history','personal_rifles','profiles','qualification_results','range_day_roster','range_packets',
-  'remedial_training_recommendations','training_certifications','pilot_range_workspaces')
+  'remedial_training_recommendations','training_certifications','pilot_range_workspaces','pilot_ammunition_workspaces')
 union all
 select 'function', p.oid::regprocedure::text, pg_get_userbyid(p.proowner), pg_get_userbyid(p.proowner) = 'tracepoint_migrator'
 from pg_proc p
@@ -324,7 +328,7 @@ order by 4, 1, 2;
 \echo '-- G3.6 grantors of the privileges 039 and 052 REVOKE. A REVOKE by the owner removes only grants the owner made: any row with'
 \echo '--      grantor <> owner means that grant SURVIVES the migration (the B8a after-check would then fail). GO: grantor_is_owner true on the'
 \echo '--      personal_rifle_status_history and create_department_with_owner rows. firearm_status_history rows are context only: 053 at'
-\echo '--      70717ba keeps the 037 grants (a 053 that revokes them would make those rows required too).'
+\echo '--      5b9ec98 keeps the 037 grants (a 053 that revokes them would make those rows required too).'
 select c.relname as object, pg_get_userbyid(c.relowner) as owner, pg_get_userbyid(a.grantor) as grantor, pg_get_userbyid(a.grantee) as grantee,
   a.privilege_type, a.grantor = c.relowner as grantor_is_owner
 from pg_class c cross join lateral aclexplode(c.relacl) a
@@ -341,7 +345,7 @@ order by 1, 4, 5;
 \echo '-- G3.7 pre-existing policies that 048/049/051/052 drop by name and replace (053 row: context). GO before apply: every row present = true.'
 \echo '--      A false row means staging uses another name: that old policy would stay next to the new one (permissive policies OR'
 \echo '--      together), so the TV/B8a narrowing would not take effect. After apply: the 048 "member" rows are false;'
-\echo '--      attachments_select / profiles / ammunition_reconciliations_update are true (recreated); the 053 row stays true (70717ba keeps it).'
+\echo '--      attachments_select / profiles / ammunition_reconciliations_update are true (recreated); the 053 row stays true (5b9ec98 keeps it).'
 select r.migration, r.table_name, r.policy_name,
   exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = r.table_name and p.policyname = r.policy_name) as present
 from (values
@@ -675,7 +679,7 @@ begin transaction read only;
 \echo '-- A.1 046 baseline audit rows (must equal the G4a baseline_cleared total recorded before apply) and vehicles marked cleared'
 select (select count(*) from public.audit_events where details ? 'baseline' and action = 'fleet_safety_hold_cleared') as baseline_audit_rows,
   (select count(*) from public.fleet_vehicles v where to_jsonb(v) ->> 'safety_hold_cleared_at' is not null) as vehicles_with_clearance;
-\echo '-- A.2 functions and triggers created by 039-053 (before apply: false/0; after: all true and the counts shown)'
+\echo '-- A.2 functions and triggers created by 039-053 (before apply: false/0; after: all true and the counts shown; 12 triggers)'
 select f.name, to_regprocedure(f.name) is not null as present
 from (values
   ('tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)'),
@@ -687,16 +691,18 @@ from (values
   ('public.range_workspace_scorer_roster_change_allowed(jsonb,jsonb)'),
   ('public.guard_off_duty_request_self_decision()'), ('public.guard_personal_rifle_self_review()'),
   ('public.record_personal_rifle_status_history()'), ('public.guard_ammunition_reconciliation_certifier()'),
-  ('public.change_firearm_status(uuid,uuid,text,text,text)'), ('public.armory_member_identities(uuid,uuid[])')
+  ('public.change_firearm_status(uuid,uuid,text,text,text)'), ('public.armory_member_identities(uuid,uuid[])'),
+  ('public.keep_range_result_revisions()'), ('public.guard_fleet_safety_hold_status()'), ('public.keep_ammunition_workspace_actors()')
 ) f(name) order by 2, 1;
 select t.tgrelid::regclass::text as table_name, t.tgname, not t.tgenabled = 'D' as enabled
 from pg_trigger t
 where not t.tgisinternal and t.tgname in ('fleet_vehicles_field_update_guard', 'fleet_vehicle_equipment_field_update_guard',
   'fleet_vehicle_inspections_audit_outbox', 'fleet_vehicles_safety_hold_clearance_guard',
   'off_duty_requests_self_decision_guard', 'personal_rifles_self_review_guard', 'ammunition_reconciliations_certifier_guard',
-  'personal_rifles_status_history', 'personal_rifles_status_history_created')
+  'personal_rifles_status_history', 'personal_rifles_status_history_created',
+  'pilot_range_workspaces_keep_result_revisions', 'fleet_vehicles_safety_hold_status_guard', 'pilot_ammunition_workspaces_keep_actors')
 order by 1, 2;
-\echo '-- A.3 B8/B8a: 3 B8 guard triggers + 2 history triggers above. After apply at 70717ba: rifle_history_insert false, firearm_history_insert'
+\echo '-- A.3 B8/B8a: 3 B8 guard triggers + 2 history triggers above. After apply at 5b9ec98: rifle_history_insert false, firearm_history_insert'
 \echo '--      true (037 grant kept), rifle_history_update_or_delete false, firearm_history_update_or_delete true, workflow_note null at rest (0)'
 select has_table_privilege('authenticated', 'public.personal_rifle_status_history', 'insert') as rifle_history_insert,
   has_table_privilege('authenticated', 'public.firearm_status_history', 'insert') as firearm_history_insert,
@@ -714,6 +720,27 @@ select c.name, exists (select 1 from information_schema.columns ic where ic.tabl
   and ic.table_name = split_part(c.name, '.', 1) and ic.column_name = split_part(c.name, '.', 2)) as present
 from (values ('fleet_vehicles.safety_hold_cleared_at'), ('fleet_vehicles.safety_hold_cleared_by'), ('fleet_vehicles.safety_hold_clearance_reason'),
   ('fleet_audit_outbox.work_order_id'), ('fleet_audit_outbox.delivered_by_existing_audit'), ('training_certifications.superseded_by_training_event_id'), ('personal_rifles.workflow_note')) c(name)
+order by 1;
+\echo '-- A.7 rollback-compatibility triggers added at 5b9ec98 (042 RNG-01 resultRevisions, 046 safety-hold status guard, 052 ARM-21 actors).'
+\echo '--      After apply: 3 rows, every flag t except security_definer (t only for guard_fleet_safety_hold_status) and every *_execute f'
+\echo '--      (a t means a default privilege or later grant reaches the function: inspect). Before apply: function_present f, the rest null/f.'
+select f.migration, f.table_name, f.trigger_name, f.function_name,
+  p.oid is not null as function_present,
+  exists (select 1 from pg_trigger t where not t.tgisinternal and t.tgname = f.trigger_name and t.tgrelid = to_regclass(f.table_name)
+    and t.tgfoid = p.oid and t.tgenabled <> 'D') as trigger_enabled,
+  coalesce(p.proconfig @> array['search_path=pg_catalog, public, tracepoint_auth'], false) as search_path_fixed,
+  p.prosecdef as security_definer,
+  case when p.oid is not null then has_function_privilege('public', p.oid, 'execute') end as public_execute,
+  case when p.oid is not null then has_function_privilege('authenticated', p.oid, 'execute') end as authenticated_execute,
+  case when p.oid is not null then has_function_privilege('anon', p.oid, 'execute') end as anon_execute,
+  case when p.oid is not null and exists (select 1 from pg_roles where rolname = 'tracepoint_runtime')
+    then has_function_privilege('tracepoint_runtime', p.oid, 'execute') end as runtime_execute
+from (values
+  ('042', 'public.pilot_range_workspaces', 'pilot_range_workspaces_keep_result_revisions', 'public.keep_range_result_revisions()'),
+  ('046', 'public.fleet_vehicles', 'fleet_vehicles_safety_hold_status_guard', 'public.guard_fleet_safety_hold_status()'),
+  ('052', 'public.pilot_ammunition_workspaces', 'pilot_ammunition_workspaces_keep_actors', 'public.keep_ammunition_workspace_actors()')
+) f(migration, table_name, trigger_name, function_name)
+left join pg_proc p on p.oid = to_regprocedure(f.function_name)
 order by 1;
 rollback;
 \echo '==== end of kit ===='

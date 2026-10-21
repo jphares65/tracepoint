@@ -31,7 +31,7 @@ $cfg = [ordered]@{
     DbInstance = 'tracepoint-staging-full-aws'; ExpectedEngine = '18.4'
     IntegrationRef = 'origin/claude/integration-defects-20261020'
     KitPath = 'docs/remediation/preflight/staging-preflight-readonly.sql'
-    KitSha256 = '88ac30f3e79542a3138feff25968225100470dce9893dc64294dad27c733225b'
+    KitSha256 = '78a2cc90865ec29c0ecdbf4d5ce41feeec355df824ad29fd2040ad2cef9d6eb3'
     OverridesLimit = 8192; OverridesBudget = 7680
 }
 $productionAccounts = @('193644343389')
@@ -667,6 +667,17 @@ function Test-KitResults($Results, $Release, $ChunkRuns) {
             $ok = $r[0] -eq $false -and [bool]$r[1] -eq $keep -and $r[2] -eq $false -and [bool]$r[3] -eq $keep -and [int]$r[4] -eq 0
             $checks.Add((New-Check 'A.3 history privileges' $(if ($ok) { 'PASS' } else { 'FAIL' }) "rifle insert=$($r[0]) firearm insert=$($r[1]) rifle update/delete=$($r[2]) firearm update/delete=$($r[3]) workflow_note=$($r[4]); this 053 keeps firearm history grants: $keep"))
         }
+        $a7 = (@(& $byLabel 'A.7') | Select-Object -First 1)
+        $bad = @()
+        if ($a7) {
+            $ix = @{}; foreach ($n in @('trigger_name', 'function_present', 'trigger_enabled', 'search_path_fixed', 'public_execute', 'authenticated_execute', 'anon_execute', 'runtime_execute')) { $ix[$n] = [Array]::IndexOf([object[]]$a7.Fields, $n) }
+            foreach ($row in $a7.Rows) {
+                $r = @($row)
+                $granted = @(@('public_execute', 'authenticated_execute', 'anon_execute', 'runtime_execute') | ForEach-Object { $r[$ix[$_]] } | Where-Object { $_ -ne $false })
+                if ($r[$ix['function_present']] -ne $true -or $r[$ix['trigger_enabled']] -ne $true -or $r[$ix['search_path_fixed']] -ne $true -or $granted.Count) { $bad += [string]$r[$ix['trigger_name']] }
+            }
+        }
+        $checks.Add((New-Check 'A.7 rollback-compatibility triggers' $(if ($a7 -and @($a7.Rows).Count -eq 3 -and $bad.Count -eq 0) { 'PASS' } else { 'FAIL' }) "$(if ($a7) { @($a7.Rows).Count } else { 0 }) rows (042, 046, 052); missing, disabled, unfixed search_path or EXECUTE reachable: $($bad -join ', ')"))
         $checks.Add((New-Check 'A.1-A.6' 'REVIEW' 'Compare with README section 3 (after column).'))
     }
     return , $checks
@@ -710,11 +721,16 @@ function Invoke-SelfTest {
             (@($chunks | ForEach-Object { "$($_.Id) L$($_.FirstLine)-$($_.LastLine) $($_.Bytes)B gz64=$($_.GzipBase64.Length) overrides=$($_.OverridesBytes)" }) -join '; ')
         }
         Add-Result 'chunk splitting under a smaller budget' {
-            $chunks = Get-KitChunks $kit.Text 'bootstrap' 6000
+            # One byte below the largest chunk, so that chunk must split again
+            # (a fixed 6000 is infeasible: G2.2 alone needs about 7,300 bytes).
+            $base = Get-KitChunks $kit.Text 'bootstrap' $cfg.OverridesBudget
+            $small = [int](($base | Measure-Object -Property OverridesBytes -Maximum).Maximum) - 1
+            $chunks = Get-KitChunks $kit.Text 'bootstrap' $small
             $joined = ($chunks | ForEach-Object { $kit.Text.Substring($_.Start, $_.End - $_.Start) }) -join ''
             if ($joined -ne $kit.Text) { throw 'split chunks do not reassemble' }
-            if (@($chunks | Where-Object { $_.OverridesBytes -gt 6000 }).Count) { throw 'a split chunk exceeds the budget' }
-            "$($chunks.Count) chunks at 6000"
+            if (@($chunks | Where-Object { $_.OverridesBytes -gt $small }).Count) { throw 'a split chunk exceeds the budget' }
+            if ($chunks.Count -le $base.Count) { throw 'no chunk was split again' }
+            "$($chunks.Count) chunks at $small (from $($base.Count))"
         }
         Add-Result 'tampered chunk detected' {
             $c = Get-KitChunks $kit.Text 'bootstrap' $cfg.OverridesBudget
@@ -762,8 +778,8 @@ function Show-Plan($Chunks, $Release) {
         "aws ecs describe-task-definition --task-definition <newest $($cfg.RunnerFamily) revisions until one has the runner shape> $p"
     )
     if ($RunMigrateDbStatus) {
-        $lines += "aws ecr describe-images --repository-name $($cfg.Repository) --image-ids imageTag=<HEAD> and imageTag=migration-<HEAD>-aws-native-staging $p   (pre-check)"
-        $lines += "scripts/migrate-db.ps1 staging -Action status   (registers one $($cfg.RunnerFamily) revision; runs the runner in status mode)"
+        $lines += "aws ecr describe-images --repository-name $($cfg.Repository) --image-ids imageTag=$($Release.Commit)-aws-native-staging and imageTag=migration-$($Release.Commit)-aws-native-staging $p   (pre-check; skipped unless both exist)"
+        $lines += "git worktree add --quiet --detach <temp> $($Release.Commit); <temp>/scripts/migrate-db.ps1 staging -Action status; git worktree remove --force <temp>   (registers one $($cfg.RunnerFamily) revision; runs the runner in status mode)"
         $lines += "aws ecs describe-tasks / describe-task-definition / logs filter-log-events for the migrate-db task $p"
     }
     $lines += "aws sts get-caller-identity $p   (re-check before launching)"
@@ -832,15 +848,24 @@ try {
         # G2 through the existing path. Its database side is read-only (status
         # only reads the ledger). Its AWS side is not: it registers a new
         # runner revision every time and would build and push a migration image
-        # when migration-<HEAD>-aws-native-staging is missing, so it only runs
-        # when both images already exist.
-        $appImage = Invoke-Aws @('ecr', 'describe-images', '--repository-name', $cfg.Repository, '--image-ids', "imageTag=$($repo.Head)") -AllowFailure
-        $migImage = Invoke-Aws @('ecr', 'describe-images', '--repository-name', $cfg.Repository, '--image-ids', "imageTag=migration-$($repo.Head)-aws-native-staging") -AllowFailure
+        # when migration-<sha>-aws-native-staging is missing, so it only runs
+        # when both images of the release commit already exist. The application
+        # image <sha>-aws-native-staging is the one `deploy-app.ps1 staging
+        # -PublishOnly` publishes; this script never runs that. migrate-db.ps1
+        # judges its own HEAD, so it runs from a temporary detached worktree of
+        # the release commit, removed afterwards.
+        $appTag = "$ReleaseCommit-aws-native-staging"; $migTag = "migration-$ReleaseCommit-aws-native-staging"
+        $appImage = Invoke-Aws @('ecr', 'describe-images', '--repository-name', $cfg.Repository, '--image-ids', "imageTag=$appTag") -AllowFailure
+        $migImage = Invoke-Aws @('ecr', 'describe-images', '--repository-name', $cfg.Repository, '--image-ids', "imageTag=$migTag") -AllowFailure
         if (-not $appImage.Ok -or -not $migImage.Ok) {
-            $checks.Add((New-Check 'G2 migrate-db.ps1 status' 'SKIPPED' "not run: image tag $($repo.Head) present=$($appImage.Ok), migration-$($repo.Head)-aws-native-staging present=$($migImage.Ok). migrate-db.ps1 would refuse or build/push an image."))
+            $checks.Add((New-Check 'G2 migrate-db.ps1 status' 'SKIPPED' "not run: $appTag present=$($appImage.Ok) (from deploy-app.ps1 staging -PublishOnly, separate owner approval), $migTag present=$($migImage.Ok). migrate-db.ps1 would refuse or build/push an image. G2 is evaluated from the kit ledger read below."))
         } else {
-            Write-Host 'Running scripts/migrate-db.ps1 staging -Action status (registers one runner revision).'
-            $out = & (Join-Path $root 'scripts/migrate-db.ps1') staging -Action status *>&1 | ForEach-Object { [string]$_ }
+            $wt = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-preflight-release-' + [guid]::NewGuid().ToString('N'))
+            if ((Invoke-GitText @('worktree', 'add', '--quiet', '--detach', $wt, $ReleaseCommit)).Code -ne 0) { throw "git worktree add of $ReleaseCommit failed." }
+            try {
+                Write-Host "Running scripts/migrate-db.ps1 staging -Action status at $ReleaseCommit (registers one runner revision)."
+                $out = & (Join-Path $wt 'scripts/migrate-db.ps1') staging -Action status *>&1 | ForEach-Object { [string]$_ }
+            } finally { [void](Invoke-GitText @('worktree', 'remove', '--force', $wt)) }
             Save-Evidence 'g2-migrate-db-status.txt' ($out -join [Environment]::NewLine)
             $taskArn = (@($out | ForEach-Object { if ($_ -match '(arn:aws:ecs:us-east-1:559054714699:task/\S+?);') { $Matches[1] } }) | Select-Object -First 1)
             $statusJson = $null
