@@ -32,7 +32,7 @@ Every gate must be satisfied and recorded before the owner approves the staging 
 | Gate | Requirement | Evidence |
 |---|---|---|
 | G1 CI | `Application quality gate` green on the **exact** integration commit to be deployed. All steps must pass: app tests with no file running zero tests, script tests, infra tests, `tsc`, `db:validate-bootstrap`, `next build`. | Run URL and commit SHA |
-| G2 Migration ledger | `migrate-db.ps1 staging -Action status`: ledger present, no drift, **001–037 applied**, exactly the 15 files 038–046 and 048–053 pending (no 047) | Status output |
+| G2 Migration ledger | `migrate-db.ps1 staging -Action status`: ledger present, no drift, **001–037 applied**, exactly the 15 files 038–046 and 048–053 pending (no 047). Needs the published image (§2 step a: ECR and CodeBuild only, no ECS change), so the owner must approve step a before this gate. | Status output |
 | G3 Hard schema dependencies | 028–031 (custody, used by the F6b QR lookup and the custody API) and 033–037 already applied. **All of 038–046 and 048–053 applied before the image.** These fail outright without their migration: 039 (B1 first-login activation); 045 (every QR scan calls `can_submit_fleet_inspection`, F5); 049 (separated holders show as "Unnamed Officer"); 051 (instructor attendance and walk-ups are refused by the trigger); 052 and 053 (rifle actions, firearm status changes and the armory name lookup call database functions that only they create, B8/B8a). **Rollback compatibility:** the previous image also runs on this schema. 053 is expand-only for that reason, and the contract `054` is not in this package (§5a; `RELEASE-SAFETY-rollback-compatibility.md`). | Ledger rows |
 | G4 Data-impact previews (read-only) | Run and record: (a) the 046 safety-hold preview query (F6a record): vehicles newly held when 046 lands; (b) the equipment lifecycle constraint check (§1.4); (c) the date-defect checks Q1–Q9 (hotfix record), including **Q3 queued false-"Expired" emails**; (d) B10: `scripts/qualification-status-snapshot.sql` + `scripts/qualification-status-diff.mjs`, and close out completed range days first; (e) B7: the upcoming-event drift review query (TRN-02); (f) DC2: the R0 session-settings check (`timezone` UTC, `DateStyle` ISO, `IntervalStyle` postgres) and the impact queries in the DC2 record; (g) `notification_email_queue` Pending rows, before and after (DC fixes and the DC2 fingerprint change can add rows). **The email dispatcher stays off.** | Query outputs |
 | G5 Snapshot | Manual RDS snapshot taken and `available` | Snapshot ARN |
@@ -56,7 +56,7 @@ This package can move items to stage 3 only. Nothing in this document moves any 
 
 1. Record the current staging state:
    - ECS task definition revision and image digest: `aws ecs describe-services --cluster tracepoint-staging --services tracepoint-staging`. This is the **rollback target**.
-   - `scripts/migrate-db.ps1 staging -Action status`. Expected: ledger present, 001–037 applied, 038–046 and 048–053 pending (15 files, no 047), no `MIGRATION_DRIFT`.
+   - `scripts/migrate-db.ps1 staging -Action status`. Expected: ledger present, 001–037 applied, 038–046 and 048–053 pending (15 files, no 047), no `MIGRATION_DRIFT`. It refuses until the reviewed image is in ECR, so run it as §2 step b, after `deploy-app.ps1 staging -PublishOnly` (step a). Step a does not change ECS.
 2. Take a manual RDS snapshot of the staging database: `tracepoint-staging-pre-integration-<date>`.
 3. Confirm the migration role owns `public.equipment_assets` and `public.equipment_asset_assignments`, which 041's `SECURITY DEFINER` function requires:
 
@@ -74,6 +74,28 @@ This package can move items to stage 3 only. Nothing in this document moves any 
 5. Run the **baseline** acceptance pass (§4, "before" column) against the current staging image, to confirm each defect reproduces on staging.
 
 ## 2. Migration order (staging only)
+
+**Release sequence.** G3 requires the migrations before the new image serves traffic. `migrate-db.ps1` refuses to run until the reviewed image exists in ECR with a clean scan, so the image is published first and rolled out last. Run every step from one clean checkout whose `HEAD` is the deploy SHA (G1), as `TracePointMigrationStaging`. Do not pass `-ImageCommit`: `migrate-db.ps1` always uses `HEAD`.
+
+| Step | Command | Changes | Expected |
+|---|---|---|---|
+| a. Publish | `.\scripts\deploy-app.ps1 staging -PublishOnly` | ECR only: CodeBuild builds `<sha>-aws-native-staging` (canonical suite and mobile-route contract run in the build); S3 source upload | `PUBLISH ONLY SUCCEEDED - ECS unchanged: staging commit <sha>, image <sha>-aws-native-staging (…@sha256:…)`. Record the digest. `aws ecs describe-services` still shows the §1 revision. |
+| b. Status | `.\scripts\migrate-db.ps1 staging -Action status` | See "Footprint" below | G2: 001–037 applied; 038–046 and 048–053 pending; no `MIGRATION_DRIFT` |
+| c. Apply | `.\scripts\migrate-db.ps1 staging -Action apply`, then `-Action status` again | Database: the 15 pending files | No pending files, no drift |
+| d. Roll out | `.\scripts\deploy-app.ps1 staging` (§3) | ECS: one new task revision; service update | `Reusing existing immutable application image <sha>-aws-native-staging`, then `DEPLOYMENT SUCCEEDED`. The digest equals step a. |
+| e. Acceptance | §4 | — | — |
+
+`054` is not part of this sequence. It needs separate approval after acceptance (§5a).
+
+If step a, b or c fails, ECS is unchanged and the previous image keeps serving. After c, the previous image runs on the migrated schema; this is compatible (below).
+
+**Footprint of `migrate-db.ps1` (status, as well as apply).** Status is read-only in the database: the runner's `status` action only reads the ledger. It is not read-only in AWS. Each run:
+- reads the application image and its scan (read-only);
+- on the first run for a commit, builds `migration-<sha>-aws-native-staging`: it uploads a source archive to the versioned `source/tracepoint-staging-source.zip` (each build is pinned to its own `VersionId`) and runs a CodeBuild build of up to 45 minutes. Later runs reuse that image;
+- on every run, registers a **new revision** of the migration task family (copied from `tracepoint-staging-database-bootstrap:27`, with the migration image digest, the runner command and the migrator database secret);
+- on every run, starts one Fargate task in the service's subnets and security groups, and waits for it to stop.
+
+It never updates the ECS application service. Expect two extra migration task revisions from b and c (three with the post-apply status). They do not affect the application family's rollback targets.
 
 Apply with `scripts/migrate-db.ps1 staging -Action apply`, which applies only the pending files, in order:
 
@@ -107,15 +129,17 @@ All files are idempotent and wrapped in `begin;` and `commit;`.
 
 ## 3. Image deployment (staging only)
 
-1. Build from the exact integration commit with the existing native staging lane:
+This is step d of §2. Run it only after `migrate-db.ps1 staging -Action status` reports no pending files.
+
+1. Roll out the image published in step a, from the same checkout:
 
    ```powershell
    .\scripts\deploy-app.ps1 staging
    ```
 
-   This produces the SHA-tagged `-aws-native-staging` image.
-2. The script already enforces ECS steady state, healthy ALB targets, `/api/health` 200 and the exact image digest, and rolls back automatically on a deployment-safe smoke failure.
-3. Record the new task-definition revision and image digest.
+   It does not rebuild. It reuses the immutable `<sha>-aws-native-staging` image, after checking it again for a clean scan, and registers a task revision that changes only the image.
+2. The script enforces ECS steady state, healthy ALB targets, `/api/health` 200 and the exact image digest. On failure, it rolls back automatically to the revision recorded in §1, as does the ECS circuit breaker. That previous image runs on the migrated 038–053 schema (`RELEASE-SAFETY-rollback-compatibility.md` §2, §4).
+3. Record the new task-definition revision and image digest. The digest must equal the one recorded in step a.
 
 ## 4. Acceptance tests (S1–S10, plus supplementary S11–S24)
 
@@ -157,7 +181,7 @@ The migrations are additive and were designed to stay in place under the previou
 
 | Item | Rollback | Caution |
 |---|---|---|
-| Image (any batch) | Previous task-definition revision (manual, or automatic by `deploy-app.ps1` or the circuit breaker) | **Compatible with 038–053 as packaged** (audit table in `RELEASE-SAFETY-rollback-compatibility.md`). No schema step before the rollback or the re-upgrade. Fleet inspections made while rolled back keep exactly one audit row: 046's delivery links the old image's row (that record §5 has a read-only diagnostic). **Once 054 is applied (§5a)**, a rollback below B8a first needs the forward restore migration in that record §4 step 7. |
+| Image (any batch) | Previous task-definition revision (manual, or automatic by `deploy-app.ps1` or the circuit breaker) | **Compatible with 038–053 as packaged** (audit table in `RELEASE-SAFETY-rollback-compatibility.md`). No schema step before the rollback or the re-upgrade. Fleet inspections made while rolled back keep exactly one audit row: 046's delivery links the old image's row (that record §5 has a read-only diagnostic). **Once 054 is applied (§5a)**, a rollback below B8a first needs the forward restore migration in that record §4 step 9. |
 | B3 under the old image | — | The old web code drops `resultRevisions` on its next pilot save. **Before** an image rollback, export `pilot_range_workspaces.workspace->'resultRevisions'` for the synthetic tenants, and freeze range edits until re-upgrade. |
 | B1/B1a/F1 under the old image | — | 039 fixes the import lifecycle, but the old image's import ignores the Active safeguards. **Pause personnel imports** while rolled back. |
 | B4 under the old image | — | 043's trigger keeps queuing audit entries and holding critical vehicles Out of Service (the safe direction). Pending entries reconcile after re-upgrade (ops SQL in the B4 record). The old image also audits its own inspections; reconciliation links that row instead of writing a second (046). |
@@ -191,7 +215,7 @@ The migrations are additive and were designed to stay in place under the previou
 3. `migrate-db.ps1 staging -Action apply` (054 only).
 4. Verify: `has_table_privilege('authenticated','public.firearm_status_history','insert')` → false; S22a (d) → permission denied.
 
-**After 054, an image rollback below B8a requires the forward restore migration first** (`RELEASE-SAFETY-rollback-compatibility.md` §4 step 7). Every later image must contain 054.
+**After 054, an image rollback below B8a requires the forward restore migration first** (`RELEASE-SAFETY-rollback-compatibility.md` §4 step 9). Every later image must contain 054.
 
 ## 6. Evidence template
 

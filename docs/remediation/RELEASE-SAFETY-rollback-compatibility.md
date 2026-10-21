@@ -18,7 +18,7 @@ Owner directive: "Confirm that the staging deployment's automatic rollback canno
 | Script rollback | `scripts/deploy-app.ps1`, the `catch` after `Test-Deployment` | Steady state, ALB health, `/api/health`, image digest and the staging HTTP smoke test all run. If any of them fails, the script runs `ecs update-service` back to `$previousHealthyTaskArn`. That is the revision running when the deploy started. |
 | ECS circuit breaker | `infra/lib/runtime-stack.ts`: `circuitBreaker: { rollback: true }`, `minHealthyPercent: 100` | If new tasks never become healthy, ECS returns the service to the last completed deployment. During a normal rolling deploy, old and new tasks also serve **together** for a while. |
 | Manual rollback | `deploy-app.ps1 -RollbackTaskDefinitionArn` | Accepts any older ACTIVE revision of the family. Earlier revisions are retained on purpose (`runtime-stack.ts`). |
-| Migration order | `scripts/migrate-db.ps1 -Action apply` → `run-aws-native-migrations.mjs` in the reviewed image | Applies **every** pending `database/aws` file in that image, **before** the new image takes traffic (STAGING-VERIFICATION §2–3). |
+| Migration order | `deploy-app.ps1 -PublishOnly`, then `scripts/migrate-db.ps1 -Action apply` → `run-aws-native-migrations.mjs` in a migration image of the reviewed commit | Applies **every** pending `database/aws` file of that commit, **before** the new image takes traffic (§4; STAGING-VERIFICATION §2–3). |
 
 So the previous image runs on the 038–053 schema in three cases:
 - between the migration and the deploy;
@@ -102,16 +102,20 @@ Raw outputs are in `scratchpad/expand/harness-*.txt`.
 
 ## 4. Release order
 
+The migrations must land before the new image serves traffic. `migrate-db.ps1` refuses to run until the reviewed application image is in ECR with a clean scan. Before this release, `deploy-app.ps1` could only publish **and** roll out in one run. `deploy-app.ps1 -PublishOnly` now stops after the scan-checked publish, before any task registration or ECS change. Run every step from one clean checkout whose `HEAD` is the deploy SHA.
+
 1. Pre-flight and snapshot (STAGING-VERIFICATION §1). Record the current revision: this is the automatic rollback target.
-2. `migrate-db.ps1 staging -Action apply` with the release image: 038–046 and 048–053 (expand). **The release image contains no 054**, so `apply` cannot run the contract step in this release.
-3. `deploy-app.ps1 staging`. If it fails, the script and the circuit breaker return to the previous image, which is compatible per §2.
-4. Acceptance S1–S24 (with S22a amended: direct firearm-history inserts by a manager acting as themselves still succeed until 054).
-5. **Rollback window.** The owner decides when to close it, after the B8a image is verified. Until 054, any image rollback is compatible.
-6. **Contract (separately approved).**
+2. `deploy-app.ps1 staging -PublishOnly`. ECR and CodeBuild only. The previous image keeps serving.
+3. `migrate-db.ps1 staging -Action status`: expect 038–046 and 048–053 pending.
+4. `migrate-db.ps1 staging -Action apply`: 038–046 and 048–053 (expand). **The release commit contains no 054**, so `apply` cannot run the contract step in this release. Then run `-Action status` again: expect nothing pending. From here, the previous image runs on the migrated schema, which is compatible per §2.
+5. `deploy-app.ps1 staging`. It reuses the image from step 2 (immutable tag, scan re-checked) and rolls it out. If it fails, the script and the circuit breaker return to the step 1 revision, which is compatible per §2.
+6. Acceptance S1–S24 (with S22a amended: direct firearm-history inserts by a manager acting as themselves still succeed until 054).
+7. **Rollback window.** The owner decides when to close it, after the B8a image is verified. Until 054, any image rollback is compatible.
+8. **Contract (separately approved).**
    - Merge `claude/fix-b8a-contract-054` and build its image. The code is identical, plus `database/aws/054`. Deploy it: its automatic rollback target is the B8a image, which never writes firearm history directly.
    - Then run `migrate-db.ps1 staging -Action apply` with that image to apply 054.
    - Verify `has_table_privilege('authenticated','public.firearm_status_history','insert')` → false, and re-run S22a (d) expecting permission denied.
-7. **After 054:** an image rollback **below B8a** requires the forward restore migration first:
+9. **After 054:** an image rollback **below B8a** requires the forward restore migration first:
    ```sql
    create policy firearm_status_history_insert_managers on public.firearm_status_history
      for insert to authenticated

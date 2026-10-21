@@ -1,5 +1,24 @@
 Set-StrictMode -Version Latest
 
+# The one application image tag contract. deploy-app.ps1 publishes this tag and
+# migrate-db.ps1 requires it; buildspec.staging-image.yml accepts only the
+# suffixed form, so the two must never compute it separately.
+function Get-ApplicationImageTag {
+    param([Parameter(Mandatory)][ValidateSet('staging', 'production')][string]$Environment, [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit)
+    return "$Commit-aws-native-$($Environment.ToLowerInvariant())"
+}
+
+function Test-CleanImageScan {
+    param([Parameter(Mandatory)]$Scan)
+    if ($Scan.imageScanStatus.status -ne 'COMPLETE') { return $false }
+    $severityCounts = $Scan.imageScanFindings.findingSeverityCounts
+    if ($null -eq $severityCounts) { return $true }
+    foreach ($severity in $severityCounts.PSObject.Properties) {
+        if ([int]$severity.Value -gt 0) { return $false }
+    }
+    return $true
+}
+
 function Wait-ExpectedEcsRolloutCompletion {
     [CmdletBinding()]
     param(

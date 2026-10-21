@@ -16,6 +16,7 @@ $settings = @{
     production = @{ Account='193644343389'; Profile='tracepoint-production'; Role='TracePointMigrationProduction'; Region='us-east-1'; Repository='tracepoint-production' }
 }[$Environment]
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+. (Join-Path $PSScriptRoot 'deploy-app-rollout-core.ps1')
 
 function Invoke-Aws([string[]]$Arguments) {
     $prior = $ErrorActionPreference
@@ -37,11 +38,11 @@ function Get-ReviewedCommit {
     return $commit
 }
 function Assert-ApplicationImage([string]$Commit) {
-    $tag = if ($Environment -eq 'production') { "$Commit-aws-native-production" } else { $Commit }
+    $tag = Get-ApplicationImageTag -Environment $Environment -Commit $Commit
     $image = (Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails | Select-Object -First 1
     if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The reviewed application image is not present in the target ECR repository. Deploy the final application image first.' }
     $scan = Invoke-Aws @('ecr','describe-image-scan-findings','--repository-name',$settings.Repository,'--image-id',"imageDigest=$($image.imageDigest)")
-    if ($scan.imageScanStatus.status -ne 'COMPLETE' -or @($scan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The reviewed application image scan is not clean.' }
+    if (-not (Test-CleanImageScan $scan)) { throw 'The reviewed application image scan is not clean.' }
     return $image.imageDigest
 }
 

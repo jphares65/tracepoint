@@ -152,7 +152,7 @@ Scratch file `b8a/harness.cjs`. Before = `e19e84c` source and schema; after = th
 - **Application:** revert the commit and redeploy. Bridge behaviour is identical either way. **Before 054, no schema step is needed.**
   - The old firearm status route works as at 037, because 053 keeps the grants.
   - The old rifle routes behave as at 037: 500 after saving, because `authenticated` was SELECT-only at 037. On 052 they also leave the history row, which the trigger writes. A retry gets 409, with no duplicate. Shown on real PostgreSQL with the 555f061 routes (`RELEASE-SAFETY-rollback-compatibility.md` §3).
-  - **After 054,** a rollback below B8a needs the forward restore migration first (that record, §4 step 7).
+  - **After 054,** a rollback below B8a needs the forward restore migration first (that record, §4 step 9).
 - **Database (052 edited, 053 new):** the ledger is hash-checked, so use a new forward migration:
   - drop `personal_rifles_status_history` and `personal_rifles_status_history_created`, and drop `record_personal_rifle_status_history()`. `workflow_note` can stay; it is always null.
   - only after 054, and only if the old route code returns: on `firearm_status_history`, re-grant INSERT with `firearm_status_history_insert_managers` (from `202609100001_complete_module_tables.sql`, with `auth.uid()` replaced by `tracepoint_auth.subject_id()`) **and** `grant update, delete` to `authenticated`, which is the exact 037 state. **Do not** re-grant INSERT on `personal_rifle_status_history`: that grant never existed at 037 and would recreate the forgeable B8 policy. (Corrected after the staging rehearsal.)

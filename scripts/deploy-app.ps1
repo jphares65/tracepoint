@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory, Position = 0)][ValidateSet('staging', 'production')][string]$Environment,
     [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
     [ValidatePattern('^[0-9a-fA-F]{40}$')][string]$ImageCommit,
-    [switch]$SkipLocalValidation
+    [switch]$SkipLocalValidation,
+    # Build and scan-check the immutable image, then stop before any ECS change,
+    # so database migrations can be applied before the image serves traffic.
+    [switch]$PublishOnly
 )
 
 # Application-only deployment. This script intentionally does not call CDK or
@@ -19,14 +22,14 @@ $configuration = @{
         Region = 'us-east-1'; Cluster = 'tracepoint-staging'; Service = 'tracepoint-staging'
         Repository = 'tracepoint-staging'; SourceBucket = 'tracepoint-staging-build-source-559054714699'
         SourceKey = 'source/tracepoint-staging-source.zip'; BuildProject = 'tracepoint-staging-image-build'
-        Host = 'https://staging.tracepointhq.com'; ImageSuffix = '-aws-native-staging'
+        Host = 'https://staging.tracepointhq.com'
     }
     production = @{
         Account = '193644343389'; Profile = 'tracepoint-production'; Role = 'TracePointMigrationProduction'
         Region = 'us-east-1'; Cluster = 'tracepoint-production'; Service = 'tracepoint-production'
         Repository = 'tracepoint-production'; SourceBucket = 'tracepoint-production-aws-native-build-source-193644343389'
         SourceKey = 'source/tracepoint-production-aws-native-source.zip'; BuildProject = 'tracepoint-production-aws-native-image-build'
-        Host = 'https://tracepointhq.com'; ImageSuffix = '-aws-native-production'
+        Host = 'https://tracepointhq.com'
     }
 }[$Environment]
 
@@ -152,17 +155,6 @@ function Invoke-Native {
     if ($LASTEXITCODE -ne 0) { throw "$File failed." }
 }
 
-function Test-CleanImageScan {
-    param([Parameter(Mandatory)]$Scan)
-    if ($Scan.imageScanStatus.status -ne 'COMPLETE') { return $false }
-    $severityCounts = $Scan.imageScanFindings.findingSeverityCounts
-    if ($null -eq $severityCounts) { return $true }
-    foreach ($severity in $severityCounts.PSObject.Properties) {
-        if ([int]$severity.Value -gt 0) { return $false }
-    }
-    return $true
-}
-
 function Wait-CleanImageScan {
     param([Parameter(Mandatory)][string]$ImageTag)
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(15)
@@ -246,7 +238,8 @@ function Publish-Image {
         return $existingImage
     }
     $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'public', 'src', 'database/aws', 'database/rehearsal/001_readington_officer_first_login.sql', 'database/rehearsal/002_montville_officer_first_login.sql', 'supabase/migrations', 'scripts/assert-aws-native-provider-reachability.mjs', 'scripts/run-application-tests.mjs', 'scripts/run-aws-native-migrations.mjs', 'scripts/start-tracepoint-container.mjs', 'scripts/validate-tracepoint-runtime-config.mjs')
-    if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
+    # The staging Dockerfile and buildspec run the mobile-route image contract.
+    if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml', 'scripts/mobile-route-image-contract-core.mjs', 'scripts/test-staging-image-mobile-routes.sh') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     $temporaryDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-app-deploy-' + [guid]::NewGuid().ToString('N'))
     $archive = Join-Path $temporaryDirectory 'source.zip'
@@ -387,6 +380,7 @@ function Invoke-PostDeploymentDiagnostics {
     }
 }
 
+if ($PublishOnly -and $RollbackTaskDefinitionArn) { throw '-PublishOnly cannot be combined with -RollbackTaskDefinitionArn.' }
 $deploymentLock = Acquire-DeploymentLock -LockEnvironment $Environment
 try {
 Assert-AwsIdentity | Out-Null
@@ -423,9 +417,13 @@ if ($SkipLocalValidation) {
         throw
     }
 }
-$imageTag = "$commit$($configuration.ImageSuffix)"
+$imageTag = Get-ApplicationImageTag -Environment $Environment -Commit $commit
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
 $imageUri = "${imageRepository}@$($image.imageDigest)"
+if ($PublishOnly) {
+    Write-Host "PUBLISH ONLY SUCCEEDED - ECS unchanged: $Environment commit $commit, image $imageTag ($imageUri)."
+    exit 0
+}
 $registered = Register-ApplicationTaskRevision -CurrentTask (Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn) -ImageUri $imageUri
 $deploymentStarted = $false
 try {
