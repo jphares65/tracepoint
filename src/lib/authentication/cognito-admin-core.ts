@@ -8,6 +8,12 @@ export function isCognitoDirectoryUsername(value:string){
 export class CognitoDirectoryError extends Error{
  constructor(readonly code:"conflict"|"not_found"|"invalid_password"|"invalid_code"|"expired_code"|"throttled"|"unavailable"|"initial_password_required"|"recovery_unavailable"){super("The AWS identity operation could not be completed.");this.name="CognitoDirectoryError";}
 }
+// The user pool can enforce a stricter policy than the application minimum
+// (NEW-ADM-B), so a provider rejection must not read as a generic failure.
+export const COGNITO_POOL_PASSWORD_REJECTED="The sign-in service rejected this password under its own password policy, which can require more characters than the minimum shown. The password was not changed. Choose a longer password and try again.";
+export function cognitoPasswordRejection(error:unknown){
+ return error instanceof CognitoDirectoryError&&error.code==="invalid_password"?COGNITO_POOL_PASSWORD_REJECTED:null;
+}
 export function assertCognitoPasswordResetReady(user:CognitoDirectoryUser){
  if(user.status==="FORCE_CHANGE_PASSWORD")throw new CognitoDirectoryError("initial_password_required");
  if(user.status!=="CONFIRMED"||user.emailVerified!==true)throw new CognitoDirectoryError("recovery_unavailable");
@@ -17,7 +23,6 @@ export interface CognitoAdminDirectory{
  get(username:string):Promise<CognitoDirectoryUser>;
  resendInvitation(email:string,expectedSubject:string):Promise<void>;
  setPermanentPassword(username:string,password:string):Promise<void>;
- markEmailVerified(username:string):Promise<void>;
  beginPasswordReset(username:string):Promise<void>;
  completePasswordReset(username:string,code:string,password:string):Promise<void>;
  disable(username:string):Promise<void>;

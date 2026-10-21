@@ -57,4 +57,22 @@ Assert-Throws -Expected 'within 180 seconds' -Action {
     Wait-ExpectedEcsRolloutCompletion @arguments
 }
 
+# deploy-app.ps1 publishes and migrate-db.ps1 requires this tag. The staging
+# buildspec accepts only the suffixed form; a bare SHA can never be published.
+$sha = 'a' * 40
+$buildspecTag = '^(migration-)?[0-9a-f]{40}-aws-native-staging$'
+if ((Get-ApplicationImageTag -Environment staging -Commit $sha) -ne "$sha-aws-native-staging") { throw 'Staging application image tag regression test failed.' }
+if ((Get-ApplicationImageTag -Environment production -Commit $sha) -ne "$sha-aws-native-production") { throw 'Production application image tag regression test failed.' }
+if ((Get-ApplicationImageTag -Environment Staging -Commit $sha) -cne "$sha-aws-native-staging") { throw 'Application image tag must not depend on parameter case.' }
+if ((Get-ApplicationImageTag -Environment staging -Commit $sha) -notmatch $buildspecTag) { throw 'Staging application image tag does not satisfy the staging buildspec.' }
+Assert-Throws -Expected 'Commit' -Action { Get-ApplicationImageTag -Environment staging -Commit 'latest' }
+Assert-Throws -Expected 'Environment' -Action { Get-ApplicationImageTag -Environment preview -Commit $sha }
+
+$cleanEmpty = '{"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":null}}' | ConvertFrom-Json
+$cleanZero = '{"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"LOW":0}}}' | ConvertFrom-Json
+$dirty = '{"imageScanStatus":{"status":"COMPLETE"},"imageScanFindings":{"findingSeverityCounts":{"LOW":0,"HIGH":1}}}' | ConvertFrom-Json
+$pending = '{"imageScanStatus":{"status":"IN_PROGRESS"},"imageScanFindings":{"findingSeverityCounts":null}}' | ConvertFrom-Json
+if (-not (Test-CleanImageScan $cleanEmpty) -or -not (Test-CleanImageScan $cleanZero)) { throw 'Clean image scan regression test failed.' }
+if ((Test-CleanImageScan $dirty) -or (Test-CleanImageScan $pending)) { throw 'Unclean image scan regression test failed.' }
+
 Write-Host 'deploy-app rollout guard regression tests passed.'

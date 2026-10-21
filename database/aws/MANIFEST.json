@@ -1,0 +1,643 @@
+{
+    "description":  "Allocated AWS-native migration numbers. Entries with status applied/pending must match database/aws byte for byte (sha256Lf over LF text, sha256Crlf over the CRLF archive staging images are built from). Reserved numbers must not have a file until promoted here. Never renumber or edit an entry whose staging or production status is applied.",
+    "authoritativeLineage":  "claude/staging-rc-agency-documents-20261018 (staging ledger 001-046, read-only preflight 2026-10-21T17:45Z)",
+    "nextFree":  65,
+    "migrations":  [
+                       {
+                           "version":  1,
+                           "filename":  "001_provider_neutral_authorization_context.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e0c2a264ce64bd18469578b5186c9765490b108e47b5e903df2422a828949515",
+                           "sha256Crlf":  "39411fb46db2c4d09e48d0e3a1862c885430714e2e520f63d437220ff94e5b8c"
+                       },
+                       {
+                           "version":  2,
+                           "filename":  "002_cognito_application_session_idle.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "6f19b069025c568736b7bb1a937465d038b5f8db60cc37878c2c660c5f56de21",
+                           "sha256Crlf":  "66361c5bfab16f8164c6a3b2f1aa0ef0fb6bae43363ba73788e6ba23b7779779"
+                       },
+                       {
+                           "version":  3,
+                           "filename":  "003_runtime_role_and_auth_state.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "0cf4faf22bc61467bc57a4365ca6ccafc5e56585a93b1900dc0fe7ee49e55f00",
+                           "sha256Crlf":  "4f39a1c9c1d8bf4df46ef4c333e0c21bd567030bfc3ba235e58b8eb6a6207c0c"
+                       },
+                       {
+                           "version":  4,
+                           "filename":  "004_remove_supabase_authorization_runtime.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "440a076573ae21ad1e499d5be61d345e35b6bc83477e837f8b2f1a5d3bcc73e9",
+                           "sha256Crlf":  "51c9063dca0ac6a5947a2fe5f12a4f50b4875ec1e18fa9ff990453e32111e148"
+                       },
+                       {
+                           "version":  5,
+                           "filename":  "005_command_dashboard_fleet_read.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "24547c774c5146f3b47d78a9250199bfafd5e1a19c6f898ac54295aaaf261ea7",
+                           "sha256Crlf":  "751a9252cf492d0326ea5f906e0f6ca0c3c3a2cb34f919d0b8641b25161ea76b"
+                       },
+                       {
+                           "version":  6,
+                           "filename":  "006_cognito_lifecycle_state.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "8554fad23498e4b68dc26aaec42efe66452515b51f83259b2cbb8a23c0d1d222",
+                           "sha256Crlf":  "da79c9c5adfec5ed58caaef6cb6cbca528a780e2e1dbb75342e91750fd7e603f"
+                       },
+                       {
+                           "version":  7,
+                           "filename":  "007_ses_runtime_queue_access.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "44deea58c200a3891ee17b22dd1224e2933e7396574b3a072d2efd3951f0405c",
+                           "sha256Crlf":  "6f1c3be1b1d4511eb928eff6bada77e376a10a86aa35cab057854d6b9c708193"
+                       },
+                       {
+                           "version":  8,
+                           "filename":  "008_training_closeout_authorization.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "78f774cbfbd64b4017030952236b8ee54acce2777f495fbb23499c31f8f95230",
+                           "sha256Crlf":  "24f2d1ef877764a90471d55a0280b9de6e0b156fbe1b1d7d82f580defea3489f"
+                       },
+                       {
+                           "version":  9,
+                           "filename":  "009_cognito_membership_lifecycle.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "fa1bad83c12b714c3c2e310ed5156da4f0291fd7e7d2980fa77b8b8ab46be0f0",
+                           "sha256Crlf":  "0c9bf2afca5729fb43de6e2541db26c2b481c7cdbc72b3b1dde89452679cc92c"
+                       },
+                       {
+                           "version":  10,
+                           "filename":  "010_cognito_inactive_invites.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "5ffece8ef922879df7ac4dfaccd1c8cef2a54bffdbd1ad94a9b53f2d0f2781e7",
+                           "sha256Crlf":  "e3a245570ce503172f03d66735a0407ca5140b864772ff10043d9ed4afcc738e"
+                       },
+                       {
+                           "version":  11,
+                           "filename":  "011_onboarding_import_audit.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "53f4c04d43815680d0de243f989068d08b162aade0d14b1619f889d07f29794d",
+                           "sha256Crlf":  "e1e01617695986f565f008ac82b8c51319337c1a5f61518d7c35b1d263f42014"
+                       },
+                       {
+                           "version":  12,
+                           "filename":  "012_onboarding_import_authority.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "f2e75ff6c55dfcb93fe3e8a7441671ba50cdb261a4ed4f01d589ffe058abf66e",
+                           "sha256Crlf":  "7f262ee8975969fc2bc0d927ecba27fe37479dca0bc907ad4a1bb0fac8041858"
+                       },
+                       {
+                           "version":  13,
+                           "filename":  "013_cognito_existing_user_migration.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e62fc46e1e20fbe0b01a25dcc28accafea5859c54b0653d2849ac31a2fcf66e8",
+                           "sha256Crlf":  "c2aaa37f176cca9ad24fa296f1bcda2e401aa4f220a301df41782b7cb25286f2"
+                       },
+                       {
+                           "version":  14,
+                           "filename":  "014_platform_control_plane_access.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "425375ee94f7944fe46966996c640ddf629d673a0971782833562f9c24a8d20e",
+                           "sha256Crlf":  "b5b55fde8ae648dccc41ffb30814028913b34b0e684f2433e56f1f627931618b"
+                       },
+                       {
+                           "version":  15,
+                           "filename":  "015_platform_entitlements.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "5e9a3887b0299bed74d92424f0f632d2c22494982f6cde7da4165b76d763e574",
+                           "sha256Crlf":  "7e44e16667c18bfd3f81b3394d778cf16595c1fb5d8ba466c4796dc64c7cbad3"
+                       },
+                       {
+                           "version":  16,
+                           "filename":  "016_platform_support_mode.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e9ab64324a139eda1cd5a46eb95346ccc241935daf41f6e584c2fd144d403bc0",
+                           "sha256Crlf":  "71edc0578081b53feafb96d94f3fa2954d658c981aeacb2bf6e00761d16872b3"
+                       },
+                       {
+                           "version":  17,
+                           "filename":  "017_bound_armory_rpc_authorization.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "2342fe563fe5cc97e95db2afe17808782f3893cd352deb1af9d240395d48a887",
+                           "sha256Crlf":  "b30ed1b32f0a87d83adaea0fca51df1e9d7471736c22e9930b94896719a400e7"
+                       },
+                       {
+                           "version":  18,
+                           "filename":  "018_fleet_and_off_duty_rls.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "63948dd92442e566e0d57f53b04d8bb82222d0ce32cf4c37e644ca6300d6abac",
+                           "sha256Crlf":  "48fbe080f08b5090d515d38c522ff403d7c15c81b2533e252458a9c492574c76"
+                       },
+                       {
+                           "version":  19,
+                           "filename":  "019_authenticated_fleet_off_duty_privileges.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "a7ba9bb8c50ee68855dd876b1dc8e829742f52c94945051d3b38cba1f0d310d2",
+                           "sha256Crlf":  "f61969456ab5fdc015bc1d80076bb694263ad4883ce79410f524730e2c50984b"
+                       },
+                       {
+                           "version":  20,
+                           "filename":  "020_off_duty_inspection_rls.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "5fa8a156b76d224422861616dc518e2bc97afd8a407e7a8f1905b10194e3fdf6",
+                           "sha256Crlf":  "6a4f0806fa637e8b721cf97144f9e19897b81d8331db357537462e7ecefab56a"
+                       },
+                       {
+                           "version":  21,
+                           "filename":  "021_cognito_exceptional_identity_migration.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "ca153fc054a026a38dfa0b50d063dbab50ba1081a23fb01cd37c5fa9ca946581",
+                           "sha256Crlf":  "8d2b6066be6277542f9cd45dc88c45ab3927eb6e021f21b17f7e2a5d4d57875d"
+                       },
+                       {
+                           "version":  22,
+                           "filename":  "022_cognito_flow_window.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "2d2774c456438c16457343a11dbf0eaffacabc68aeb53289c303c36e0a74f299",
+                           "sha256Crlf":  "27b5421960d75d4579689b47d35372032a9723fb38af9651d31c8b7d08195913"
+                       },
+                       {
+                           "version":  23,
+                           "filename":  "023_audit_log_read_authorization.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "6b302016b812280d24e49a516018629c42d43d1b5dbfeb27f70ac77a8acfbbde",
+                           "sha256Crlf":  "dad8f4f67ceecb326e7a439af3fd03a270b5394035dac28413b962019f23cbb4"
+                       },
+                       {
+                           "version":  24,
+                           "filename":  "024_notification_email_server_enqueue.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "99e8ca4d52bd4505721d0c509dd5d352162843dd8f257c0e19c71d315355abd0",
+                           "sha256Crlf":  "691d1e3ff1f14c003b926e15209aabcc69fd53ba55ec6fd306fa0945b23e56ba"
+                       },
+                       {
+                           "version":  25,
+                           "filename":  "025_cognito_provider_username_reconciliation.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "4ddb1201cbfaedce154936028e4d264d4b98d3a26e40f5a2fd53435c6dcd2a9c",
+                           "sha256Crlf":  "2d3f5c2aa3a8b183aa4cd3848185ff3ac768be61f5e19f87738a3489e5ee5cc6"
+                       },
+                       {
+                           "version":  26,
+                           "filename":  "026_cognito_invite_profile_trigger_reconciliation.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "bc6fca6e5693cfad40ae9ce104a8bf5ec9cd0eda5750177737ecf167a840a612",
+                           "sha256Crlf":  "6582b3404ae0c9dc58017f775b9b457a1c6eede17a824c628078f9549efa5080"
+                       },
+                       {
+                           "version":  27,
+                           "filename":  "027_cognito_invite_retry_claim.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "bf289e434a09658aad33b3d34b50c4e1602010636cf9594cafdccbf2ff8c1aa5",
+                           "sha256Crlf":  "acb5ca942704a3ea0ed78ff5a3d63a8987c8ac27927dadfb3f75a5d67471de79"
+                       },
+                       {
+                           "version":  28,
+                           "filename":  "028_firearm_custody_phase_a.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "5b80546230de13cef31b4d1f3f48103c9c014bfd981cee00428a7bba8a1ef0d0",
+                           "sha256Crlf":  "12c125dfbcf41780cb6b6b69ad17770af1f160aab2d9e9be47c4c653fdabdc3e"
+                       },
+                       {
+                           "version":  29,
+                           "filename":  "029_firearm_custody_phase_a_function_reconciliation.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "dfa16cdf35ef583e960f7a700c177f9dd245685527149898041a36f1026bdf9d",
+                           "sha256Crlf":  "cff4169e24f36736bed9e5290a62115bc328f092ce2d06b87182523188b4d2b0"
+                       },
+                       {
+                           "version":  30,
+                           "filename":  "030_firearm_restricted_use.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "f4ced487327ba4387a912a7d7bfdfbe66b004facc7ac69f1d8c44e51913bead7",
+                           "sha256Crlf":  "b922c7967881fa92236a9222ed905227861ff32387a134b3ba2a0c0637620a75"
+                       },
+                       {
+                           "version":  31,
+                           "filename":  "031_restricted_firearm_simple_custody.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "8a876feeaf4691171aec1f6d894880bd4bf5986d1eff33ef18336f07348f1842",
+                           "sha256Crlf":  "f924e78364ed05fe511f260230a273989550ba2f6a21098987a3b6b256ea3ab7"
+                       },
+                       {
+                           "version":  32,
+                           "filename":  "032_restore_audit_log_read_grant.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "1a10b005226b4bdfc094a6001e21076682e98cb08d911ad100f625450e8cd152",
+                           "sha256Crlf":  "6c324bddd90922b435ecd32d33e1474b659787f26b6a340dbe84219bcbe2ce68"
+                       },
+                       {
+                           "version":  33,
+                           "filename":  "033_fleet_vehicle_document_metadata.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "a3c74bfbe670d2a4885521ce78390da32fb796500f12dae4b9c7b6a2fe1b0cc1",
+                           "sha256Crlf":  "ed1b4ed726dfd381b84cd28bca40ec8015e06e9c553604f9afe879217afce0b5"
+                       },
+                       {
+                           "version":  34,
+                           "filename":  "034_firearm_storage_location_management.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "9416b3f219177dc8e4fc5e9f9cf9039245dc8e9bf1be2db25e41186ba2f7d86d",
+                           "sha256Crlf":  "057d79ad310fed2caa58359ac8f26192ddfd61af1d58f22f4d8b80255a767cb0"
+                       },
+                       {
+                           "version":  35,
+                           "filename":  "035_inventory_phase1.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e617ea34b4403e0af34934de77b66f589940066f85faa5e04eb10062cdc39861",
+                           "sha256Crlf":  "a55da4335b5539ed1a22577b8d1ff5e8f83122d3dfee1ce0a7e8ad6ff88edcae"
+                       },
+                       {
+                           "version":  36,
+                           "filename":  "036_inventory_checkout_phase2a.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e9298b65d290293c66a2f2420a7775a55a342b5c111db9b9cbaab6f8dc3ad7fc",
+                           "sha256Crlf":  "3f7c137dd42daa826686a2ba6e44d6ef9a0974627981e227627ab0ecbc9e4383"
+                       },
+                       {
+                           "version":  37,
+                           "filename":  "037_inventory_management_runtime_grants.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "8aad48a4378d7b69e392e0cdd2869e1e8a55226c0feb47e137b8006e21064f97",
+                           "sha256Crlf":  "ddbd93188c751cf14264d85ffc29a34785bfc69bc65b61e98a01b3e1e78ef2d9"
+                       },
+                       {
+                           "version":  38,
+                           "filename":  "038_agency_documents_template_builder.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e5d9731e6eef405945ca1c222c69bdd76559646fc97c393beec537cd656eee89",
+                           "sha256Crlf":  "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a"
+                       },
+                       {
+                           "version":  39,
+                           "filename":  "039_document_template_analysis.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "894c51ea4d74e8e6d4a6b988a4bf3add34266cf5fde9a199f18a2660ecfa6086",
+                           "sha256Crlf":  "ef5a8670edc6dba6835a174fd51c296fb94ab8a793aee04ce1ac6c23a2059292"
+                       },
+                       {
+                           "version":  40,
+                           "filename":  "040_document_template_structured_bindings.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "908c2e8704c331d4122ee820143ab645f851761c9747b6d65dee8743e3007525",
+                           "sha256Crlf":  "640a5c8093413a17b3996b45cdf460d7579411c62ee779e882c645801f41036e"
+                       },
+                       {
+                           "version":  41,
+                           "filename":  "041_document_template_write_authority.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "e0d5cb1b4abb1257debff25c6de00785e7853b9b5157b459cae592f8545ca06c",
+                           "sha256Crlf":  "72ba79c43da8c4f96145a4c2a8300bc9c2e61d78a85f1e914d8bb0c9081a5d69"
+                       },
+                       {
+                           "version":  42,
+                           "filename":  "042_default_module_entitlements.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "857baa4ab02f99acb046a71a820c9d54bd0d69fd56cf6048fba22945685adff1",
+                           "sha256Crlf":  "f24425f5370f1ab32ec7074b13dd56f5b00afa5ab757039ca431f7312c27a4b4"
+                       },
+                       {
+                           "version":  43,
+                           "filename":  "043_range_workspace_authenticated_writes.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "f250c74b87b63a9d4ac614edf09ae84e15976cbe0234114a158f79b2b0cae3e1",
+                           "sha256Crlf":  "fc02c534b5a42e2e18cb9ab7754c6c4afd3370d2040a8d75670dfbda7a596c34"
+                       },
+                       {
+                           "version":  44,
+                           "filename":  "044_cognito_password_global_scope.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987",
+                           "sha256Crlf":  "395a48d3e33b607da301bd6b8e3059263fdcc8c65abda09727260e0175f9f2ab"
+                       },
+                       {
+                           "version":  45,
+                           "filename":  "045_password_operation_resolution.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b",
+                           "sha256Crlf":  "a9c6cbed603c24dfb86f39fe72d60e2f3e029a33f5ec600de4f6cc1976d8e825"
+                       },
+                       {
+                           "version":  46,
+                           "filename":  "046_agency_documents_module_toggle.sql",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
+                           "lineage":  "staging",
+                           "formerly":  null,
+                           "sha256Lf":  "f308741ec52ab2947cc5cf8a08bde0e20e0dd7d89c25b633ccc0c714f1457f4b",
+                           "sha256Crlf":  "f9fbde83511f8d4da7c5e047ca37955b561d4306f046c4a34e09b055e7ca5ec1"
+                       },
+                       {
+                           "version":  47,
+                           "filename":  "047_fleet_inventory_feature_catalog.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "staging: Agency Documents release (1b48972e)",
+                           "formerly":  null,
+                           "sha256Lf":  "b1ca090ad5fb0f5b09f20cb6620cc59737b03303798bd0c21b911906138338ab",
+                           "sha256Crlf":  "adcec69c4df603c22e7c1cae761e397f2b3e6ac77a6b7d8be12f36b8c2a99ef4"
+                       },
+                       {
+                           "version":  48,
+                           "filename":  "048_equipment_out_of_service_lifecycle.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "038 at 5b9ec98d",
+                           "sha256Lf":  "1bc4a53c2b2e76d289258cc013e8c3c05dfeea52108e306941731388b7325506",
+                           "sha256Crlf":  "3a5a220206819860922d7d1cafb7b0a8b8bfae010de4d772fef364efb3577d16"
+                       },
+                       {
+                           "version":  49,
+                           "filename":  "049_account_access_remediation.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "039 at 5b9ec98d",
+                           "sha256Lf":  "041a0a0a2f1ee3113d5e2ee9fc0bdf972f5f6cc652db7df2531a685e4c3a8162",
+                           "sha256Crlf":  "5d020aa3c0281548ce23225e83b359c88dcdd2afb587157f208df41488de167e"
+                       },
+                       {
+                           "version":  50,
+                           "filename":  "050_fleet_field_write_authorization.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "040 at 5b9ec98d",
+                           "sha256Lf":  "6746a6b6e6b82b2953a3e8723965e3077a5a931099ba5f4d3afdf2d90685a9c0",
+                           "sha256Crlf":  "98d5ba7aeaede47d5f3597b7858d36766c5fe411c37fdea827fcd4dfb6d82d5a"
+                       },
+                       {
+                           "version":  51,
+                           "filename":  "051_equipment_self_custody.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "041 at 5b9ec98d",
+                           "sha256Lf":  "7c1cc8aac0e83314c0e3ab553fcb412fd9576ec6999e5922fe1b6132f641a604",
+                           "sha256Crlf":  "e687a2b947b23e8db8722cfe99824c231bcfecaf0aba1f093a9fcfd4948b0743"
+                       },
+                       {
+                           "version":  52,
+                           "filename":  "052_range_packet_ready_is_not_final.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "042 at 5b9ec98d",
+                           "sha256Lf":  "3dee6dcb1ed3fadf7c4b9b35e0cd10065b7cd6b2b57065a4d8909b9dfce44707",
+                           "sha256Crlf":  "895f831b86a6e8fe802d692bb28c7bce41d287e87a0444f7712ae16c22b60aa9"
+                       },
+                       {
+                           "version":  53,
+                           "filename":  "053_fleet_inspection_audit_outbox.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "043 at 5b9ec98d",
+                           "sha256Lf":  "e6916dbccc80a600ee39a2cffbe268674558b7a8ca72fa4825e3d545e6a690c1",
+                           "sha256Crlf":  "925ac66ff3aa454aa12491dd5f4222c37ae9f503c52af1c0b2df59ae200f703c"
+                       },
+                       {
+                           "version":  54,
+                           "filename":  "054_personnel_import_preservation.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "044 at 5b9ec98d",
+                           "sha256Lf":  "78895dd9f0fd5bf85f60a4a3cd2b4f5c6eeb172b6596cea4e034cba18d7c7655",
+                           "sha256Crlf":  "a2a7ce1e40f782e69c8a3ea2055ac2ca15f8437f2ffaee664e09217c088b3bc2"
+                       },
+                       {
+                           "version":  55,
+                           "filename":  "055_fleet_inspection_eligibility.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "045 at 5b9ec98d",
+                           "sha256Lf":  "8f55e6c366736fe73aeffd31e742582f4a57c81965bfc2d698afcc57bb617aad",
+                           "sha256Crlf":  "9a88ec1209cc61cac6dc40cfc54e33fc0f970f43d940f3caeb8e66bbb38747bf"
+                       },
+                       {
+                           "version":  56,
+                           "filename":  "056_fleet_safety_hold_clearance.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "046 at 5b9ec98d",
+                           "sha256Lf":  "bac965fa76fe932f38fc80a682e66cfd409bfc91651ad5537dd3c1d05c6a10a0",
+                           "sha256Crlf":  "261db041751361f3f0937a0701c7d3c3c6c62fde68efebdd266cea04b0051b39"
+                       },
+                       {
+                           "version":  57,
+                           "filename":  "057_training_record_visibility.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "048 at 5b9ec98d",
+                           "sha256Lf":  "04fc6a4629ce3090af17925971da513e55fd6a4a0bfa1ff16600f91b862e2322",
+                           "sha256Crlf":  "5a963d0a66478904eaaee31b8e99c841b14f215ae4a1886b09570f6a0e0a8e68"
+                       },
+                       {
+                           "version":  58,
+                           "filename":  "058_equipment_separated_holder.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "049 at 5b9ec98d",
+                           "sha256Lf":  "d3e6f807623a317f134a06861ac894e1a82ad3a42dfe35798b980bbb0e69b3fc",
+                           "sha256Crlf":  "7676a3dd86d194e0b7da19ba27a9f2bc7046cbf974fd57c1d76f7db0a89e5def"
+                       },
+                       {
+                           "version":  59,
+                           "filename":  "059_training_closeout_records.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "050 at 5b9ec98d",
+                           "sha256Lf":  "7a58352487d58216f6e5dd7af704727d615d05feff6225dfa3408a654296ef9d",
+                           "sha256Crlf":  "f8022fdb349ad7e88371f596405b4be6d25f4f191b682359b041783fcd90625a"
+                       },
+                       {
+                           "version":  60,
+                           "filename":  "060_range_instructor_line_actions.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "051 at 5b9ec98d",
+                           "sha256Lf":  "967a228e5098d2621e6f997861d96dced0f05c077b5819b490acc0b16d52986f",
+                           "sha256Crlf":  "aebf530e7d7460577dce4cf9318a8a63b9eb69bf7d49dea1b2f45f9de8df4a48"
+                       },
+                       {
+                           "version":  61,
+                           "filename":  "061_armory_separation_of_duties.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "052 at 5b9ec98d",
+                           "sha256Lf":  "798422b938cde2998c92a137a357c6d9abc4b89b42983c69d1a8ef75b1ae76fd",
+                           "sha256Crlf":  "a610744d73152b616e1e38ddbcaa861510787ea8d9e0f162146fc65eac7cd9d9"
+                       },
+                       {
+                           "version":  62,
+                           "filename":  "062_armory_audit_and_access.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "053 at 5b9ec98d",
+                           "sha256Lf":  "76f6af92b373f89051473064581bd9e71f0935209749045ce1a357324800067c",
+                           "sha256Crlf":  "bdcf4a353d90c739f172bc47548df4e0671a3651f830f7b9c846489ae7bfeae2"
+                       }
+                   ],
+    "reserved":  [
+                     {
+                         "version":  63,
+                         "filename":  "063_armory_history_contract.sql",
+                         "owner":  "B8a contract step (deferred; separately approved after the rollback window)",
+                         "source":  "origin/claude/fix-b8a-contract-054 @ c50f73b3: database/aws/054_armory_history_contract.sql",
+                         "requires":  "062"
+                     },
+                     {
+                         "version":  64,
+                         "filename":  "064_notification_job_recipients.sql",
+                         "owner":  "B6 notification delivery",
+                         "source":  "origin/claude/fix-b6-notification-delivery @ 1966f132: database/aws/047_notification_job_recipients.sql",
+                         "requires":  "047 (feature catalog) and 062"
+                     }
+                 ]
+}

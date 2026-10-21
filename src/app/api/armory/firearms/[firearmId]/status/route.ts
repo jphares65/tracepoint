@@ -7,6 +7,10 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import {
+  changeFirearmStatus,
+  hasOpenAssignment,
+} from "@/lib/armory/firearm-status-change";
 
 type RouteContext = {
   params: Promise<{ firearmId: string }>;
@@ -99,47 +103,37 @@ if (
       return NextResponse.json({ ok: true, unchanged: true });
     }
 
-    const now = new Date().toISOString();
-
-    const { error: updateError } = await context.db
-      .from("firearms")
-      .update({
-        condition_status: nextStatus,
-        updated_at: now,
-      })
-      .eq("id", firearmId)
-      .eq("department_id", context.departmentId);
-
-    if (updateError) {
-      throw new Error(updateError.message);
+    // A retired firearm must be back in the armory first.
+    if (
+      nextStatus === "Retired" &&
+      (await hasOpenAssignment(context.db, context.departmentId, firearmId))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "This firearm is currently issued. Return it before retiring it.",
+        },
+        { status: 409 },
+      );
     }
 
-    const { error: historyError } = await context.db
-      .from("firearm_status_history")
-      .insert({
-        department_id: context.departmentId,
-        firearm_id: firearmId,
-        old_status: firearm.condition_status,
-        new_status: nextStatus,
-        changed_by_user_id: context.userId,
-        notes: cleanText(body.notes),
-      });
+    const changed = await changeFirearmStatus(context.db, {
+      departmentId: context.departmentId,
+      firearmId,
+      userId: context.userId,
+      fromStatus: firearm.condition_status,
+      toStatus: nextStatus,
+      notes: cleanText(body.notes),
+    });
 
-    if (historyError) {
-      /*
-       * Revert the status if the immutable history entry cannot be written.
-       * A status change without its audit record is not acceptable.
-       */
-      await context.db
-        .from("firearms")
-        .update({
-          condition_status: firearm.condition_status,
-          updated_at: now,
-        })
-        .eq("id", firearmId)
-        .eq("department_id", context.departmentId);
-
-      throw new Error(historyError.message);
+    if (!changed) {
+      return NextResponse.json(
+        {
+          error:
+            "The firearm status could not be updated because its record changed.",
+        },
+        { status: 409 },
+      );
     }
 
     return NextResponse.json({ ok: true });

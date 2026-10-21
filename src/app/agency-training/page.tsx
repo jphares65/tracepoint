@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { DEFAULT_DEPARTMENT_TIME_ZONE } from "@/lib/agency-training/event-time";
 
 import AgencyTrainingEventEditor, {
   type EditableTrainingEvent,
@@ -61,6 +62,7 @@ type TrainingEvent = {
 type EventsPayload = {
   events?: TrainingEvent[];
   canManage?: boolean;
+  timeZone?: string;
   error?: string;
 };
 
@@ -130,10 +132,11 @@ function initialDraft(): EventDraft {
   };
 }
 
-function formatEventDate(value: string) {
+function formatEventDate(value: string, timeZone: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Date unavailable";
   return new Intl.DateTimeFormat(undefined, {
+    timeZone,
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -141,14 +144,16 @@ function formatEventDate(value: string) {
   }).format(date);
 }
 
-function formatEventTime(startValue: string, endValue: string | null) {
+function formatEventTime(startValue: string, endValue: string | null, timeZone: string) {
   const start = new Date(startValue);
   const end = endValue ? new Date(endValue) : null;
   if (Number.isNaN(start.getTime())) return "Time unavailable";
 
   const formatter = new Intl.DateTimeFormat(undefined, {
+    timeZone,
     hour: "numeric",
     minute: "2-digit",
+    timeZoneName: "short",
   });
 
   return end && !Number.isNaN(end.getTime())
@@ -177,6 +182,7 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export default function AgencyTrainingPage() {
   const [events, setEvents] = useState<TrainingEvent[]>([]);
   const [canManage, setCanManage] = useState(false);
+  const [timeZone, setTimeZone] = useState(DEFAULT_DEPARTMENT_TIME_ZONE);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -207,6 +213,7 @@ export default function AgencyTrainingPage() {
       const nextEvents = Array.isArray(payload.events) ? payload.events : [];
       setEvents(nextEvents);
       setCanManage(payload.canManage === true);
+      setTimeZone(payload.timeZone || DEFAULT_DEPARTMENT_TIME_ZONE);
       setSelectedEventId((current) =>
         current && nextEvents.some((event) => event.id === current)
           ? current
@@ -420,7 +427,7 @@ export default function AgencyTrainingPage() {
                             {event.title}
                           </p>
                           <p className="mt-1 text-[11px] text-slate-500">
-                            {formatEventDate(event.startsAt)}
+                            {formatEventDate(event.startsAt, timeZone)}
                           </p>
                         </div>
                         <ChevronRight
@@ -484,8 +491,8 @@ export default function AgencyTrainingPage() {
                 <div className="space-y-5 p-6">
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {[
-                      [CalendarDays, "Date", formatEventDate(selectedEvent.startsAt)],
-                      [Clock3, "Time", formatEventTime(selectedEvent.startsAt, selectedEvent.endsAt)],
+                      [CalendarDays, "Date", formatEventDate(selectedEvent.startsAt, timeZone)],
+                      [Clock3, "Time", formatEventTime(selectedEvent.startsAt, selectedEvent.endsAt, timeZone)],
                       [MapPin, "Location", selectedEvent.location || "Not entered"],
                       [Users, "Lead Instructor", selectedEvent.leadInstructor || "Not assigned"],
                     ].map(([Icon, label, value]) => {
@@ -897,6 +904,7 @@ export default function AgencyTrainingPage() {
       {editorEvent !== undefined ? (
         <AgencyTrainingEventEditor
           event={editorEvent as EditableTrainingEvent | null}
+          timeZone={timeZone}
           onClose={() => setEditorEvent(undefined)}
           onSaved={() => {
             setEditorEvent(undefined);

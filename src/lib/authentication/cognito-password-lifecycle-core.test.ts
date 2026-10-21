@@ -9,7 +9,7 @@ const prepared: PreparedPasswordOperation = {
 };
 const confirmed: CognitoDirectoryUser = { username: "provider-user-1", subject: "subject-1", email: "officer@example.test", emailVerified: true, enabled: true, status: "CONFIRMED" };
 
-function harness(overrides: Partial<Record<"get" | "setPermanentPassword" | "markEmailVerified" | "globalSignOut" | "beginPasswordReset", () => Promise<unknown>>> = {}) {
+function harness(overrides: Partial<Record<"get" | "setPermanentPassword" | "globalSignOut" | "beginPasswordReset", () => Promise<unknown>>> = {}) {
   const calls: string[] = [];
   const finishes: Array<[string, boolean, string | undefined, boolean | undefined]> = [];
   const step = (name: keyof typeof overrides, result: unknown) => async () => {
@@ -20,7 +20,6 @@ function harness(overrides: Partial<Record<"get" | "setPermanentPassword" | "mar
   const directory = {
     get: step("get", confirmed) as () => Promise<CognitoDirectoryUser>,
     setPermanentPassword: step("setPermanentPassword", undefined) as () => Promise<void>,
-    markEmailVerified: step("markEmailVerified", undefined) as () => Promise<void>,
     globalSignOut: step("globalSignOut", undefined) as () => Promise<void>,
     beginPasswordReset: step("beginPasswordReset", undefined) as () => Promise<void>,
   };
@@ -63,7 +62,7 @@ test("assign refusals before the password write are provider-unchanged; later fa
   assert.deepEqual(conflict.calls, ["get"]);
   assert.deepEqual(conflict.finishes, [["op", false, "conflict", true]]);
 
-  for (const failing of ["setPermanentPassword", "markEmailVerified", "globalSignOut"] as const) {
+  for (const failing of ["setPermanentPassword", "globalSignOut"] as const) {
     const h = harness({ [failing]: reject(new CognitoDirectoryError("unavailable")) });
     await assert.rejects(completeAssignPassword("op", { ...prepared, identityState: "pending" }, "Synthetic-Password-1", h.directory, h.finish));
     assert.deepEqual(h.finishes, [["op", false, "unavailable", false]], failing);

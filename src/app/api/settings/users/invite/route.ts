@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
 import { inviteCognitoUser } from "@/lib/authentication/cognito-invite";
 import { hasAnyServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { cognitoInviteRefusal, EXISTING_MEMBER_INVITE, findAuthUserByEmail } from "@/lib/settings/invite-core";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 type InviteRequest = {
   departmentId?: string;
@@ -45,31 +47,6 @@ function uniqueRoleCodes(value: unknown) {
         .filter(Boolean),
     ),
   );
-}
-
-async function findUserByEmail(
-  admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
-  email: string,
-) {
-  const target = email.toLowerCase();
-
-  for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({
-      page,
-      perPage: 100,
-    });
-
-    if (error) throw error;
-
-    const match = data.users.find(
-      (user) => user.email?.toLowerCase() === target,
-    );
-
-    if (match) return match;
-    if (data.users.length < 100) break;
-  }
-
-  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -181,8 +158,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let targetUser = await findUserByEmail(admin, email);
+    let targetUser = await findAuthUserByEmail(
+      (page, perPage) => admin.auth.admin.listUsers({ page, perPage }),
+      email,
+    );
     let invitationSent = false;
+
+    if (targetUser) {
+      const { data: existingMembership, error: existingMembershipError } = await admin
+        .from("department_memberships")
+        .select("user_id")
+        .eq("department_id", departmentId)
+        .eq("user_id", targetUser.id)
+        .maybeSingle();
+
+      if (existingMembershipError) throw existingMembershipError;
+
+      if (existingMembership) {
+        return NextResponse.json(
+          { error: EXISTING_MEMBER_INVITE.error },
+          { status: EXISTING_MEMBER_INVITE.status },
+        );
+      }
+    }
 
     if (!targetUser) {
       const { data, error } = await admin.auth.admin.createUser({
@@ -223,13 +221,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // An existing account's profile belongs to the person, not to this invite.
     const { error: profileError } = await admin.from("profiles").upsert(
       {
         id: targetUser.id,
         full_name: fullName,
         email,
       },
-      { onConflict: "id" },
+      { onConflict: "id", ignoreDuplicates: !invitationSent },
     );
 
     if (profileError) throw profileError;
@@ -338,12 +337,9 @@ export async function POST(request: NextRequest) {
         : `${email} was added using an existing TracePoint account.`,
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "The user could not be added.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    const refusal = cognitoInviteRefusal(error);
+    if (refusal) return NextResponse.json({ error: refusal.error }, { status: refusal.status });
+    return unexpectedErrorResponse("User invite", error, "The user could not be added.");
   }
 }
 

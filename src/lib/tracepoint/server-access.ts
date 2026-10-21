@@ -11,6 +11,7 @@ import { isDedicatedMobileApiPath, mobileDepartmentSelection, mobileSupportSelec
 import { parseCognitoTargetConfiguration } from "@/lib/authentication/cognito-runtime-configuration-core";
 import { resolvePostgresAccess, recordPostgresMobileSupportEntry } from "@/lib/tracepoint/server-access-postgres";
 import type { TracePointPermission } from "@/lib/tracepoint/permissions";
+import { hasEnabledFeatures } from "@/lib/tracepoint/feature-gates";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import type { ModuleFeatureCode } from "@/lib/tracepoint/module-catalog";
 import { resolveTenantContext } from "@/lib/tracepoint/tenant-context";
@@ -624,7 +625,7 @@ export function hasServerFeature(
   context: ServerAccessContext,
   featureCode: ModuleFeatureCode,
 ) {
-  return context.enabledFeatures.includes(featureCode);
+  return hasEnabledFeatures(context.enabledFeatures, [featureCode]);
 }
 
 export function featureDisabledResponse(

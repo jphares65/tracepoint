@@ -1,4 +1,5 @@
 import { hasAnyServerPermission } from "@/lib/tracepoint/server-access";
+import { AGENCY_TRAINING_SUMMARY_PERMISSIONS } from "@/lib/tracepoint/training-record-visibility";
 
 type Priority = "Critical" | "High" | "Normal";
 type Alert = { key: string; source: "Training"; kind: string; title: string; detail: string; href: string; priority: Priority; createdAt?: string | null; emailEnabled?: boolean };
@@ -58,7 +59,7 @@ export async function collectAgencyTrainingNotifications(context: any): Promise<
     const key = `${row.user_id}|${event.course_id}`; const date = new Date(event.starts_at);
     if (!latest.has(key) || date > latest.get(key)!) latest.set(key, date);
   }
-  const isStaff = hasAnyServerPermission(context, ["manage_training", "manage_certifications", "view_command_dashboard"]);
+  const isStaff = hasAnyServerPermission(context, AGENCY_TRAINING_SUMMARY_PERMISSIONS);
   const currentUserId = String(context.user?.id ?? context.userId);
   const today = new Date(); today.setUTCHours(0, 0, 0, 0);
   const alerts: Alert[] = [];

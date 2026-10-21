@@ -23,7 +23,7 @@ export async function GET() {
     const { admin, departmentId, user } = context;
     const repository = createPersonalRifleReadRepository(admin, departmentId, user.id);
     const [access, riflesResult] = await Promise.all([
-      getPersonalRifleAccess(admin, departmentId, user.id),
+      getPersonalRifleAccess(context.permissions),
       repository.listInbox(departmentId, user.id),
     ]);
     const usersResult = await getPersonalRifleUsers(admin, departmentId, riflesResult.map((rifle) => rifle.owner_user_id));

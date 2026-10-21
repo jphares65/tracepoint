@@ -7,12 +7,14 @@ type Props = {
   departmentId: string;
   userId: string;
   activationStatus: string | null;
+  requiresSupportMode: boolean;
 };
 
 export default function ActivationButton({
   departmentId,
   userId,
   activationStatus,
+  requiresSupportMode,
 }: Props) {
   const router = useRouter();
   const [sending, setSending] = useState(false);
@@ -24,6 +26,14 @@ export default function ActivationButton({
 
   if (!canSend) {
     return <span className="text-emerald-400">Activated</span>;
+  }
+
+  if (requiresSupportMode) {
+    return (
+      <span className="text-xs text-slate-400">
+        Use Access Agency to enter Support Mode for this agency, then send the activation.
+      </span>
+    );
   }
 
   async function sendActivation() {

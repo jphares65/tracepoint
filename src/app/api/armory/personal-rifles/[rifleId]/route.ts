@@ -7,6 +7,7 @@ import {
   getPersonalRifleExpirationDate,
   getPersonalRifleRequestContext,
   getPersonalRifleRules,
+  personalRifleHistoryWrittenByDatabase,
   recordPersonalRifleHistory,
 } from "@/lib/tracepoint/personal-rifle-server";
 
@@ -22,6 +23,16 @@ const REQUIRED_INSPECTION_CHECKS = [
   "sling_light",
   "trigger_muzzle",
 ] as const;
+
+// Review decisions on a rifle are never made by its owner.
+const REVIEW_ACTIONS = [
+  "request_correction",
+  "armorer_approve",
+  "armorer_deny",
+  "chief_approve",
+  "chief_deny",
+  "reinstate",
+];
 
 function serializeError(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -65,7 +76,7 @@ export async function PATCH(
           .eq("department_id", departmentId)
           .maybeSingle(),
         getPersonalRifleRules(admin, departmentId),
-        getPersonalRifleAccess(admin, departmentId, user.id),
+        getPersonalRifleAccess(context.permissions),
       ]);
 
     if (rifleError) throw new Error(rifleError.message);
@@ -73,6 +84,16 @@ export async function PATCH(
       return NextResponse.json(
         { error: "Personal rifle record not found." },
         { status: 404 },
+      );
+    }
+
+    if (REVIEW_ACTIONS.includes(action) && rifle.owner_user_id === user.id) {
+      return NextResponse.json(
+        {
+          error:
+            "You cannot review your own personal rifle. Another reviewer must review it.",
+        },
+        { status: 403 },
       );
     }
 
@@ -467,6 +488,11 @@ export async function PATCH(
         { error: "Unsupported personal rifle action." },
         { status: 400 },
       );
+    }
+
+    // On AWS the database writes the history row with this update (052).
+    if (personalRifleHistoryWrittenByDatabase()) {
+      updates = { ...updates, workflow_note: historyNotes };
     }
 
     const { error: updateError } = await admin

@@ -61,3 +61,43 @@ test('migration tags remain distinct and retain the buildspec migration exceptio
  assert.match(stagingArchivePaths,/scripts\/mobile-route-image-contract-core\.mjs/);
  assert.match(stagingArchivePaths,/scripts\/test-staging-image-mobile-routes\.sh/);
 });
+
+test('migrate-db requires exactly the application tag deploy-app publishes',()=>{
+ const core=read('scripts/deploy-app-rollout-core.ps1');
+ const deploy=read('scripts/deploy-app.ps1');
+ const migrate=read('scripts/migrate-db.ps1');
+ assert.match(core,/function Get-ApplicationImageTag[\s\S]*?return "\$Commit-aws-native-\$\(\$Environment\.ToLowerInvariant\(\)\)"/);
+ assert.match(deploy,/\$imageTag = Get-ApplicationImageTag -Environment \$Environment -Commit \$commit/);
+ assert.match(migrate,/\. \(Join-Path \$PSScriptRoot 'deploy-app-rollout-core\.ps1'\)/);
+ assert.match(migrate,/\$tag = Get-ApplicationImageTag -Environment \$Environment -Commit \$Commit/);
+ assert.match(migrate,/Test-CleanImageScan \$scan/);
+ assert.doesNotMatch(migrate,/else \{ \$Commit \}/);
+ assert.doesNotMatch(deploy,/ImageSuffix/);
+});
+
+test('staging image sources include every file the staging Dockerfile and buildspec execute',()=>{
+ const deploy=read('scripts/deploy-app.ps1');
+ const migrations=read('scripts/apply-app-migrations.ps1');
+ const stagingArchive=deploy.match(/if \(\$Environment -eq 'staging'\) \{ \$archivePaths \+= @\(([^)]*)\) \}/);
+ assert.ok(stagingArchive,'deploy-app staging archive list');
+ const stagingMigrationPaths=migrations.match(/\$paths = @\(([^)]*'buildspec\.staging-image\.yml')\)/);
+ assert.ok(stagingMigrationPaths,'apply-app-migrations staging path list');
+ for(const file of ['scripts/mobile-route-image-contract-core.mjs','scripts/test-staging-image-mobile-routes.sh']){
+  assert.ok(stagingArchive[1].includes(`'${file}'`),`deploy-app staging archive includes ${file}`);
+  assert.ok(stagingMigrationPaths[1].includes(`'${file}'`),`migration staging archive includes ${file}`);
+ }
+});
+
+test('deploy-app -PublishOnly stops after the scan-checked publish and before any ECS change',()=>{
+ const deploy=read('scripts/deploy-app.ps1');
+ assert.match(deploy,/\[switch\]\$PublishOnly/);
+ assert.match(deploy,/if \(\$PublishOnly -and \$RollbackTaskDefinitionArn\) \{ throw/);
+ assert.match(deploy,/if \(\$PublishOnly -and \$Environment -ne 'staging'\) \{ throw/);
+ const publish=deploy.indexOf('$image = Publish-Image -Commit $commit -ImageTag $imageTag');
+ const stop=deploy.indexOf('if ($PublishOnly) {');
+ const register=deploy.indexOf('$registered = Register-ApplicationTaskRevision');
+ const lock=deploy.indexOf('$deploymentLock = Acquire-DeploymentLock');
+ assert.ok(lock>0&&lock<publish&&publish<stop&&stop<register,'lock, publish, PublishOnly exit, then registration');
+ assert.match(deploy.slice(stop,register),/exit 0/);
+ assert.doesNotMatch(deploy.slice(stop,register),/update-service|register-task-definition/);
+});

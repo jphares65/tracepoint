@@ -20,6 +20,7 @@ $settings = @{
 }[$Environment]
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $migrationFiles = @(Get-AwsMigrationFiles -Directory (Join-Path $root 'database/aws'))
+. (Join-Path $PSScriptRoot 'deploy-app-rollout-core.ps1')
 
 function Invoke-Aws([string[]]$Arguments) {
     $prior = $ErrorActionPreference
@@ -52,13 +53,13 @@ function Resolve-ApplicationCommit([string]$ToolingCommit) {
     return $resolved
 }
 function Assert-ApplicationImage([string]$Commit) {
-    $tag = Get-ReviewedImageTag -Environment $Environment -Commit $Commit
+    $tag = Get-ApplicationImageTag -Environment $Environment -Commit $Commit
     Assert-ReviewedImageTag -Environment $Environment -Commit $Commit -Tag $tag | Out-Null
     $image = (Invoke-Aws @('ecr','describe-images','--repository-name',$settings.Repository,'--image-ids',"imageTag=$tag")).imageDetails | Select-Object -First 1
     if ($null -eq $image -or [string]::IsNullOrWhiteSpace([string]$image.imageDigest)) { throw 'The reviewed application image is not present in the target ECR repository. Build and publish the exact reviewed commit first.' }
     if (@($image.imageTags) -cnotcontains $tag) { throw 'ECR did not attest the exact reviewed image tag.' }
     $scan = Invoke-Aws @('ecr','describe-image-scan-findings','--repository-name',$settings.Repository,'--image-id',"imageDigest=$($image.imageDigest)")
-    if ($scan.imageScanStatus.status -ne 'COMPLETE' -or @($scan.imageScanFindings.findingSeverityCounts.PSObject.Properties | Where-Object { [int]$_.Value -ne 0 }).Count -ne 0) { throw 'The reviewed application image scan is not clean.' }
+    if (-not (Test-CleanImageScan $scan)) { throw 'The reviewed application image scan is not clean.' }
     return $image.imageDigest
 }
 

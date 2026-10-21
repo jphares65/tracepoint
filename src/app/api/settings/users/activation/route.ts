@@ -2,8 +2,11 @@ import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
 import { issueActivationEmail } from "@/lib/tracepoint/activation";
+import { provisionExistingCognitoUser } from "@/lib/authentication/cognito-existing-user-migration";
 import { resendPendingCognitoActivation } from "@/lib/authentication/cognito-activation-resend";
+import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 type ActivationRequest = {
   departmentId?: string;
@@ -33,24 +36,46 @@ export async function POST(request: NextRequest) {
     if (process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
       const access = await resolveServerAccess();
       if (!access.ok) return accessFailureResponse(access);
-
-      if (access.context.departmentId !== departmentId) {
-        return NextResponse.json(
-          { error: "The active agency does not match this request." },
-          { status: 403 },
-        );
+      if (access.context.departmentId !== departmentId) return NextResponse.json({ error: "The active agency does not match this request." }, { status: 403 });
+      if (!hasServerPermission(access.context, "manage_users")) return NextResponse.json({ error: "You do not have permission to activate users." }, { status: 403 });
+      const [membershipResult, profileResult] = await Promise.all([
+        access.context.admin.from("department_memberships").select("user_id,activation_status,is_active").eq("department_id", departmentId).eq("user_id", userId).maybeSingle(),
+        access.context.admin.from("profiles").select("email,full_name").eq("id", userId).maybeSingle(),
+      ]);
+      if (membershipResult.error || profileResult.error) throw new Error("Activation account lookup failed.");
+      const membership = membershipResult.data;
+      if (!membership) return NextResponse.json({ error: "Department membership was not found." }, { status: 404 });
+      // Identity links are not readable by the request role; read the state only
+      // after the tenant-scoped membership lookup has confirmed the target.
+      const identityRows = (await getPostgresPool().query(
+        "select state from public.authentication_identity_links where tracepoint_user_id=$1 and provider='cognito'", [userId],
+      )).rows as Array<{ state?: unknown }>;
+      if (identityRows.length > 1) throw new Error("Activation account lookup failed.");
+      const identityResult = { data: identityRows[0] };
+      if (!membership.is_active) return NextResponse.json({ error: "Inactive users cannot be activated." }, { status: 400 });
+      const email = cleanText(profileResult.data?.email).toLowerCase();
+      if (!email) return NextResponse.json({ error: "This user does not have an email address." }, { status: 400 });
+      const identityState = cleanText(identityResult.data?.state);
+      if (!identityState) {
+        if (!hasServerPermission(access.context, "administer_department")) {
+          return NextResponse.json({ error: "Department-administration permission is required to migrate an existing identity." }, { status: 403 });
+        }
+        await provisionExistingCognitoUser({
+          actorUserId: access.context.userId,
+          departmentId,
+          targetUserId: userId,
+          siteUrl,
+          supportMode: access.context.isSupportMode,
+        });
+        return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
+      }
+      if (identityState !== "pending") {
+        return NextResponse.json({ error: "This account does not require activation." }, { status: 400 });
       }
 
-      if (!hasServerPermission(access.context, "manage_users")) {
-        return NextResponse.json(
-          { error: "You do not have permission to activate users." },
-          { status: 403 },
-        );
-      }
-
-      // The database function validates tenant, actor permissions,
-      // active membership, activation status, and pending identity link.
-      // Never create another Cognito identity from a resend request.
+      // The database function also validates tenant, actor permissions,
+      // active membership, activation status, and the pending identity link.
+      // A resend never creates another Cognito identity.
       try {
         await resendPendingCognitoActivation({
           actorUserId: access.context.userId,
@@ -73,10 +98,7 @@ export async function POST(request: NextRequest) {
         throw error;
       }
 
-      return NextResponse.json({
-        ok: true,
-        message: "Cognito activation email requested.",
-      });
+      return NextResponse.json({ ok: true, message: `Activation email sent to ${email}.` });
     }
 
     const server = await (await import("@/lib/supabase/server")).createClient();
@@ -213,12 +235,7 @@ export async function POST(request: NextRequest) {
       message: `Activation email sent to ${email}.`,
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Activation email could not be sent.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return unexpectedErrorResponse("Activation", error, "Activation email could not be sent.");
   }
 }
 

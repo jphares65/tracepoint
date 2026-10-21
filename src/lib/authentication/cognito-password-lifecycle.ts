@@ -6,14 +6,25 @@ import { getPostgresPool } from "@/lib/database/postgres-pool";
 import { assertIdentityMutationAllowed } from "@/lib/email/notification-mode";
 import { withPostgresAuthorization } from "@/lib/database/postgres-authorization-core";
 import { getCognitoAdminDirectory } from "./cognito-admin";
-import { CognitoDirectoryError } from "./cognito-admin-core";
-import { completeAssignPassword, completePasswordReset, finishPasswordOperation, type PreparedPasswordOperation } from "./cognito-password-lifecycle-core";
+import { CognitoDirectoryError, type CognitoDirectoryUser } from "./cognito-admin-core";
+import { completePasswordReset, finishPasswordOperation, type PreparedPasswordOperation } from "./cognito-password-lifecycle-core";
 import { passwordOperationContext } from "./cognito-password-operation-context";
 import { isCognitoCompliantPassword } from "./password-policy";
 
 type PasswordOperationKind = "assign_password" | "reset_password";
 
 const clean = (value: unknown) => typeof value === "string" ? value.trim() : "";
+
+function safeCode(error: unknown) {
+  return error instanceof CognitoDirectoryError ? error.code : "provider_unavailable";
+}
+
+function assertDirectoryMatch(prepared: PreparedPasswordOperation, actual: CognitoDirectoryUser) {
+  if (!actual.enabled || actual.username !== prepared.providerUsername || actual.subject !== prepared.providerSubject ||
+      actual.email.toLowerCase() !== prepared.email) {
+    throw new CognitoDirectoryError("conflict");
+  }
+}
 
 async function prepare(input: {
   operationId: string;
@@ -60,7 +71,23 @@ export async function assignCognitoPassword(input: {
   }
   const operationId = randomUUID();
   const prepared = await prepare({ ...input, operationId, kind: "assign_password" });
-  return completeAssignPassword(operationId, prepared, input.password, getCognitoAdminDirectory(), finish);
+  const directory = getCognitoAdminDirectory();
+  // Only a failure before the first Cognito write proves Cognito unchanged
+  // (045), as in completeAssignPassword in the core module.
+  let writeAttempted = false;
+  try {
+    assertDirectoryMatch(prepared, await directory.get(prepared.providerUsername));
+    writeAttempted = true;
+    await directory.setPermanentPassword(prepared.providerUsername, input.password);
+    // ADM-07: an assigned password proves nothing about the mailbox, so the
+    // email is not marked verified here.
+    await directory.globalSignOut(prepared.providerUsername);
+    await finish(operationId, true);
+    return prepared;
+  } catch (error) {
+    await finish(operationId, false, safeCode(error), !writeAttempted).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function beginCognitoPasswordReset(input: {

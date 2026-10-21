@@ -8,6 +8,7 @@ import {
   Activity,
   BarChart3,
   Boxes,
+  Bell,
   BellRing,
   CalendarRange,
   ChevronDown,
@@ -39,8 +40,9 @@ import {
   type TracePointPermission,
 } from "@/lib/tracepoint/permissions";
 import { canAccessModule, toggleExpandedGroup } from "@/lib/tracepoint/module-access";
-import { MODULE_FEATURE, type ModuleFeatureCode } from "@/lib/tracepoint/module-catalog";
+import { MODULE_FEATURE } from "@/lib/tracepoint/module-catalog";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { hasEnabledFeatures, MODULE_FEATURES } from "@/lib/tracepoint/feature-gates";
 
 type TracePointShellProps = {
   activePage: string;
@@ -54,7 +56,7 @@ type NavigationLeaf = {
   href: string;
   icon?: typeof House;
   requirement?: PermissionRequirement;
-  featureCode?: ModuleFeatureCode;
+  features?: readonly string[];
 };
 
 type NavigationGroup = {
@@ -68,6 +70,7 @@ type NavigationEntry = NavigationLeaf | NavigationGroup;
 
 export const NAV_ITEMS: readonly NavigationEntry[] = [
   { label: "My Home", href: "/", icon: House },
+  { label: "My Notifications", href: "/notifications", icon: Bell },
   {
     label: "Command",
     icon: Activity,
@@ -75,14 +78,14 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Command Dashboard",
         href: "/command-dashboard",
-        featureCode: MODULE_FEATURE.COMMAND_DASHBOARD,
+        features: MODULE_FEATURES.commandDashboard,
         icon: Activity,
         requirement: { anyOf: ["view_command_dashboard"] },
       },
       {
         label: "Analytics",
         href: "/analytics",
-        featureCode: MODULE_FEATURE.ANALYTICS,
+        features: MODULE_FEATURES.analytics,
         icon: BarChart3,
         requirement: { anyOf: ["view_analytics"] },
       },
@@ -102,19 +105,19 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Department Firearms",
         href: "/firearms",
-        featureCode: MODULE_FEATURE.FIREARMS,
+        features: MODULE_FEATURES.firearms,
         icon: Crosshair,
       },
       {
         label: "Personally Owned Rifles",
         href: "/firearms/personal-rifles",
-        featureCode: MODULE_FEATURE.FIREARMS,
+        features: MODULE_FEATURES.firearms,
         icon: ShieldCheck,
       },
       {
         label: "Maintenance & Inspections",
         href: "/firearms/inspections",
-        featureCode: MODULE_FEATURE.FIREARMS,
+        features: MODULE_FEATURES.firearms,
         icon: ShieldCheck,
         requirement: {
           anyOf: [
@@ -127,14 +130,14 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Ammunition",
         href: "/firearms/ammunition",
-        featureCode: MODULE_FEATURE.AMMUNITION,
+        features: MODULE_FEATURES.ammunition,
         icon: Crosshair,
         requirement: { anyOf: ["manage_firearms"] },
       },
       {
         label: "Reconciliation",
         href: "/firearms/ammunition/reconciliation",
-        featureCode: MODULE_FEATURE.AMMUNITION,
+        features: MODULE_FEATURES.ammunition,
         icon: ShieldCheck,
         requirement: { anyOf: ["manage_firearms"] },
       },
@@ -147,19 +150,19 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Range Days",
         href: "/range-days",
-        featureCode: MODULE_FEATURE.RANGE_TRAINING,
+        features: MODULE_FEATURES.rangeTraining,
         icon: CalendarRange,
       },
       {
         label: "Agency Training",
         href: "/agency-training",
-        featureCode: MODULE_FEATURE.RANGE_TRAINING,
+        features: MODULE_FEATURES.rangeTraining,
         icon: GraduationCap,
       },
       {
         label: "Training Alerts",
         href: "/training-alerts",
-        featureCode: MODULE_FEATURE.RANGE_TRAINING,
+        features: MODULE_FEATURES.rangeTraining,
         icon: BellRing,
         requirement: { anyOf: TRAINING_ALERTS_MODULE_PERMISSIONS },
       },
@@ -172,13 +175,13 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Qualifications",
         href: "/qualifications",
-        featureCode: MODULE_FEATURE.QUALIFICATIONS,
+        features: MODULE_FEATURES.qualifications,
         icon: ShieldCheck,
       },
       {
         label: "Certifications",
         href: "/training/certifications",
-        featureCode: MODULE_FEATURE.CERTIFICATIONS,
+        features: MODULE_FEATURES.certifications,
         icon: ShieldCheck,
       },
     ],
@@ -190,13 +193,13 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Equipment",
         href: "/equipment",
-        featureCode: MODULE_FEATURE.EQUIPMENT_READINESS,
+        features: MODULE_FEATURES.equipment,
         icon: Boxes,
       },
       {
         label: "Inventory",
         href: "/inventory",
-        featureCode: MODULE_FEATURE.INVENTORY,
+        features: [MODULE_FEATURE.INVENTORY],
         icon: Boxes,
         requirement: {
           anyOf: ["view_inventory", "manage_inventory", "adjust_inventory"],
@@ -205,7 +208,7 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Fleet Management",
         href: "/fleet-management",
-        featureCode: MODULE_FEATURE.FLEET,
+        features: [MODULE_FEATURE.FLEET],
         icon: Boxes,
         requirement: {
           anyOf: [
@@ -229,7 +232,7 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
       {
         label: "Requests & Approvals",
         href: "/off-duty-firearms",
-        featureCode: MODULE_FEATURE.OFF_DUTY,
+        features: MODULE_FEATURES.offDuty,
         icon: Shield,
       },
     ],
@@ -268,7 +271,7 @@ export const NAV_ITEMS: readonly NavigationEntry[] = [
         label: "Agency Documents",
         href: "/agency-documents",
         icon: FileText,
-        featureCode: MODULE_FEATURE.AGENCY_DOCUMENTS,
+        features: [MODULE_FEATURE.AGENCY_DOCUMENTS],
         requirement: {
           anyOf: [
             "view_agency_documents",
@@ -292,10 +295,13 @@ export function getVisibleChildren(
   enabledFeatures: Set<string>,
 ) {
   return group.children.filter((child) => {
+    if (!hasEnabledFeatures(enabledFeatures, child.features)) {
+      return false;
+    }
+
     return canAccessModule({
       permissions,
       enabledFeatures,
-      featureCode: child.featureCode,
       requirement: child.requirement,
     });
   });
@@ -313,8 +319,7 @@ function getNavItems(
 
     if (
       !isNavigationGroup(item) &&
-      item.featureCode &&
-      !enabledFeatures.has(item.featureCode)
+      !hasEnabledFeatures(enabledFeatures, item.features)
     ) {
       return false;
     }

@@ -22,7 +22,7 @@ try {
 const { default: EmbeddedPostgres } = await import("embedded-postgres");
 const execFileAsync = promisify(execFile);
 
-const expectedMigrationCount = 79;
+const expectedMigrationCount = 80;
 const migrationsDir = path.resolve("supabase/migrations");
 const databaseDir = await mkdtemp(path.join(tmpdir(), "tracepoint-bootstrap-"));
 const port = await localPostgresPort();
@@ -68,7 +68,15 @@ try {
     "create schema supabase_migrations; create table supabase_migrations.schema_migrations(version text primary key)",
   );
 
+  // The Supabase-bridge copy of the module entitlement seed. AWS-native
+  // environments receive it as database/aws/042 (tracepoint_auth.subject_id()
+  // instead of auth.uid()); here tracepoint_auth does not exist yet.
+  const awsNativeSupersededBridgeMigrations = new Set(["202610120001_default_module_entitlements.sql"]);
   for (const file of migrationFiles) {
+    if (awsNativeSupersededBridgeMigrations.has(file)) {
+      console.log(`Skipping ${file} (superseded by database/aws/042 on AWS-native environments)`);
+      continue;
+    }
     console.log(`Applying ${file}`);
     const sql = (await readFile(path.join(migrationsDir, file), "utf8"))
       .replace(/^\uFEFF/, "");
@@ -138,7 +146,7 @@ try {
         where schemaname = 'public' and tablename = 'certification_types'
           and policyname = 'department members can view certification types'
       ) as certification_type_policy
-      ,(select count(*) = 21 from public.permissions) as permission_catalog_complete
+      ,(select count(*) = 24 from public.permissions) as permission_catalog_complete
       ,exists (
         select 1 from pg_trigger
         where tgname = 'protect_final_administrator_role' and not tgisinternal
@@ -450,7 +458,117 @@ try {
     }
   }
 
-  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations; permission and retirement matrices passed; disposable database removed.`);
+  // Deployed environments run the AWS-native ledger on top of this lineage, so
+  // prove it applies cleanly and keeps the invariants its fixes depend on.
+  const awsMigrationsDir = path.resolve("database/aws");
+  const awsMigrationFiles = (await readdir(awsMigrationsDir))
+    .filter((file) => /^\d{3}_[a-z0-9_]+\.sql$/.test(file))
+    .sort();
+  for (const file of awsMigrationFiles) {
+    const sql = (await readFile(path.join(awsMigrationsDir, file), "utf8")).replace(/^﻿/, "");
+    try {
+      await client.query(sql);
+    } catch (error) {
+      await client.query("rollback").catch(() => {});
+      throw new Error(`AWS-native migration failed in ${file}: ${error.message}`, { cause: error });
+    }
+  }
+  const awsChecks = (await client.query(`
+    select
+      exists (
+        select 1 from pg_constraint
+        where conname = 'equipment_assets_lifecycle_status_check'
+          and pg_get_constraintdef(oid) like '%out_of_service%'
+      ) as equipment_out_of_service_allowed,
+      not has_function_privilege('authenticated', 'public.update_firearm_with_audit_internal(uuid,uuid,uuid,text,text,text,text,text,text,text,text)', 'execute') as firearm_rpc_internal_not_executable,
+      not has_function_privilege('authenticated', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute')
+        and not has_function_privilege('anon', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute')
+        and not has_function_privilege('tracepoint_runtime', 'public.create_department_with_owner(text,text,text,text,text,text)', 'execute') as department_self_creation_not_executable,
+      has_function_privilege('tracepoint_runtime', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute')
+        and not has_function_privilege('authenticated', 'tracepoint_auth.activate_cognito_identity_on_first_login(text,text,uuid)', 'execute') as first_login_activation_runtime_only,
+      pg_get_functiondef('public.protect_pilot_range_workspace_mutation()'::regprocedure) not like '%= ''ready''%'
+        and pg_get_functiondef('public.protect_range_day_drill_history()'::regprocedure) not like '%= ''ready''%' as range_packet_ready_not_final,
+      pg_get_functiondef('public.attach_existing_cognito_personnel_import(uuid,text,text,text,text,text,text)'::regprocedure) like '%if v_created then%'
+        and pg_get_functiondef('public.update_cognito_personnel_import(uuid,uuid,text,text,text,text,text,text,text)'::regprocedure) like '%coalesce(nullif(btrim(p_badge_number),''''),badge_number)%'
+        and pg_get_functiondef('tracepoint_auth.prepare_cognito_membership_operation(uuid,text,uuid,uuid)'::regprocedure) like '%Only a department Administrator may modify an Administrator account%' as personnel_reimport_preserves_existing_members,
+      exists (
+        select 1 from pg_trigger
+        where tgname = 'fleet_vehicle_inspections_audit_outbox'
+          and tgrelid = 'public.fleet_vehicle_inspections'::regclass and tgenabled <> 'D'
+      ) as fleet_inspection_audit_outbox_trigger,
+      coalesce(
+        not has_function_privilege('authenticated', to_regprocedure('public.fleet_audit_outbox_deliver_internal(uuid,uuid)'), 'execute')
+        and has_function_privilege('authenticated', to_regprocedure('public.deliver_fleet_audit_outbox(uuid,jsonb)'), 'execute')
+        and not has_table_privilege('authenticated', to_regclass('public.fleet_audit_outbox'), 'insert,update,delete'),
+        false
+      ) as fleet_audit_outbox_privileges,
+      pg_get_functiondef('public.enqueue_fleet_inspection_audit()'::regprocedure) not like '%status_automation_enabled%'
+        and pg_get_functiondef('public.enqueue_fleet_inspection_audit()'::regprocedure) not like '%critical_issue_out_of_service%' as fleet_critical_inspection_hold_ignores_automation_settings,
+      exists (
+        select 1 from pg_trigger
+        where tgname = 'fleet_vehicles_safety_hold_clearance_guard'
+          and tgrelid = 'public.fleet_vehicles'::regclass and tgenabled <> 'D'
+      )
+        and pg_get_functiondef('public.guard_fleet_safety_hold_clearance()'::regprocedure) like '%critical work order is open%' as fleet_safety_hold_clearance_refused_with_open_critical_work
+  `)).rows[0];
+  const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
+  if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
+  try {
+    await client.query(await readFile("scripts/validate-local-field-write-authorization.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native field-write authorization failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-fleet-inspection-eligibility.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native fleet inspection eligibility failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-training-record-visibility.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native training record visibility failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-training-closeout.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native training closeout failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-range-instructor-line.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native range instructor line actions failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-armory-integrity.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native armory integrity failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-fleet-audit-outbox.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native fleet audit outbox delivery failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-safety-hold-rollback.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native safety hold status guard failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-rollback-json-preservation.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native rollback JSON preservation failed: ${error.message}`, { cause: error });
+  }
+
+  console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
   if (started && postgres.process?.spawnfile) {

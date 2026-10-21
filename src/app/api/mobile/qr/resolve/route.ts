@@ -1,44 +1,45 @@
 import { NextResponse } from "next/server";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { qrDecision } from "@/lib/tracepoint/mobile-workflows";
+import { canSubmitFleetInspection } from "@/lib/tracepoint/fleet-server";
+import { lookupQrRecords, parseQrIdentifier, qrDecision, qrLookupFilter } from "@/lib/tracepoint/mobile-workflows";
 export const dynamic = "force-dynamic";
 const identifier = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 2048) : "";
-const opaqueHandle = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 export async function POST(request: Request) {
   const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved);
   const value = identifier((await request.json().catch(() => ({})) as { identifier?: unknown }).identifier);
-  if (!opaqueHandle.test(value)) return NextResponse.json({ status: "unknown", message: "This QR code is not valid." }, { status: 400 });
-  const { admin, departmentId, ...access } = resolved.context;
+  const parsed = parseQrIdentifier(value);
+  if (!parsed) return NextResponse.json({ status: "unknown", message: "This QR code is not valid." }, { status: 400 });
+  const { admin, departmentId, ...context } = resolved.context;
+  // Vehicle access follows the inspection-eligibility rule: on AWS-native the database rule (055) is authoritative,
+  // because RLS may hide fleet_rules from the caller; in bridge mode the service-role client reads the rules.
+  let vehicleInspectionEligible: boolean;
+  const awsNative = process.env.TRACEPOINT_DATA_PROVIDER === "postgres";
+  if (awsNative) {
+    const eligible = await admin.rpc("can_submit_fleet_inspection", { p_department_id: departmentId });
+    if (eligible.error) return NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
+    vehicleInspectionEligible = eligible.data === true;
+  } else {
+    const rules = await admin.from("fleet_rules").select("inspection_role_codes").eq("department_id", departmentId).maybeSingle();
+    if (rules.error) return NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
+    vehicleInspectionEligible = canSubmitFleetInspection(resolved.context, rules.data);
+  }
+  // Restricted firearm custody (database/aws 031) exists only on AWS-native; the lookup mirrors its operator rule.
+  const access = { ...context, vehicleInspectionEligible, restrictedFirearmCustody: awsNative };
   // QR values are opaque inputs. Candidate identifiers are resolved only inside the authorized tenant query.
-  const [vehicle, equipment, firearm] = await Promise.all([
-    admin.from("fleet_vehicles").select("id,unit_number,vin,status").eq("department_id", departmentId).or(`id.eq.${value},unit_number.eq.${value},vin.eq.${value}`).maybeSingle(),
-    admin.from("equipment_assets").select("id,manufacturer,model,serial_number,asset_number,lifecycle_status").eq("department_id", departmentId).neq("lifecycle_status", "removed").or(`id.eq.${value},asset_number.eq.${value},serial_number.eq.${value}`).maybeSingle(),
-    admin.from("firearms").select("id,serial_number,asset_number,is_active").eq("department_id", departmentId).eq("is_active", true).or(`id.eq.${value},asset_number.eq.${value},serial_number.eq.${value}`).maybeSingle(),
-  ]);
-  if (vehicle.error || equipment.error || firearm.error) return NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
-  let permittedInspectionRoleCodes: string[] = [];
-  if (vehicle.data) {
-    const { data: fleetRules, error: fleetRulesError } = await admin
-      .from("fleet_rules")
-      .select("inspection_role_codes")
-      .eq("department_id", departmentId)
-      .maybeSingle();
-    if (fleetRulesError) {
-      return NextResponse.json(
-        { error: "Vehicle workflow authorization could not be verified." },
-        { status: 500 },
-      );
-    }
-    permittedInspectionRoleCodes = Array.isArray(fleetRules?.inspection_role_codes)
-      ? fleetRules.inspection_role_codes.filter((roleCode: unknown): roleCode is string => typeof roleCode === "string")
-      : [];
-  }
+  const records = await lookupQrRecords(admin, departmentId, parsed, access);
+  if ("failure" in records) return records.failure === "ambiguous"
+    ? NextResponse.json({ status: "unknown", message: "This code matches more than one record. Scan the TracePoint label for this item instead." }, { status: 409, headers: { "Cache-Control": "no-store" } })
+    : NextResponse.json({ error: "TracePoint could not resolve this QR code." }, { status: 500 });
+  // Inventory items have no printed label kind; an unlabelled handle that matched no other readable record is tried as an
+  // inventory item ID or SKU, for callers with an inventory permission only.
   let inventory: Record<string, unknown> | null = null;
-  if (!vehicle.data && !equipment.data && !firearm.data &&
+  if (!parsed.kind && !records.vehicle && !records.equipment && !records.firearm &&
       access.permissions.some((p: string) => ["view_inventory", "manage_inventory", "adjust_inventory", "administer_department"].includes(p))) {
-    const candidate = await admin.from("inventory_items").select("id,name,sku,is_active").eq("department_id", departmentId).eq("is_active", true).or(`id.eq.${value},sku.eq.${value}`).maybeSingle();
-    if (candidate.error) return NextResponse.json({ error: "Inventory QR lookup is unavailable." }, { status: 503 });
-    inventory = candidate.data;
+    const candidates = await admin.from("inventory_items").select("id,name,sku,is_active").eq("department_id", departmentId).eq("is_active", true).or(qrLookupFilter(parsed.handle, ["sku"]));
+    if (candidates.error) return NextResponse.json({ error: "Inventory QR lookup is unavailable." }, { status: 503 });
+    const matches = Array.isArray(candidates.data) ? candidates.data as Record<string, unknown>[] : [];
+    if (matches.length > 1) return NextResponse.json({ status: "unknown", message: "This code matches more than one record. Scan the TracePoint label for this item instead." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+    inventory = matches[0] ?? null;
   }
-  return NextResponse.json(qrDecision({ identifier: value, access, vehicle: vehicle.data, equipment: equipment.data, firearm: firearm.data, inventory, permittedInspectionRoleCodes }), { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(qrDecision({ identifier: parsed.handle, access, ...records, inventory }), { headers: { "Cache-Control": "no-store" } });
 }

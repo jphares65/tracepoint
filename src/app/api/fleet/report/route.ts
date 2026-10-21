@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 import { accessFailureResponse, featureDisabledResponse, hasAnyServerPermission, hasServerFeature, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { MODULE_FEATURE } from "@/lib/tracepoint/module-catalog";
-import { canViewNetworkDetails } from "@/lib/tracepoint/fleet-server";
+import { canViewFleetCosts, canViewNetworkDetails } from "@/lib/tracepoint/fleet-server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,7 @@ export async function GET() {
   try {
     const repository=createFleetReadRepository(context.admin,context.departmentId);
     const {items:vehicles}=await repository.getVehicleList({departmentId:context.departmentId,vehicleFields:"*"});
-    const details=await Promise.all(vehicles.map((vehicle)=>repository.getVehicleDetail({departmentId:context.departmentId,vehicleId:String(vehicle.id),canViewNetworkDetails:(rules)=>canViewNetworkDetails(context,rules)})));
+    const details=await Promise.all(vehicles.map((vehicle)=>repository.getVehicleDetail({departmentId:context.departmentId,vehicleId:String(vehicle.id),canViewNetworkDetails:(rules)=>canViewNetworkDetails(context,rules),canViewCosts:canViewFleetCosts(context)})));
     return NextResponse.json({vehicles,workOrders:details.flatMap((detail)=>detail?.workOrders??[]),equipment:details.flatMap((detail)=>detail?.equipment??[]),inspections:details.flatMap((detail)=>detail?.inspections??[])} ,{headers:{"Cache-Control":"no-store"}});
   } catch(error) { return NextResponse.json({error:error instanceof Error?error.message:"Fleet report data could not be loaded."},{status:500}); }
 }

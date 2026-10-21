@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import {
  AdminCreateUserCommand,AdminDeleteUserCommand,AdminDisableUserCommand,AdminEnableUserCommand,AdminGetUserCommand,
- AdminResetUserPasswordCommand,AdminSetUserPasswordCommand,AdminUpdateUserAttributesCommand,AdminUserGlobalSignOutCommand,
+ AdminResetUserPasswordCommand,AdminSetUserPasswordCommand,AdminUserGlobalSignOutCommand,
  CognitoIdentityProviderClient,ConfirmForgotPasswordCommand,type AttributeType,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { parseCognitoRuntimeConfiguration, parseCognitoTargetConfiguration } from "./cognito-runtime-configuration-core";
@@ -46,7 +46,6 @@ export class AwsCognitoAdminDirectory implements CognitoAdminDirectory{
   if(after.subject!==expected||after.username!==expected||after.email!==alias||!after.enabled||after.status!=="FORCE_CHANGE_PASSWORD")throw new CognitoDirectoryError("unavailable");
  }
  async setPermanentPassword(username:string,password:string){if(!isCognitoCompliantPassword(password))throw new CognitoDirectoryError("invalid_password");await this.send(new AdminSetUserPasswordCommand({UserPoolId:this.userPoolId,Username:this.username(username),Password:password,Permanent:true}));}
- async markEmailVerified(username:string){await this.send(new AdminUpdateUserAttributesCommand({UserPoolId:this.userPoolId,Username:this.username(username),UserAttributes:[{Name:"email_verified",Value:"true"}]}));}
  async beginPasswordReset(username:string){await this.send(new AdminResetUserPasswordCommand({UserPoolId:this.userPoolId,Username:this.username(username)}));}
  async completePasswordReset(username:string,code:string,password:string){if(!code||code.length>2048||!isCognitoCompliantPassword(password))throw new CognitoDirectoryError("invalid_code");await this.send(new ConfirmForgotPasswordCommand({ClientId:this.clientId,Username:this.username(username),ConfirmationCode:code,Password:password}));}
  async disable(username:string){await this.send(new AdminDisableUserCommand({UserPoolId:this.userPoolId,Username:this.username(username)}));}

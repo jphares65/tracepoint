@@ -55,6 +55,7 @@ import type { TracePointPermission } from "@/lib/tracepoint/permissions";
 import FleetRulesPanel from "./fleet/FleetRulesPanel";
 import AgencyTrainingRulesPanel from "@/app/settings/components/AgencyTrainingRulesPanel";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { csvCell } from "@/lib/format/csv";
 import SecureStorageLocationsPanel from "./components/SecureStorageLocationsPanel";
 
 type TabId =
@@ -1902,8 +1903,9 @@ export default function AdminSettingsPage() {
     setNotice(null);
 
     try {
+      // One command: details, roles and groups are saved together or not at all.
       const { error: memberError } = await dataClient.rpc(
-        "update_department_member",
+        "save_department_member",
         {
           p_department_id: departmentId,
           p_user_id: editingMember.user_id,
@@ -1912,32 +1914,12 @@ export default function AdminSettingsPage() {
           p_unit_name: memberDraft.unit_name,
           p_employee_number: memberDraft.employee_number,
           p_is_active: memberDraft.is_active,
-        },
-      );
-
-      if (memberError) throw memberError;
-
-      const { error: roleError } = await dataClient.rpc(
-        "set_department_member_roles",
-        {
-          p_department_id: departmentId,
-          p_user_id: editingMember.user_id,
           p_role_codes: memberDraft.role_codes,
-        },
-      );
-
-      if (roleError) throw roleError;
-
-      const { error: groupError } = await dataClient.rpc(
-        "set_department_group_members",
-        {
-          p_department_id: departmentId,
-          p_user_id: editingMember.user_id,
           p_group_ids: memberGroupIds,
         },
       );
 
-      if (groupError) throw groupError;
+      if (memberError) throw memberError;
 
       setEditingMember(null);
       setMemberDraft(null);
@@ -2303,8 +2285,7 @@ export default function AdminSettingsPage() {
 
       const rows = Array.isArray(payload.events) ? payload.events : [];
 
-      const escape = (value: unknown) =>
-        `"${String(value ?? "").replaceAll('"', '""')}"`;
+      const escape = (value: unknown) => csvCell(value, true);
 
       const csv = [
         [

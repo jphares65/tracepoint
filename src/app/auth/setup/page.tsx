@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
+import { COGNITO_PASSWORD_MIN_LENGTH } from "@/lib/authentication/password-policy";
 
 type SetupPageProps = {
   searchParams: Promise<{
@@ -49,9 +50,9 @@ async function completeAccountSetup(formData: FormData) {
     );
   }
 
-  if (password.length < 8) {
+  if (password.length < COGNITO_PASSWORD_MIN_LENGTH) {
     setupRedirectWithError(
-      "Password must be at least 8 characters.",
+      `Password must be at least ${COGNITO_PASSWORD_MIN_LENGTH} characters.`,
       nextPath,
     );
   }
@@ -312,7 +313,7 @@ function PasswordSetupView({
               </h2>
 
               <p className="text-sm text-slate-500">
-                Use at least 8 characters.
+                Use at least {COGNITO_PASSWORD_MIN_LENGTH} characters.
               </p>
             </div>
           </div>
@@ -338,7 +339,7 @@ function PasswordSetupView({
                 name="password"
                 type="password"
                 required
-                minLength={8}
+                minLength={COGNITO_PASSWORD_MIN_LENGTH}
                 autoComplete="new-password"
                 className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-700 focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/10"
               />
@@ -353,7 +354,7 @@ function PasswordSetupView({
                 name="confirmPassword"
                 type="password"
                 required
-                minLength={8}
+                minLength={COGNITO_PASSWORD_MIN_LENGTH}
                 autoComplete="new-password"
                 className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-700 focus:border-blue-500/70 focus:ring-2 focus:ring-blue-500/10"
               />

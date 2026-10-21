@@ -30,7 +30,7 @@ export async function completeAssignPassword(
   operationId: string,
   prepared: PreparedPasswordOperation,
   password: string,
-  directory: Pick<CognitoAdminDirectory, "get" | "setPermanentPassword" | "markEmailVerified" | "globalSignOut">,
+  directory: Pick<CognitoAdminDirectory, "get" | "setPermanentPassword" | "globalSignOut">,
   finish: FinishPasswordOperation,
 ) {
   let writeAttempted = false;
@@ -38,7 +38,6 @@ export async function completeAssignPassword(
     assertDirectoryMatch(prepared, await directory.get(prepared.providerUsername));
     writeAttempted = true;
     await directory.setPermanentPassword(prepared.providerUsername, password);
-    if (prepared.identityState === "pending") await directory.markEmailVerified(prepared.providerUsername);
     await directory.globalSignOut(prepared.providerUsername);
     await finish(operationId, true);
     return prepared;

@@ -24,14 +24,14 @@ $configuration = @{
         Region = 'us-east-1'; Cluster = 'tracepoint-staging'; Service = 'tracepoint-staging'
         Repository = 'tracepoint-staging'; SourceBucket = 'tracepoint-staging-build-source-559054714699'
         SourceKey = 'source/tracepoint-staging-source.zip'; BuildProject = 'tracepoint-staging-image-build'
-        Host = 'https://staging.tracepointhq.com'; ImageSuffix = '-aws-native-staging'
+        Host = 'https://staging.tracepointhq.com'
     }
     production = @{
         Account = '193644343389'; Profile = 'tracepoint-production'; Role = 'TracePointMigrationProduction'
         Region = 'us-east-1'; Cluster = 'tracepoint-production'; Service = 'tracepoint-production'
         Repository = 'tracepoint-production'; SourceBucket = 'tracepoint-production-aws-native-build-source-193644343389'
         SourceKey = 'source/tracepoint-production-aws-native-source.zip'; BuildProject = 'tracepoint-production-aws-native-image-build'
-        Host = 'https://tracepointhq.com'; ImageSuffix = '-aws-native-production'
+        Host = 'https://tracepointhq.com'
     }
 }[$Environment]
 
@@ -156,17 +156,6 @@ function Invoke-Native {
     param([Parameter(Mandatory)][string]$File, [Parameter(Mandatory)][string[]]$Arguments)
     & $File @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$File failed." }
-}
-
-function Test-CleanImageScan {
-    param([Parameter(Mandatory)]$Scan)
-    if ($Scan.imageScanStatus.status -ne 'COMPLETE') { return $false }
-    $severityCounts = $Scan.imageScanFindings.findingSeverityCounts
-    if ($null -eq $severityCounts) { return $true }
-    foreach ($severity in $severityCounts.PSObject.Properties) {
-        if ([int]$severity.Value -gt 0) { return $false }
-    }
-    return $true
 }
 
 function Wait-CleanImageScan {
@@ -413,6 +402,8 @@ function Invoke-PostDeploymentDiagnostics {
     }
 }
 
+if ($PublishOnly -and $RollbackTaskDefinitionArn) { throw '-PublishOnly cannot be combined with -RollbackTaskDefinitionArn.' }
+if ($PublishOnly -and $Environment -ne 'staging') { throw '-PublishOnly is limited to staging in this release.' }
 $deploymentLock = Acquire-DeploymentLock -LockEnvironment $Environment
 try {
 Assert-AwsIdentity | Out-Null
@@ -449,7 +440,7 @@ if ($SkipLocalValidation) {
         throw
     }
 }
-$imageTag = "$commit$($configuration.ImageSuffix)"
+$imageTag = Get-ApplicationImageTag -Environment $Environment -Commit $commit
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
 if ($ExpectedImageDigest) { Assert-ImageDigest -Actual $image.imageDigest -Expected $ExpectedImageDigest | Out-Null }
 if ($PublishOnly) {
@@ -457,6 +448,10 @@ if ($PublishOnly) {
     exit 0
 }
 $imageUri = "${imageRepository}@$($image.imageDigest)"
+if ($PublishOnly) {
+    Write-Host "PUBLISH ONLY SUCCEEDED - ECS unchanged: $Environment commit $commit, image $imageTag ($imageUri)."
+    exit 0
+}
 $registered = Register-ApplicationTaskRevision -CurrentTask (Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn) -ImageUri $imageUri
 $deploymentStarted = $false
 try {

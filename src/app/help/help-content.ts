@@ -60,20 +60,20 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
   {
     id: "activate-account",
     title: "Activate a new account",
-    summary: "Use a TracePoint activation email to create a password and complete account setup.",
+    summary: "Use your TracePoint invitation email to sign in for the first time, set your password, and set up multi-factor authentication.",
     category: "Getting Started",
     roles: allRoles,
-    keywords: ["activation", "invite", "new user", "create password", "14 days", "expired link"],
+    keywords: ["activation", "invite", "new user", "create password", "temporary password", "expired", "authenticator", "mfa"],
     sections: [
       { heading: "Activate", steps: [
-        "Open the TracePoint activation email sent by your administrator.",
-        "Select Activate Your Account. Activation links remain valid for 14 days unless an administrator sends a replacement.",
-        "Create and confirm your password, then finish any requested profile setup.",
-        "Sign in and confirm that the correct department appears.",
+        "Open the TracePoint invitation email sent when your administrator added you. It contains a temporary password.",
+        "Open the TracePoint sign-in page, select Continue with secure sign-in, and sign in with your email address and the temporary password.",
+        "Choose a new password of at least 14 characters with upper- and lower-case letters, a number, and a symbol.",
+        "Set up an authenticator app when prompted, then confirm that the correct department appears.",
       ] },
-      { heading: "If the link does not work", steps: [
-        "Use only the most recent activation email; a replacement link revokes the earlier link.",
-        "Ask a department administrator to resend activation from Settings > Users & Roles.",
+      { heading: "If the temporary password does not work", steps: [
+        "Temporary passwords expire quickly. Use only the most recent invitation email; a new invitation replaces the earlier temporary password.",
+        "Ask a department administrator to select Send Activation in Settings > Users & Roles.",
       ] },
     ],
     route: "/login",
@@ -82,19 +82,19 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
   {
     id: "password-reset",
     title: "Reset a forgotten password",
-    summary: "Request a secure password-reset email and return to TracePoint.",
+    summary: "Request a password-reset code from the secure sign-in page and return to TracePoint.",
     category: "Getting Started",
     roles: allRoles,
-    keywords: ["forgot password", "reset password", "can't login", "sign in"],
+    keywords: ["forgot password", "reset password", "can't login", "sign in", "verification code"],
     sections: [
       { heading: "Reset", steps: [
-        "Open the TracePoint sign-in page and select Forgot password.",
-        "Enter the email address associated with your TracePoint account.",
-        "Open the newest reset email and select Reset Password.",
-        "Choose a new password, then sign in normally.",
+        "Open the TracePoint sign-in page and select Continue with secure sign-in.",
+        "On the secure sign-in page, select Forgot your password? and enter the email address associated with your TracePoint account.",
+        "Enter the verification code from the newest reset email and choose a new password of at least 14 characters.",
+        "Sign in with the new password. Your authenticator app code is still required.",
       ] },
     ],
-    tip: "If no email arrives, check junk mail and confirm the address with your department administrator.",
+    tip: "If no code arrives, check junk mail. Before your first sign-in, Forgot your password? cannot be used: ask a department administrator to select Send Activation in Settings > Users & Roles. If the reset is refused or no code arrives after your first sign-in, ask a department administrator to assign a password there.",
     route: "/login",
     routeLabel: "Open Sign In",
   },
@@ -157,18 +157,18 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     summary: "Choose whether TracePoint emails Inbox items immediately or as a digest.",
     category: "Home & Inbox",
     roles: allRoles,
-    keywords: ["email", "digest", "immediate", "daily", "weekly", "critical only", "brevo"],
+    keywords: ["email", "digest", "immediate", "daily", "weekly", "critical only", "my notifications"],
     sections: [
       { heading: "Set preferences", steps: [
-        "Open Settings and choose My Notifications.",
+        "Open My Notifications from the navigation and select Preferences.",
         "Turn email reminders on or off.",
         "Choose whether email should include only critical items.",
         "Choose Immediate, Daily, or Weekly delivery and save preferences.",
       ] },
     ],
     tip: "The TracePoint Inbox remains authoritative. Email is a reminder and groups eligible items to avoid repeated messages.",
-    route: "/settings",
-    routeLabel: "Open Notification Settings",
+    route: "/notifications",
+    routeLabel: "Open My Notifications",
   },
   {
     id: "command-dashboard",
@@ -411,21 +411,22 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
   },
   {
     id: "agency-training",
-    title: "Agency Training module status",
-    summary: "See what is planned for non-range training events and what is not yet available.",
+    title: "Record agency training events",
+    summary: "Schedule non-range training, record attendance and outcomes, and complete events.",
     category: "Range & Training",
     roles: allRoles,
-    keywords: ["agency training", "in service", "cpr", "defensive tactics", "coming soon"],
+    keywords: ["agency training", "in service", "cpr", "defensive tactics", "attendance", "certificate"],
     sections: [
-      { heading: "Current status", steps: [
-        "Agency Training is a preview of a planned module and is not yet an active recordkeeping workflow.",
-        "The planned design covers events, rosters, attendance, instructors, lesson plans, outcomes, certificates, and readiness integration.",
-        "Continue using your department's current approved process until the module is released.",
+      { heading: "Record an event", steps: [
+        "Open Agency Training and create or open the training event.",
+        "Add the roster, then record each attendee's attendance, outcome, and hours.",
+        "Attach supporting files such as lesson plans or certificates.",
+        "Complete the event when the records are final; completion applies any certification the course issues.",
       ] },
     ],
-    status: "Coming soon",
+    status: "Live",
     route: "/agency-training",
-    routeLabel: "View Planned Module",
+    routeLabel: "Open Agency Training",
   },
   {
     id: "qualification-status",
@@ -582,7 +583,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       { heading: "Add or update", steps: [
         "Open Settings > Users & Roles.",
         "Create the user with the correct email, name, badge or employee information, rank, unit, and role.",
-        "Send activation and use resend only when the user needs a new 14-day activation link.",
+        "Inviting a user emails a temporary password. Use Send Activation only when the user needs a new invitation because the temporary password expired or was lost.",
         "Review effective permissions after changing roles, and deactivate access when a person should no longer enter the department.",
       ] },
     ],
@@ -643,7 +644,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
       ] },
       { heading: "Audit", steps: [
         "Open Settings > Audit & Security.",
-        "Filter or review events by action, actor, entity, or date when available.",
+        "Review recent events by action, actor, entity, and date, and use Export CSV for a longer history.",
         "Open the relevant operational record to validate context before drawing a conclusion from an event.",
       ] },
     ],
@@ -660,7 +661,7 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     sections: [
       { heading: "Onboard", steps: [
         "Create or open the agency from the Platform page and verify its identity and enabled features.",
-        "Establish the agency's lead administrator and send the custom 14-day activation link.",
+        "Select Access Agency to enter Support Mode, then invite the agency's lead administrator from Settings > Users & Roles with the Administrator role.",
         "Let the agency administrator configure organization, users, roles, rules, and branding before broad invitations.",
         "Use support mode only when required, keep department context visible, and leave support mode when work is complete.",
       ] },
@@ -670,21 +671,21 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
   },
   {
     id: "fleet-status",
-    title: "Fleet Management module status",
-    summary: "See the planned vehicle inspection, equipment, maintenance, assignment, and readiness workflow.",
+    title: "Manage fleet vehicles",
+    summary: "Track vehicle status, inspections, maintenance, equipment, and documents.",
     category: "Platform",
     roles: allRoles,
-    keywords: ["fleet", "vehicle", "cruiser", "qr", "maintenance", "coming soon"],
+    keywords: ["fleet", "vehicle", "cruiser", "qr", "maintenance", "inspection", "work order"],
     sections: [
-      { heading: "Current status", steps: [
-        "Fleet Management is a preview of a planned module and is not yet an active recordkeeping workflow.",
-        "The planned design includes QR access, mobile inspections, required equipment, maintenance routing, custody, and readiness status.",
-        "Continue using your department's approved fleet process until the module is released.",
+      { heading: "Work with vehicles", steps: [
+        "Open Fleet Management and filter or sort the vehicle list by status or inspection due date.",
+        "Open a vehicle to review its readiness, assignment, equipment, documents, and history.",
+        "Record inspections and maintenance work orders on the vehicle; your role controls which actions are available.",
       ] },
     ],
-    status: "Coming soon",
+    status: "Live",
     route: "/fleet-management",
-    routeLabel: "View Planned Module",
+    routeLabel: "Open Fleet Management",
   },
   {
     id: "troubleshoot-permissions",
@@ -742,11 +743,11 @@ export const HELP_ARTICLES: readonly HelpArticle[] = [
     summary: "Check the correct email flow without repeatedly generating unnecessary messages.",
     category: "Troubleshooting",
     roles: allRoles,
-    keywords: ["email missing", "spam", "activation email", "reset email", "digest missing", "brevo"],
+    keywords: ["email missing", "spam", "activation email", "invitation", "reset email", "digest missing"],
     sections: [
       { heading: "Check", steps: [
         "Confirm the account email address is correct and check spam or junk folders.",
-        "For activation, use the newest email because resending creates a replacement link.",
+        "For activation, use the newest invitation email because a new invitation replaces the earlier temporary password.",
         "For Inbox reminders, confirm email is enabled, the selected schedule is due, and the item matches the critical-only setting.",
         "Remember that resolved, acknowledged, snoozed, archived, completed, or canceled items are not sent as active reminders.",
       ] },

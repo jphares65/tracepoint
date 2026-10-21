@@ -245,8 +245,15 @@ async function loadRequests(context: any) {
       const inspectionStatus =
         inspectionStatusForRequest(String(row.id));
 
+      // A failed latest inspection leaves the firearm non-compliant until it
+      // passes a re-inspection.
+      const inspectionFailed =
+        latestInspectionByRequest.get(String(row.id))?.result === "Fail";
+
       const compliance =
-        authorizationStatus === "Authorized" &&
+        inspectionFailed
+          ? "Non-Compliant"
+          : authorizationStatus === "Authorized" &&
         ["Current", "Due Soon"].includes(
           qualificationReadiness.status,
         ) &&

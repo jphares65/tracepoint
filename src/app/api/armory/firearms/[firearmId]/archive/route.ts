@@ -59,9 +59,11 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
   const { firearmId } = await routeContext.params;
   const body = (await request.json().catch(() => ({}))) as {
     archiveReason?: string;
+    notReturnedReason?: string;
   };
 
   const archiveReason = cleanText(body.archiveReason);
+  const notReturnedReason = cleanText(body.notReturnedReason);
 
   if (!archiveReason) {
     return NextResponse.json(
@@ -110,13 +112,13 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
       throw new Error(assignmentError.message);
     }
 
-    if (activeAssignment) {
+    if (activeAssignment && !notReturnedReason) {
       return NextResponse.json(
         {
           error:
-            "This firearm is currently assigned. Return it before archiving it.",
+            "This firearm is currently assigned. Return it before archiving it, or record why it was not returned (for example lost or stolen).",
         },
-        { status: 409 },
+        { status: 400 },
       );
     }
 
@@ -147,6 +149,43 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
         },
         { status: 409 },
       );
+    }
+
+    if (activeAssignment) {
+      // A lost or stolen firearm closes its assignment as not returned, so the
+      // custody record never asserts a physical return. This runs after the
+      // archive: if it fails, the firearm is archived (it cannot be issued)
+      // and still shows its holder. Restore and archive again to retry.
+      const now = new Date().toISOString();
+      const { data: closed, error: closeError } = await context.db
+        .from("firearm_assignments")
+        .update({
+          returned_by_user_id: context.userId,
+          returned_at: now,
+          condition_at_return: "Not Returned",
+          magazines_returned: 0,
+          magazine_discrepancy_reason: `Not returned: ${notReturnedReason}`,
+          updated_at: now,
+        })
+        .eq("id", activeAssignment.id)
+        .eq("department_id", context.departmentId)
+        .is("returned_at", null)
+        .select("id")
+        .maybeSingle();
+
+      if (closeError) {
+        throw new Error(closeError.message);
+      }
+
+      if (!closed) {
+        return NextResponse.json(
+          {
+            error:
+              "The firearm was archived, but its assignment changed before it could be closed as not returned. Check its custody record.",
+          },
+          { status: 409 },
+        );
+      }
     }
 
     return NextResponse.json({

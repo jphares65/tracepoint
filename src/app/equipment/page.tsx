@@ -20,7 +20,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate } from "@/lib/format/date";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
-import { groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
+import { equipmentCustodyLabel, equipmentHolderName, groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
 
 type ReadinessStatus =
   | "current"
@@ -153,6 +153,7 @@ type Member = {
   badgeNumber?: string | null;
   rankTitle?: string | null;
   unitName?: string | null;
+  isActive?: boolean;
 };
 
 type EquipmentVehicle = {
@@ -262,6 +263,8 @@ export default function EquipmentPage() {
   const [, setRequirements] = useState<EquipmentRequirement[]>([]);
   const [assets, setAssets] = useState<EquipmentAsset[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  // Separated members who still hold equipment; not offered for new assignment.
+  const [inactiveHolders, setInactiveHolders] = useState<Member[]>([]);
   const [vehicles, setVehicles] = useState<EquipmentVehicle[]>([]);
 
   const [canManage, setCanManage] = useState(false);
@@ -333,6 +336,7 @@ export default function EquipmentPage() {
     nextInspectionDate: "",
     notes: "",
     lifecycleStatus: "active" as EquipmentAsset["lifecycle_status"],
+    removalReason: "",
   });
 
   async function loadAll() {
@@ -388,6 +392,7 @@ export default function EquipmentPage() {
       const assetsPayload = (await assetsResponse.json()) as {
         items?: EquipmentAsset[];
         members?: Member[];
+        inactiveHolders?: Member[];
         vehicles?: EquipmentVehicle[];
         canManage?: boolean;
         canViewDepartment?: boolean;
@@ -400,6 +405,7 @@ export default function EquipmentPage() {
       setAssets(assetsPayload.items ?? []);
 
       setMembers(assetsPayload.members ?? []);
+      setInactiveHolders(assetsPayload.inactiveHolders ?? []);
       setVehicles(assetsPayload.vehicles ?? []);
       setCanViewDepartment(Boolean(assetsPayload.canViewDepartment));
 
@@ -456,8 +462,18 @@ export default function EquipmentPage() {
   }, [showArchivedTypes, typeSearch, types]);
 
   const memberMap = useMemo(
-    () => new Map(members.map((member) => [member.userId, member])),
-    [members],
+    () =>
+      new Map(
+        [...members, ...inactiveHolders].map((member) => [
+          member.userId,
+          member,
+        ]),
+      ),
+    [inactiveHolders, members],
+  );
+  const vehicleMap = useMemo(
+    () => new Map(vehicles.map((vehicle) => [vehicle.id, vehicle])),
+    [vehicles],
   );
   const availableRanks = useMemo(
     () =>
@@ -530,9 +546,10 @@ export default function EquipmentPage() {
     >();
 
     const normalizedSearch = search.trim().toLowerCase();
-    const assetsByUser = groupCurrentOfficerAssignments(members, assets);
+    const holders = [...members, ...inactiveHolders];
+    const assetsByUser = groupCurrentOfficerAssignments(holders, assets);
 
-    members.forEach((member) => {
+    holders.forEach((member) => {
       const assignedAssets = assetsByUser.get(member.userId) ?? [];
       const memberText = [
         member.fullName,
@@ -576,7 +593,7 @@ export default function EquipmentPage() {
       ) {
         groups.set(member.userId, {
           userId: member.userId,
-          officerName: member.fullName,
+          officerName: equipmentHolderName(member),
           badgeNumber: member.badgeNumber,
           rankTitle: member.rankTitle,
           unitName: member.unitName,
@@ -667,6 +684,7 @@ export default function EquipmentPage() {
     assets,
     canViewDepartment,
     filteredReadiness,
+    inactiveHolders,
     members,
     search,
     statusFilter,
@@ -956,6 +974,7 @@ export default function EquipmentPage() {
         nextInspectionDate: "",
         notes: "",
         lifecycleStatus: "active",
+        removalReason: "",
       });
 
       setShowAssetForm(false);
@@ -996,6 +1015,7 @@ export default function EquipmentPage() {
       nextInspectionDate: asset.next_inspection_date ?? "",
       notes: asset.notes ?? "",
       lifecycleStatus: asset.lifecycle_status,
+      removalReason: "",
     });
     setError("");
     setSuccess("");
@@ -1008,10 +1028,14 @@ export default function EquipmentPage() {
   ) {
     let removalReason = "";
 
-    if (lifecycleStatus === "removed") {
+    if (lifecycleStatus !== "active") {
       removalReason =
         window
-          .prompt("Enter the reason this equipment is being removed:")
+          .prompt(
+            lifecycleStatus === "removed"
+              ? "Enter the reason this equipment is being removed:"
+              : "Enter the reason this equipment is out of service:",
+          )
           ?.trim() ?? "";
 
       if (!removalReason) return;
@@ -1030,7 +1054,7 @@ export default function EquipmentPage() {
           id: asset.id,
           lifecycleStatus,
           removalReason:
-            lifecycleStatus === "removed" ? removalReason : undefined,
+            lifecycleStatus !== "active" ? removalReason : undefined,
         }),
       });
 
@@ -1148,6 +1172,7 @@ export default function EquipmentPage() {
                         nextInspectionDate: "",
                         notes: "",
                         lifecycleStatus: "active",
+                        removalReason: "",
                       });
                       setShowAssetForm(true);
                     }}
@@ -1482,11 +1507,6 @@ export default function EquipmentPage() {
                       const member = asset.assigned_user_id
                         ? memberMap.get(asset.assigned_user_id)
                         : undefined;
-                      const vehicle = asset.assigned_vehicle_id
-                        ? vehicles.find(
-                            (item) => item.id === asset.assigned_vehicle_id,
-                          )
-                        : undefined;
 
                       const readinessStatus = assetReadinessMap.get(asset.id);
 
@@ -1511,11 +1531,10 @@ export default function EquipmentPage() {
                           </td>
 
                           <td className="px-4 py-3">
-                            <p className="text-xs font-medium text-slate-300">
-                              {member?.fullName ??
-                                (vehicle
-                                  ? `Vehicle ${vehicle.unit_number}`
-                                  : (asset.assigned_location ?? "Unassigned"))}
+                            <p
+                              className={`text-xs font-medium ${member?.isActive === false ? "text-red-300" : "text-slate-300"}`}
+                            >
+                              {equipmentCustodyLabel(asset, memberMap, vehicleMap)}
                             </p>
                             <p className="mt-1 text-[10px] text-slate-500">
                               {member?.badgeNumber
@@ -2440,6 +2459,14 @@ export default function EquipmentPage() {
                 >
                   <option value="">Unassigned</option>
 
+                  {inactiveHolders
+                    .filter((member) => member.userId === editingAsset?.assigned_user_id)
+                    .map((member) => (
+                      <option key={member.userId} value={member.userId}>
+                        {equipmentHolderName(member)}
+                      </option>
+                    ))}
+
                   {members.map((member) => (
                     <option key={member.userId} value={member.userId}>
                       {member.fullName}
@@ -2635,6 +2662,18 @@ export default function EquipmentPage() {
                     ) : null}
                   </select>
                 </label>
+
+                {editingAsset && assetForm.lifecycleStatus !== "active" && assetForm.lifecycleStatus !== editingAsset.lifecycle_status ? (
+                  <label className="space-y-1 text-[10px] text-slate-500">
+                    <span>Reason (required)</span>
+                    <input
+                      value={assetForm.removalReason}
+                      onChange={(event) => setAssetForm({ ...assetForm, removalReason: event.target.value })}
+                      placeholder="Why is this equipment out of service?"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                    />
+                  </label>
+                ) : null}
               </div>
 
               <div className="mt-5 flex justify-end gap-2">

@@ -92,23 +92,42 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
-// The staging release of the Fleet/Inventory catalog rows (047) that production's Agency Documents unit also
-// applies. Staging's ledger records 001-046 (046 applied by 75499335 on 2026-10-20). Its apply must find
-// 001-046 recorded and exactly 047 pending; anything else stops before any SQL.
+// The staging release: the Fleet/Inventory catalog rows (047) that production's Agency Documents unit also
+// applies, then the defect-remediation sequence renumbered after the staging lineage (048-062; see
+// database/aws/MANIFEST.json). Staging's ledger records 001-046 (046 applied by 75499335 on 2026-10-20); 047
+// may already be recorded by the Agency Documents release. Its apply must find a contiguous 001-046 or 001-047
+// recorded and exactly the rest of this list pending; anything else stops before any SQL.
 export const STAGING_RELEASE_PENDING = Object.freeze([
   "047_fleet_inventory_feature_catalog.sql",
+  "048_equipment_out_of_service_lifecycle.sql",
+  "049_account_access_remediation.sql",
+  "050_fleet_field_write_authorization.sql",
+  "051_equipment_self_custody.sql",
+  "052_range_packet_ready_is_not_final.sql",
+  "053_fleet_inspection_audit_outbox.sql",
+  "054_personnel_import_preservation.sql",
+  "055_fleet_inspection_eligibility.sql",
+  "056_fleet_safety_hold_clearance.sql",
+  "057_training_record_visibility.sql",
+  "058_equipment_separated_holder.sql",
+  "059_training_closeout_records.sql",
+  "060_range_instructor_line_actions.sql",
+  "061_armory_separation_of_duties.sql",
+  "062_armory_audit_and_access.sql",
 ]);
-const STAGING_RELEASE_RECORDED = 46;
+const STAGING_RELEASE_RECORDED = Object.freeze([46, 47]);
+const STAGING_RELEASE_LAST = 62;
 function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
-  if (report.ledger !== "present" || versions.length !== 47 || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-047.");
+  if (report.ledger !== "present" || versions.length !== STAGING_RELEASE_LAST || versions.some((version, index) => version !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-062.");
   }
-  if (report.applied.length !== STAGING_RELEASE_RECORDED || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-046, including the Agency Documents lineage and module entitlements, must all be recorded before 047.");
+  if (!STAGING_RELEASE_RECORDED.includes(report.applied.length) || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-046, including the Agency Documents lineage and module entitlements, must all be recorded (047 optionally) before the remediation sequence.");
   }
-  if (report.pending.length !== STAGING_RELEASE_PENDING.length || report.pending.some((file, index) => file.filename !== STAGING_RELEASE_PENDING[index])) {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 047 pending.");
+  const expected = STAGING_RELEASE_PENDING.slice(report.applied.length - 46);
+  if (report.pending.length !== expected.length || report.pending.some((file, index) => file.filename !== expected[index])) {
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly the remaining 047-062 pending.");
   }
 }
 async function report(client, files) {

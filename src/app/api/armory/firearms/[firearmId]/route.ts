@@ -84,6 +84,18 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
     );
   }
 
+  const caliber = cleanRequiredText(body.caliber);
+
+  if (!caliber) {
+    return NextResponse.json(
+      {
+        error:
+          "Caliber is required. Enter TBD / Unknown if it is not known.",
+      },
+      { status: 400 },
+    );
+  }
+
   if (!VALID_FIREARM_TYPES.includes(firearmType as any)) {
     return NextResponse.json(
       { error: "Invalid firearm type." },
@@ -110,7 +122,7 @@ if (!hasAnyServerPermission(context, ["manage_firearms"])) {
         p_model: model,
         p_serial_number: serialNumber,
         p_firearm_type: firearmType,
-        p_caliber: cleanOptionalText(body.caliber) ?? "TBD / Unknown",
+        p_caliber: caliber,
         p_asset_number: cleanOptionalText(body.assetNumber),
         p_notes: cleanOptionalText(body.notes),
       },

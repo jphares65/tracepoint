@@ -33,6 +33,7 @@ export async function DELETE(request: NextRequest) {
   const result = removeRangeDayDrill(data?.workspace, { rangeDayId, drillId, departmentId });
   let drillName = "Drill";
   let confirmedWorkspace: Record<string, unknown> | null = null;
+  let confirmedUpdatedAt: string | null = null;
 
   if (result.ok) {
     drillName = result.drillName;
@@ -41,11 +42,11 @@ export async function DELETE(request: NextRequest) {
     if (!data?.updated_at) {
       return NextResponse.json({ error: "The Range Day workspace revision is missing. Reload before deleting this drill." }, { status: 409 });
     }
-    const nextTime = new Date(Math.max(Date.now(), Date.parse(data.updated_at) + 1)).toISOString();
+    confirmedUpdatedAt = new Date(Math.max(Date.now(), Date.parse(data.updated_at) + 1)).toISOString();
     const updated = await admin.from("pilot_range_workspaces").update({
       workspace: result.workspace,
       updated_by_user_id: user.id,
-      updated_at: nextTime,
+      updated_at: confirmedUpdatedAt,
     }).eq("department_id", departmentId)
       .eq("updated_at", data.updated_at)
       .select("workspace").maybeSingle();
@@ -59,7 +60,7 @@ export async function DELETE(request: NextRequest) {
     // legacy JSON workspace. The supplied ID must be the range_day_drills ID,
     // never the drill-library/template ID.
     const [dayQuery, drillQuery] = await Promise.all([
-      admin.from("range_days").select("id,status,packet_status").eq("id", rangeDayId)
+      admin.from("range_days").select("id,status").eq("id", rangeDayId)
         .eq("department_id", departmentId).maybeSingle(),
       admin.from("range_day_drills").select("id,name,range_day_id").eq("id", drillId)
         .eq("range_day_id", rangeDayId).eq("department_id", departmentId).maybeSingle(),
@@ -70,8 +71,7 @@ export async function DELETE(request: NextRequest) {
     if (!drillQuery.data) return NextResponse.json({ error: "Drill assignment was not found on this range day. Reload and try again." }, { status: 404 });
 
     const status = String(dayQuery.data.status ?? "").toLowerCase();
-    const packetStatus = String(dayQuery.data.packet_status ?? "").toLowerCase();
-    if (["completed", "locked", "archived"].includes(status) || packetStatus === "ready") {
+    if (["completed", "locked", "archived"].includes(status)) {
       return NextResponse.json({ error: "This drill cannot be removed because the range day or packet is finalized or locked. Historical records must remain unchanged." }, { status: 409 });
     }
 
@@ -98,5 +98,5 @@ export async function DELETE(request: NextRequest) {
     previous_value: { range_day_id: rangeDayId, range_day_drill_id: drillId, drill_name: drillName },
     new_value: null,
   });
-  return NextResponse.json({ ok: true, workspace: confirmedWorkspace, removedRangeDayDrillId: drillId });
+  return NextResponse.json({ ok: true, workspace: confirmedWorkspace, updatedAt: confirmedUpdatedAt, removedRangeDayDrillId: drillId });
 }

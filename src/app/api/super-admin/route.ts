@@ -3,41 +3,38 @@
 import {
   PlatformAdminOperationError,
   resolvePlatformAdminAccess,
+  type PlatformAdminAccessResult,
 } from "@/lib/platform/admin-access";
-import { PlatformReadRepositoryError } from "@/lib/platform/read-repository-core";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 export const dynamic = "force-dynamic";
 
-function logEntitlementFailure(operation: "read" | "write", error: unknown) {
-  console.error(JSON.stringify({
-    event: "platform_entitlement_operation_failed",
-    operation,
-    code: error instanceof PlatformAdminOperationError
-      ? error.code ?? "unknown"
-      : error instanceof PlatformReadRepositoryError
-        ? error.code ?? "unknown"
-        : "unknown",
-  }));
+// Platform entitlements are read and written only through the authorized
+// provider repository: on AWS, the platform-administrator database functions
+// (there is no service-role client); otherwise the server-owned provider
+// after the platform-administrator check.
+function platformAccessFailure(access: Extract<PlatformAdminAccessResult, { ok: false }>) {
+  return NextResponse.json(
+    {
+      error: access.status === 401
+        ? "Authentication is required."
+        : access.status === 403
+          ? "TracePoint platform administrator access is required."
+          : "Platform administrator access could not be verified.",
+    },
+    { status: access.status, headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 export async function GET() {
   const access = await resolvePlatformAdminAccess();
-  if (!access.ok) {
-    return NextResponse.json(
-      { error: access.status === 500 ? "Platform administrator access could not be verified." : "TracePoint platform administrator access is required." },
-      { status: access.status, headers: { "Cache-Control": "no-store" } },
-    );
-  }
+  if (!access.ok) return platformAccessFailure(access);
 
   let data;
   try {
     data = await access.repository.listEntitlements();
   } catch (error) {
-    logEntitlementFailure("read", error);
-    return NextResponse.json(
-      { error: "Platform entitlements could not be loaded." },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
-    );
+    return unexpectedErrorResponse("Platform entitlements read", error, "Platform entitlements could not be loaded.");
   }
 
   return NextResponse.json(
@@ -54,12 +51,7 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   const access = await resolvePlatformAdminAccess();
-  if (!access.ok) {
-    return NextResponse.json(
-      { error: access.status === 500 ? "Platform administrator access could not be verified." : "TracePoint platform administrator access is required." },
-      { status: access.status, headers: { "Cache-Control": "no-store" } },
-    );
-  }
+  if (!access.ok) return platformAccessFailure(access);
 
   const body = await request.json().catch(() => ({}));
 
@@ -99,10 +91,15 @@ export async function PATCH(request: NextRequest) {
           : undefined,
     });
   } catch (error) {
-    logEntitlementFailure("write", error);
-    return NextResponse.json(
-      { error: "Platform entitlement could not be updated." },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
+    const code = error instanceof PlatformAdminOperationError ? error.code : undefined;
+    if (code === "P0002" || code === "22P02") {
+      return NextResponse.json({ error: "Department or feature was not found." }, { status: 404 });
+    }
+    return unexpectedErrorResponse(
+      "Platform entitlement update",
+      error,
+      "Platform entitlement could not be updated.",
+      code === "42501" ? 403 : 500,
     );
   }
 

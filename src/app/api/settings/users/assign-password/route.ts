@@ -6,7 +6,9 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { assignCognitoPassword } from "@/lib/authentication/cognito-password-lifecycle";
-import { COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
+import { cognitoPasswordRejection } from "@/lib/authentication/cognito-admin-core";
+import { COGNITO_PASSWORD_MIN_LENGTH, COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "@/lib/authentication/password-policy";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 
 type AssignPasswordRequest = {
   departmentId?: string;
@@ -37,12 +39,12 @@ export async function POST(request: NextRequest) {
     }
 
     const awsNative = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native";
-    if (awsNative ? !isCognitoCompliantPassword(password) : password.length < 8) {
+    if (awsNative ? !isCognitoCompliantPassword(password) : password.length < COGNITO_PASSWORD_MIN_LENGTH) {
       return NextResponse.json(
         {
           error: awsNative
             ? COGNITO_PASSWORD_REQUIREMENTS
-            : "Password must be at least 8 characters.",
+            : `Password must be at least ${COGNITO_PASSWORD_MIN_LENGTH} characters.`,
         },
         { status: 400 },
       );
@@ -248,16 +250,8 @@ export async function POST(request: NextRequest) {
       message: `A new password was assigned to ${targetEmail}.`,
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "The password could not be assigned.";
-
-    return NextResponse.json(
-      {
-        error: message,
-      },
-      { status: 500 },
-    );
+    const rejected = cognitoPasswordRejection(error);
+    if (rejected) return NextResponse.json({ error: rejected }, { status: 400 });
+    return unexpectedErrorResponse("Assign password", error, "The password could not be assigned.");
   }
 }

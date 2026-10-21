@@ -94,6 +94,7 @@ type FleetWorkOrder = {
   description?: string | null;
   priority: string;
   status: string;
+  affects_availability?: boolean | null;
   assigned_role_code?: string | null;
   mechanic_name?: string | null;
   reported_at?: string | null;
@@ -148,6 +149,11 @@ type FleetRules = {
   }>;
   inspection_types?: string[];
 };
+type FleetSafetyHold = {
+  since: string;
+  source: "inspection" | "work_order";
+  reason: string;
+};
 type Payload = {
   vehicle: FleetVehicle;
   inspections: FleetInspection[];
@@ -156,6 +162,7 @@ type Payload = {
   documents: FleetDocument[];
   history: FleetHistoryEntry[];
   rules: FleetRules;
+  safetyHold?: FleetSafetyHold | null;
   canManage: boolean;
   canMaintain: boolean;
   canConfigure: boolean;
@@ -500,6 +507,16 @@ export default function VehiclePage() {
       reason,
     });
   }
+  async function clearSafetyHold() {
+    const clearanceReason = window.prompt(
+      "Reason for clearing the critical safety hold (for example, the verified repair). Readiness is recalculated.",
+    );
+    if (!clearanceReason?.trim()) return;
+    await request(`/api/fleet/vehicles/${vehicleId}`, "PATCH", {
+      clearSafetyHold: true,
+      clearanceReason,
+    });
+  }
 
   const openOrders = useMemo(
     () =>
@@ -507,6 +524,10 @@ export default function VehiclePage() {
         (item) => !["Completed", "Cancelled"].includes(item.status),
       ) ?? [],
     [data],
+  );
+  // A safety hold cannot be cleared while a critical work order is open (database/aws/056).
+  const blockingOrders = openOrders.filter(
+    (item) => item.priority === "Critical" || item.affects_availability === true,
   );
   if (loading && !data)
     return (
@@ -690,6 +711,38 @@ export default function VehiclePage() {
                 Hybrid readiness evaluates open work and critical equipment.
                 Overrides require a reason.
               </p>
+              {data.safetyHold ? (
+                <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs leading-5 text-red-200">
+                  <p className="font-semibold">Critical safety hold</p>
+                  <p className="mt-1">{data.safetyHold.reason}</p>
+                  <p className="mt-1 text-red-300/80">
+                    Source:{" "}
+                    {data.safetyHold.source === "inspection"
+                      ? "critical inspection defect"
+                      : "critical work order"}{" "}
+                    · Held since {formatDateTime(data.safetyHold.since)}
+                  </p>
+                  {blockingOrders.length ? (
+                    <p className="mt-2 font-semibold">
+                      The hold cannot be cleared while a critical work order is
+                      open:{" "}
+                      {blockingOrders
+                        .map((item) => `"${item.title}" (${item.status})`)
+                        .join(", ")}
+                      . Complete or cancel it first.
+                    </p>
+                  ) : null}
+                  {data.canManage ? (
+                    <button
+                      disabled={saving || blockingOrders.length > 0}
+                      onClick={() => void clearSafetyHold()}
+                      className="mt-2 rounded-lg border border-red-400/50 px-3 py-1.5 font-semibold text-red-100 disabled:opacity-40"
+                    >
+                      Clear Safety Hold
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {data.canManage ? (
                 <div className="mt-4 grid gap-2">
                   {[

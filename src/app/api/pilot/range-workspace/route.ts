@@ -14,8 +14,16 @@ import { parseRangeWorkspaceRequestBody } from "@/lib/range/workspace-request-bo
 import {
   authorizeRangeWorkspaceMutation,
   hasValidRangeWorkspaceTenantBoundary,
+  rangeWorkspaceVersionConflict,
+  STALE_RANGE_WORKSPACE_ERROR,
+  withRangeResultRevisions,
 } from "@/lib/range/workspace-mutation";
 import { mergeProtectedWorkspaceRecords } from "@/lib/range/workspace-tenant-boundary";
+import {
+  canViewDepartmentRecords,
+  ownRangeWorkspace,
+  RANGE_RECORD_PERMISSIONS,
+} from "@/lib/tracepoint/training-record-visibility";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -77,13 +85,16 @@ export async function GET() {
 
   try {
     const data = await createRangeReadRepository(admin, departmentId).getWorkspace(departmentId);
+    // Without a range-record permission the caller sees only their own rows.
+    const departmentRecords = canViewDepartmentRecords(resolved.context.permissions, RANGE_RECORD_PERMISSIONS);
 
     return NextResponse.json({
       departmentId,
       userId: resolved.context.userId,
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
       canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
-      workspace: data.workspace,
+      recordScope: departmentRecords ? "department" : "own",
+      workspace: departmentRecords ? data.workspace : ownRangeWorkspace(data.workspace, resolved.context.userId),
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
       updatedByUserId: data.updatedByUserId,
@@ -130,7 +141,10 @@ export async function PUT(request: NextRequest) {
       { status: parsedBody.status, headers: { "Cache-Control": "no-store" } },
     );
   }
-  const body = parsedBody.value as { workspace?: unknown };
+  const body = (parsedBody.value ?? {}) as {
+    workspace?: unknown;
+    baseUpdatedAt?: unknown;
+  };
 
   const submittedWorkspace = normalizeWorkspace(body.workspace);
 
@@ -141,6 +155,13 @@ export async function PUT(request: NextRequest) {
       .maybeSingle();
     if (existingResult.error) {
       throw new Error("The current range workspace could not be loaded.");
+    }
+
+    if (rangeWorkspaceVersionConflict(body.baseUpdatedAt, existingResult.data?.updated_at ?? null)) {
+      return NextResponse.json(
+        { error: STALE_RANGE_WORKSPACE_ERROR, code: "stale_workspace" },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
     // Validate the raw client payload before preserving any legacy records.
@@ -160,14 +181,15 @@ export async function PUT(request: NextRequest) {
     // Historical tenant JSON can contain explicitly foreign records. They are
     // never writable through this tenant's PUT: retain the exact server copy
     // while applying only the validated active-agency workspace changes.
-    const workspace = normalizeWorkspace(mergeProtectedWorkspaceRecords(
+    const normalizedWorkspace = normalizeWorkspace(mergeProtectedWorkspaceRecords(
       existingResult.data?.workspace ?? {},
       submittedWorkspace,
       departmentId,
     ));
+
     const decision = authorizeRangeWorkspaceMutation({
       existingWorkspace: existingResult.data?.workspace ?? {},
-      nextWorkspace: workspace,
+      nextWorkspace: normalizedWorkspace,
       departmentId,
       permissions: resolved.context.permissions,
     });
@@ -186,6 +208,12 @@ export async function PUT(request: NextRequest) {
           : 0,
       ),
     ).toISOString();
+    const workspace = withRangeResultRevisions({
+      existingWorkspace: existingResult.data?.workspace ?? {},
+      nextWorkspace: normalizedWorkspace,
+      revisedAt: updatedAt,
+      revisedByUserId: user.id,
+    });
     const payload = {
       department_id: departmentId,
       workspace,
@@ -229,6 +257,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       departmentId,
+      updatedAt,
       counts: {
         rangeDays: workspace.rangeDays?.length ?? 0,
         drillLibrary: workspace.drillLibrary?.length ?? 0,

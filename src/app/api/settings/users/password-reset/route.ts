@@ -1,6 +1,8 @@
 import {configuredSiteOrigin} from '@/lib/authentication/redirects';
 import { NextRequest, NextResponse } from "next/server";
 
+import { findAuthUserByEmail } from "@/lib/settings/invite-core";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
 import { beginCognitoPasswordReset } from "@/lib/authentication/cognito-password-lifecycle";
 import { CognitoDirectoryError } from "@/lib/authentication/cognito-admin-core";
 import { accessFailureResponse, hasServerPermission, resolveServerAccess } from "@/lib/tracepoint/server-access";
@@ -15,29 +17,14 @@ function cleanText(value: unknown) {
 }
 
 
-async function findUserByEmail(
+function findUserByEmail(
   admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
   email: string,
 ) {
-  const target = email.toLowerCase();
-
-  for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({
-      page,
-      perPage: 100,
-    });
-
-    if (error) throw error;
-
-    const match = data.users.find(
-      (user) => user.email?.toLowerCase() === target,
-    );
-
-    if (match) return match;
-    if (data.users.length < 100) break;
-  }
-
-  return null;
+  return findAuthUserByEmail(
+    (page, perPage) => admin.auth.admin.listUsers({ page, perPage }),
+    email,
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -192,16 +179,11 @@ export async function POST(request: NextRequest) {
       }
       if (error.code === "recovery_unavailable") {
         return NextResponse.json(
-          { error: "Cognito email recovery is unavailable for this account. No reset email was sent." },
+          { error: "Cognito cannot send a reset code to this account: its email address has not been verified, or the account is not in a state that allows a reset. Use Assign Password instead. No reset email was sent." },
           { status: 409 },
         );
       }
     }
-    const message =
-      error instanceof Error
-        ? error.message
-        : "The password reset could not be sent.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return unexpectedErrorResponse("Password reset", error, "The password reset could not be sent.");
   }
 }

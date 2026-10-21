@@ -1467,3 +1467,5 @@ test("Agency Documents readiness refuses 042's triggers and any earlier Agency D
   assert.deepEqual(liveUnitReadiness(blocked).agencyDocuments.blockers, ["agency_documents_tables_already_present", "agency_documents_catalog_row_already_present", "module_entitlement_triggers_present"]);
   assert.equal(liveUnitReadiness({ ...ready, agency_documents: undefined }).agencyDocuments.ready, false);
 });
+
+import "./aws-migration-manifest.test.mjs";

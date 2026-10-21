@@ -6,15 +6,16 @@ import {
   requireServerFeature,
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
+import { calendarDateOrNull, certificationInputError } from "@/lib/training/certification-input";
 import { createTrainingReadRepository } from "@/lib/training/read-repository";
+import { ownRows } from "@/lib/tracepoint/training-record-visibility";
 
 function text(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
 function dateOrNull(value: unknown) {
-  const result = text(value);
-  return result || null;
+  return calendarDateOrNull(value) ?? null;
 }
 
 function reminderDays(value: unknown) {
@@ -87,7 +88,9 @@ export async function GET() {
 
   try {
     const data = await createTrainingReadRepository(context.admin, context.departmentId).getCertificationWorkspace(context.departmentId);
-    return NextResponse.json({ ...data, canManage: context.canManage });
+    // Officers see only their own credentials; certification managers see the department.
+    const certifications = context.canManage ? data.certifications : ownRows(data.certifications, context.user.id, ["user_id"]);
+    return NextResponse.json({ ...data, certifications, canManage: context.canManage });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Certification records could not be loaded." }, { status: 500 });
   }
@@ -145,6 +148,11 @@ export async function POST(request: NextRequest) {
       },
       { status: 400 },
     );
+  }
+
+  const inputError = certificationInputError(body);
+  if (inputError) {
+    return NextResponse.json({ error: inputError }, { status: 400 });
   }
 
   const [{ data: member, error: memberError }, typeResult] =

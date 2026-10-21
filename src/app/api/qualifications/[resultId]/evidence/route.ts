@@ -8,38 +8,12 @@ import {
 } from "@/lib/tracepoint/server-access";
 import { createObjectStore } from "@/lib/storage/object-store";
 import { createEvidenceReadRepository } from "@/lib/evidence/read-repository";
+import { ownRows, QUALIFICATION_EVIDENCE_PERMISSIONS } from "@/lib/tracepoint/training-record-visibility";
 
 type RouteContext = { params: Promise<{ resultId: string }> };
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-async function verifyQualificationResult(
-  admin: any,
-  departmentId: string,
-  resultId: string,
-) {
-  const workspaceRow = await admin
-    .from("pilot_range_workspaces")
-    .select("workspace")
-    .eq("department_id", departmentId)
-    .maybeSingle();
-
-  if (workspaceRow.error) {
-    return { exists: false, error: workspaceRow.error.message };
-  }
-
-  const workspace = workspaceRow.data?.workspace as
-    | { results?: Array<{ id?: string }> }
-    | null
-    | undefined;
-  const results = Array.isArray(workspace?.results) ? workspace.results : [];
-
-  return {
-    exists: results.some((result) => String(result?.id ?? "") === resultId),
-    error: null,
-  };
-}
 
 export async function GET(_request: NextRequest, routeContext: RouteContext) {
   const resolved = await resolveServerAccess();
@@ -60,8 +34,14 @@ export async function GET(_request: NextRequest, routeContext: RouteContext) {
 
   const repository = createEvidenceReadRepository(admin, departmentId);
   try {
-  if (!(await repository.qualificationExists(departmentId, resultId))) {
+  const result = await repository.qualificationResult(departmentId, resultId);
+  if (!result) {
     return NextResponse.json({ error: "Qualification result not found." }, { status: 404 });
+  }
+  // Target evidence is the result's officer's record, as for its download.
+  if (!hasAnyServerPermission(resolved.context, QUALIFICATION_EVIDENCE_PERMISSIONS) &&
+    !ownRows([result], resolved.context.userId, ["officerId", "officerUserId", "officer_user_id", "officer_id"]).length) {
+    return permissionDeniedResponse("You may view only your own qualification evidence.");
   }
 
   const attachments = await repository.listQualificationEvidence(departmentId, resultId);
@@ -88,24 +68,20 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
   }
 
   const context = resolved.context;
-  if (!hasAnyServerPermission(context, ["manage_qualifications", "manage_range_days"])) {
+  // Instructors who score the line attach the targets they score.
+  if (!hasAnyServerPermission(context, ["manage_qualifications", "manage_range_days", "score_range_days"])) {
     return permissionDeniedResponse(
-      "Qualification-management permission is required to upload target evidence.",
+      "Range scoring or qualification-management permission is required to upload target evidence.",
     );
   }
 
   const { resultId } = await routeContext.params;
-  const qualification = await verifyQualificationResult(
-    context.admin,
-    context.departmentId,
-    resultId,
-  );
-
-  if (qualification.error) {
-    return NextResponse.json({ error: qualification.error }, { status: 500 });
-  }
-  if (!qualification.exists) {
-    return NextResponse.json({ error: "Qualification result not found." }, { status: 404 });
+  try {
+    if (!await createEvidenceReadRepository(context.admin, context.departmentId).qualificationExists(context.departmentId, resultId)) {
+      return NextResponse.json({ error: "Qualification result not found." }, { status: 404 });
+    }
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Qualification result could not be verified." }, { status: 500 });
   }
 
   const form = await request.formData();

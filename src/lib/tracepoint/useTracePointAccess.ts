@@ -8,8 +8,7 @@ import {
 } from "react";
 
 import type { TracePointPermission } from "./permissions";
-import { isAgencyFeatureEnabled } from "./module-access";
-import type { ModuleFeatureCode } from "./module-catalog";
+import { hasEnabledFeatures } from "./feature-gates";
 
 export type TracePointAccess = {
   loading: boolean;
@@ -43,7 +42,7 @@ export type TracePointAccess = {
   isSuperAdmin: boolean;
   enabledFeatures: string[];
   hasPermission: (permission: TracePointPermission) => boolean;
-  isFeatureEnabled: (featureCode: ModuleFeatureCode) => boolean;
+  isFeatureEnabled: (featureCode: string) => boolean;
   hasAnyPermission: (
     permissions: readonly TracePointPermission[],
   ) => boolean;
@@ -203,7 +202,7 @@ export function useTracePointAccess(options?: { enabled?: boolean }): TracePoint
   );
 
   const isFeatureEnabled = useCallback(
-    (featureCode: ModuleFeatureCode) => isAgencyFeatureEnabled(featureSet, featureCode),
+    (featureCode: string) => hasEnabledFeatures(featureSet, [featureCode]),
     [featureSet],
   );
   const hasPermission = useCallback(

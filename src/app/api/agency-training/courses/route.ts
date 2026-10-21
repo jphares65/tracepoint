@@ -88,6 +88,26 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const certificationTypeId = text(body.certificationTypeId) || null;
+  if (certificationTypeId) {
+    const certificationType = await context.admin
+      .from("certification_types")
+      .select("id")
+      .eq("department_id", context.departmentId)
+      .eq("id", certificationTypeId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (certificationType.error) {
+      return NextResponse.json({ error: certificationType.error.message }, { status: 500 });
+    }
+    if (!certificationType.data) {
+      return NextResponse.json(
+        { error: "The selected certification type is not available." },
+        { status: 400 },
+      );
+    }
+  }
+
   const inserted = await context.admin
     .from("agency_training_courses")
     .insert({
@@ -100,7 +120,7 @@ export async function POST(request: NextRequest) {
       default_location: text(body.defaultLocation) || null,
       default_hours: numberOrNull(body.defaultHours),
       lesson_plan_required: body.lessonPlanRequired === true,
-      certification_type_id: text(body.certificationTypeId) || null,
+      certification_type_id: certificationTypeId,
       certification_valid_days: positiveIntegerOrNull(body.certificationValidDays),
       certificate_enabled: body.certificateEnabled === true,
       certificate_title: text(body.certificateTitle) || null,

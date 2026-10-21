@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { findAuthUserByEmail } from "@/lib/settings/invite-core";
+import { unexpectedErrorResponse } from "@/lib/tracepoint/api-errors";
+
 import { configuredSiteOrigin } from "@/lib/authentication/redirects";
+import {
+  parseImportActive,
+  planBridgePersonnelMembership,
+} from "@/lib/onboarding/personnel-reimport";
 import {
   accessFailureResponse,
   hasServerPermission,
@@ -23,48 +30,14 @@ function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function isActiveValue(value: unknown) {
-  if (typeof value === "boolean") return value;
-
-  const normalized = cleanText(value).toLowerCase();
-
-  if (!normalized) return true;
-
-  return ![
-    "no",
-    "n",
-    "false",
-    "0",
-    "inactive",
-    "disabled",
-    "terminated",
-    "retired",
-  ].includes(normalized);
-}
-
-async function findUserByEmail(
+function findUserByEmail(
   admin: ReturnType<typeof import("@/lib/supabase/admin").createAdminClient>,
   email: string,
 ) {
-  const target = email.toLowerCase();
-
-  for (let page = 1; page <= 20; page += 1) {
-    const { data, error } = await admin.auth.admin.listUsers({
-      page,
-      perPage: 100,
-    });
-
-    if (error) throw error;
-
-    const match = data.users.find(
-      (user) => user.email?.toLowerCase() === target,
-    );
-
-    if (match) return match;
-    if (data.users.length < 100) break;
-  }
-
-  return null;
+  return findAuthUserByEmail(
+    (page, perPage) => admin.auth.admin.listUsers({ page, perPage }),
+    email,
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -80,7 +53,7 @@ export async function POST(request: NextRequest) {
     const rankTitle = cleanText(body.rankTitle);
     const unitName = cleanText(body.unitName);
     const employeeNumber = cleanText(body.employeeNumber);
-    const active = isActiveValue(body.active);
+    const active = parseImportActive(body.active);
 
     if (!departmentId || !firstName || !lastName || !email || !badgeNumber) {
       return NextResponse.json(
@@ -129,7 +102,7 @@ export async function POST(request: NextRequest) {
             rankTitle,
             unitName,
             employeeNumber,
-            active,
+            active: active ?? null,
           },
           issues: [],
           changes: [],
@@ -142,7 +115,7 @@ export async function POST(request: NextRequest) {
         createdAuthUser: result.createdIdentity,
         activationEmailSent: result.invitationSent,
         message: result.createdIdentity
-          ? active
+          ? active !== false
             ? `${fullName} imported pending activation.`
             : `${fullName} imported as inactive personnel.`
           : `${fullName} added using an existing TracePoint account.`,
@@ -231,6 +204,21 @@ export async function POST(request: NextRequest) {
 
     if (profileError) throw profileError;
 
+    const { data: priorMembership, error: priorMembershipError } = await admin
+      .from("department_memberships")
+      .select("is_active")
+      .eq("department_id", departmentId)
+      .eq("user_id", targetUser.id)
+      .maybeSingle();
+
+    if (priorMembershipError) throw priorMembershipError;
+
+    const membershipPlan = planBridgePersonnelMembership(
+      active,
+      priorMembership,
+      new Date().toISOString(),
+    );
+
     const { error: membershipError } = await admin
       .from("department_memberships")
       .upsert(
@@ -238,11 +226,11 @@ export async function POST(request: NextRequest) {
           department_id: departmentId,
           user_id: targetUser.id,
           badge_number: badgeNumber,
-          rank_title: rankTitle || null,
-          unit_name: unitName || null,
-          employee_number: employeeNumber || null,
-          is_active: active,
-          deactivated_at: active ? null : new Date().toISOString(),
+          // A blank field keeps the stored value (omitted columns are not written).
+          ...(rankTitle ? { rank_title: rankTitle } : {}),
+          ...(unitName ? { unit_name: unitName } : {}),
+          ...(employeeNumber ? { employee_number: employeeNumber } : {}),
+          ...membershipPlan.status,
           activation_status:
             createdAuthUser ||
             targetUser.user_metadata?.onboarding_status === "pending_activation"
@@ -254,16 +242,18 @@ export async function POST(request: NextRequest) {
 
     if (membershipError) throw membershipError;
 
-    const { error: rolesError } = await server.rpc(
-      "set_department_member_roles",
-      {
-        p_department_id: departmentId,
-        p_user_id: targetUser.id,
-        p_role_codes: ["officer"],
-      },
-    );
+    if (membershipPlan.assignDefaultRole) {
+      const { error: rolesError } = await server.rpc(
+        "set_department_member_roles",
+        {
+          p_department_id: departmentId,
+          p_user_id: targetUser.id,
+          p_role_codes: ["officer"],
+        },
+      );
 
-    if (rolesError) throw rolesError;
+      if (rolesError) throw rolesError;
+    }
 
     const { error: auditError } = await admin.from("audit_events").insert({
       department_id: departmentId,
@@ -282,7 +272,7 @@ export async function POST(request: NextRequest) {
         badge_number: badgeNumber,
         rank_title: rankTitle || null,
         unit_name: unitName || null,
-        is_active: active,
+        is_active: membershipPlan.active,
         activation_email_sent: false,
       },
     });
@@ -299,12 +289,7 @@ export async function POST(request: NextRequest) {
         : `${fullName} added using an existing TracePoint account.`,
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "The personnel record could not be imported.";
-
-    return NextResponse.json({ error: message }, { status: 500 });
+    return unexpectedErrorResponse("Personnel import", error, "The personnel record could not be imported.");
   }
 }
 

@@ -18,16 +18,12 @@ import {
 } from "lucide-react";
 
 import TracePointShell from "@/app/components/TracePointShell";
-import {
-  formatDate as formatDisplayDate,
-  formatDateTime as formatDisplayDateTime,
-} from "@/lib/format/date";
+import { formatDate as formatDisplayDate, formatDateTime as formatDisplayDateTime } from "@/lib/format/date";
+import { csvRow, parseCsvRecords, type CsvValue } from "@/lib/format/csv";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import { matchesPersonnelName } from "@/lib/onboarding/personnel-name";
-import {
-  REPORT_DEFINITIONS,
-  reportCollection,
-} from "@/lib/reports/report-definitions";
+import { equipmentHolderName } from "@/lib/equipment/officer-assignments";
+import { REPORT_DEFINITIONS, reportCollection } from "@/lib/reports/report-definitions";
 
 type ImportTypeId =
   | "personnel"
@@ -613,47 +609,15 @@ function normalizeHeader(value: string) {
 }
 
 function parseCsv(text: string): ParsedCsv {
-  const normalized = text
-    .replace(/^\uFEFF/, "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
-  const lines = normalized.split("\n").filter((line) => line.trim().length > 0);
+  const records = parseCsvRecords(text);
 
-  if (lines.length === 0) {
+  if (records.length === 0) {
     return { headers: [], rows: [] };
   }
 
-  const parseLine = (line: string) => {
-    const values: string[] = [];
-    let current = "";
-    let inQuotes = false;
+  const headers = records[0].map((header) => header.trim());
 
-    for (let index = 0; index < line.length; index += 1) {
-      const character = line[index];
-      const nextCharacter = line[index + 1];
-
-      if (character === '"' && inQuotes && nextCharacter === '"') {
-        current += '"';
-        index += 1;
-      } else if (character === '"') {
-        inQuotes = !inQuotes;
-      } else if (character === "," && !inQuotes) {
-        values.push(current.trim());
-        current = "";
-      } else {
-        current += character;
-      }
-    }
-
-    values.push(current.trim());
-
-    return values;
-  };
-
-  const headers = parseLine(lines[0]).map((header) => header.trim());
-
-  const rows = lines.slice(1).map((line) => {
-    const values = parseLine(line);
+  const rows = records.slice(1).map((values) => {
     const row: Record<string, string> = {};
 
     headers.forEach((header, index) => {
@@ -1256,22 +1220,6 @@ async function importFirearm(
   return payload;
 }
 
-type CsvValue = string | number | boolean | null | undefined;
-
-function csvEscape(value: CsvValue) {
-  const stringValue =
-    value === null || value === undefined ? "" : String(value);
-
-  if (
-    stringValue.includes(",") ||
-    stringValue.includes('"') ||
-    stringValue.includes("\n")
-  ) {
-    return `"${stringValue.replace(/"/g, '""')}"`;
-  }
-
-  return stringValue;
-}
 
 async function recordClientDataExport({
   exportType,
@@ -1324,10 +1272,8 @@ async function downloadCsv(fileName: string, rows: Record<string, CsvValue>[]) {
       : ["No records available for this export."];
 
   const csv = [
-    headers.join(","),
-    ...rows.map((row) =>
-      headers.map((header) => csvEscape(row[header])).join(","),
-    ),
+    csvRow(headers),
+    ...rows.map((row) => csvRow(headers.map((header) => row[header]))),
   ].join("\n");
 
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -2852,6 +2798,14 @@ function ImportWizardContent() {
               fullName: string;
               badgeNumber?: string | null;
               rankTitle?: string | null;
+              isActive?: boolean;
+            }>;
+            inactiveHolders?: Array<{
+              userId: string;
+              fullName: string;
+              badgeNumber?: string | null;
+              rankTitle?: string | null;
+              isActive?: boolean;
             }>;
           }>("/api/equipment/assets"),
 
@@ -2894,7 +2848,10 @@ function ImportWizardContent() {
         ]);
 
       const membersById = new Map(
-        (assetsPayload.members ?? []).map((member) => [member.userId, member]),
+        [...(assetsPayload.members ?? []), ...(assetsPayload.inactiveHolders ?? [])].map((member) => [
+          member.userId,
+          member,
+        ]),
       );
 
       const typesById = new Map(
@@ -2937,7 +2894,8 @@ function ImportWizardContent() {
 
             lotNumber: asset.lot_number,
 
-            assignedOfficer: member?.fullName,
+            assignedOfficer:
+              member ? equipmentHolderName(member) : undefined,
 
             badgeNumber: member?.badgeNumber,
 
@@ -3589,12 +3547,23 @@ function ImportWizardContent() {
         }
       }
 
-      for (const member of reportRecords(equipmentData.members)) {
+      // Separated (inactive) holders keep their custody attribution.
+      for (const member of [
+        ...reportRecords(equipmentData.members),
+        ...reportRecords(equipmentData.inactiveHolders),
+      ]) {
         const id = member.userId ?? member.user_id;
 
         if (id) {
+          const fullName = reportString(member.fullName);
           personnelMap.set(String(id), {
-            name: String(member.fullName ?? member.full_name ?? id),
+            name: fullName
+              ? equipmentHolderName({
+                  userId: String(id),
+                  fullName,
+                  isActive: member.isActive !== false,
+                })
+              : String(member.full_name ?? id),
             badge: String(member.badgeNumber ?? member.badge_number ?? ""),
             rank: String(member.rankTitle ?? member.rank_title ?? ""),
           });

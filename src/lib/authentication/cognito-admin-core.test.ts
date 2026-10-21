@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertCognitoPasswordResetReady,CognitoDirectoryError,isCognitoDirectoryUsername,mapCognitoDirectoryError } from "./cognito-admin-core.ts";
+import { assertCognitoPasswordResetReady,COGNITO_POOL_PASSWORD_REJECTED,cognitoPasswordRejection,CognitoDirectoryError,isCognitoDirectoryUsername,mapCognitoDirectoryError } from "./cognito-admin-core.ts";
 
 test("Cognito directory accepts provider-generated non-v4 UUID usernames, not aliases",()=>{
  assert.equal(isCognitoDirectoryUsername("742824e8-60d1-7081-93a3-722b79de50c6"),true);
@@ -20,4 +20,12 @@ test("password reset accepts only a confirmed user with verified email",()=>{
  assert.throws(()=>assertCognitoPasswordResetReady({...base,status:"FORCE_CHANGE_PASSWORD",emailVerified:false}),(error:unknown)=>error instanceof CognitoDirectoryError&&error.code==="initial_password_required");
  assert.throws(()=>assertCognitoPasswordResetReady({...base,status:"CONFIRMED",emailVerified:false}),(error:unknown)=>error instanceof CognitoDirectoryError&&error.code==="recovery_unavailable");
  assert.throws(()=>assertCognitoPasswordResetReady({...base,status:"RESET_REQUIRED",emailVerified:true}),(error:unknown)=>error instanceof CognitoDirectoryError&&error.code==="recovery_unavailable");
+});
+
+test("a Cognito pool password-policy rejection is reported as such, not as a generic failure",()=>{
+ const rejected=cognitoPasswordRejection(mapCognitoDirectoryError({name:"InvalidPasswordException",message:"Password did not conform with policy"}));
+ assert.equal(rejected,COGNITO_POOL_PASSWORD_REJECTED);
+ assert.match(String(rejected),/password policy/);assert.match(String(rejected),/not changed/);
+ assert.equal(cognitoPasswordRejection(new CognitoDirectoryError("unavailable")),null);
+ assert.equal(cognitoPasswordRejection(new Error("other")),null);
 });

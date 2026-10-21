@@ -73,6 +73,8 @@ type StoredRangeDayWorkspace = {
   results: DrillRunResult[];
   malfunctions: FirearmMalfunction[];
   qualificationStandards?: QualificationStandardSummary[];
+  // Set when the API returned only the caller's own records.
+  ownRecordsUserId?: string;
 };
 
 type OfficerQualificationEvent = {
@@ -205,6 +207,8 @@ async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | 
     if (!response.ok) return null;
 
     const payload = (await response.json()) as {
+      userId?: string;
+      recordScope?: string;
       workspace?: Partial<StoredRangeDayWorkspace> | null;
       qualificationStandards?: QualificationStandardSummary[];
     };
@@ -233,6 +237,7 @@ async function loadRemoteRangeDayWorkspace(): Promise<StoredRangeDayWorkspace | 
       qualificationStandards: Array.isArray(payload.qualificationStandards)
         ? payload.qualificationStandards
         : [],
+      ownRecordsUserId: payload.recordScope === "own" ? payload.userId : undefined,
     };
 
     return workspace;
@@ -970,7 +975,10 @@ export default function QualificationsPage() {
     () =>
       buildOfficerHistories(
         workspace,
-        personnel,
+        // Other officers' records are withheld, so list only the caller.
+        workspace.ownRecordsUserId
+          ? personnel.filter((person) => person.userId === workspace.ownRecordsUserId)
+          : personnel,
         historicalResults,
         qualificationValidDays,
         qualificationDueSoonDays,

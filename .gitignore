@@ -52,6 +52,8 @@ rifle-inbox-files-*/
 # Local backup/temp files
 *.bak-*
 /tmp/
+*.bak
+*.before-*
 supabase/.temp/
 
 # Local recovery worktrees, credentials, and transport bundles

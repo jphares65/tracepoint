@@ -13,7 +13,7 @@ test("inventory QR honors explicit permission", () => {
     inventory: { id: "item1", name: "Bandage" },
   };
 
-  const allowed = qrDecision(input);
+  const allowed = qrDecision(input) as { allowed?: boolean; workflow?: string };
   assert.equal(allowed.allowed, true);
   assert.equal(allowed.workflow, "inventory");
 

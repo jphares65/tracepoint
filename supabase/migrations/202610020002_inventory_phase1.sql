@@ -94,8 +94,8 @@ begin
   if p_source_location_id is not null then
     insert into public.inventory_balances(department_id, inventory_item_id, inventory_location_id) values (v_department_id, p_item_id, p_source_location_id) on conflict do nothing;
     select on_hand_quantity into v_source from public.inventory_balances where department_id=v_department_id and inventory_item_id=p_item_id and inventory_location_id=p_source_location_id for update;
-    if v_source + case when p_transaction_type='adjust' then p_quantity else -p_quantity end < 0 then raise exception 'Inventory cannot fall below zero'; end if;
-    update public.inventory_balances set on_hand_quantity = v_source + case when p_transaction_type='adjust' then p_quantity else -p_quantity end, updated_at=now() where department_id=v_department_id and inventory_item_id=p_item_id and inventory_location_id=p_source_location_id;
+    if v_source + (case when p_transaction_type='adjust' then p_quantity else -p_quantity end) < 0 then raise exception 'Inventory cannot fall below zero'; end if;
+    update public.inventory_balances set on_hand_quantity = v_source + (case when p_transaction_type='adjust' then p_quantity else -p_quantity end), updated_at=now() where department_id=v_department_id and inventory_item_id=p_item_id and inventory_location_id=p_source_location_id;
   end if;
   if p_destination_location_id is not null then
     insert into public.inventory_balances(department_id, inventory_item_id, inventory_location_id, on_hand_quantity) values (v_department_id, p_item_id, p_destination_location_id, 0) on conflict do nothing;

@@ -2,6 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { ImportDomain, ImportExecutionResult, ImportPayload, PreviewRow } from "../types.ts";
+import { findAuthUserByEmail } from "../../settings/invite-core.ts";
 
 const BATCH_SIZE = 100;
 
@@ -18,15 +19,12 @@ async function assertResult(result: { data?: unknown; error?: { message?: string
   return result.data as any;
 }
 
-async function findAuthUser(admin: any, email: string) {
-  for (let page = 1; page <= 20; page += 1) {
-    const result = await admin.auth.admin.listUsers({ page, perPage: 100 });
+async function findAuthUser(admin: any, email: string): Promise<any> {
+  return findAuthUserByEmail(async (page, perPage) => {
+    const result = await admin.auth.admin.listUsers({ page, perPage });
     if (result.error) throw new Error("Personnel account lookup failed.");
-    const match = result.data.users.find((user: { email?: string }) => user.email?.toLowerCase() === email.toLowerCase());
-    if (match) return match;
-    if (result.data.users.length < 100) break;
-  }
-  return null;
+    return result;
+  }, email);
 }
 
 async function persistPersonnel(admin: any, departmentId: string, actorId: string, row: PreviewRow, writer?: PersonnelImportWriter) {

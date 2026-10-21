@@ -778,6 +778,7 @@ export default function CertificationsPage() {
                 Officer
                 <select
                   required
+                  disabled={Boolean(editingCredentialId)}
                   value={credentialForm.userId}
                   onChange={(event) =>
                     setCredentialForm({
