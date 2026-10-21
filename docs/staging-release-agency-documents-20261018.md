@@ -4,6 +4,26 @@ Branch `claude/staging-rc-agency-documents-20261018` (supersedes
 `claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Validation
 evidence is in the commit history and the final report; this file is the operator's procedure.
 
+## Status: follow-up fixes deployed to staging 2026-10-21 (revision 189)
+
+Deploy-only release of `d9d2624d` (no migration):
+- Task definition revision **189**, image
+  `sha256:317eb31c197a1e73c6d05ad7c0c32971e0897c0da6eabfa83c1d71b55c23a28f` (zero scan findings).
+- Ledger 001–046, 0 pending, with 046 recorded by `75499335`.
+- `STAGING RELEASE VERIFIED` was printed. Afterwards: service 1/1 on 189, deployment COMPLETED,
+  `/api/health` 200, no errors logged since the rollout.
+- Rollback target: revision 188 (`sha256:c60a4a69…`).
+
+Contents:
+- `3480cae0`: the container binds `HOSTNAME=0.0.0.0`, so the home dashboard's loopback reads
+  reach the server.
+- `6dcbc685`: `/super-admin` preselects the active or Support Mode agency.
+- `d9d2624d`: the pre-release pin moves to revision 188.
+
+The branch `claude/fix-notifications-loopback-bind` was fast-forwarded into this branch. A side
+session had committed its fix, and two later commits from this release work, on that branch inside
+this worktree.
+
 ## Status: date fixes and module toggle deployed to staging 2026-10-20 (revision 188)
 
 Application `75499335` was released with tooling `f845b932`:
