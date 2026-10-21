@@ -464,12 +464,14 @@ if ($releaseLane) {
   if ($Action -eq 'apply') {
     $before = Invoke-MigrationTask @taskImage -TaskAction 'status'
     Assert-MigrationLedgerReport -Report $before -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation 'before-apply' | Out-Null
+    # Exactly the migrations pending before this apply must then carry this release's ledger rows.
+    $appliedVersions = @($before.pending | ForEach-Object { [int]$_.version })
     $result = Invoke-MigrationTask @taskImage -TaskAction 'apply'
     Assert-MigrationLedgerReport -Report $result -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation 'after-apply' | Out-Null
-    Assert-EntitlementMigrationRecord -Report $result -ApplicationCommit $applicationCommit -Environment $Environment | Out-Null
+    Assert-EntitlementMigrationRecord -Report $result -ApplicationCommit $applicationCommit -Environment $Environment -Versions $appliedVersions | Out-Null
     $after = Invoke-MigrationTask @taskImage -TaskAction 'status'
     Assert-MigrationLedgerReport -Report $after -MigrationFiles $migrationFiles -RepositoryRoot $root -MigrationCommit $toolingCommit -Expectation 'after-apply' | Out-Null
-    Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $applicationCommit -Environment $Environment | Out-Null
+    Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $applicationCommit -Environment $Environment -Versions $appliedVersions | Out-Null
     return $after
   }
   $result = Invoke-MigrationTask @taskImage -TaskAction $Action

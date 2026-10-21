@@ -75,7 +75,10 @@ function Get-TracePointStagingImageArchiveIncludes {
 function Get-TracePointStagingImageArchiveExcludes {
     return @(
         ':(glob,exclude)**/*.backup-*', ':(glob,exclude)**/*.encoding-backup-*',
-        ':(glob,exclude)**/*.before-*', ':(glob,exclude)**/*.bak', ':(glob,exclude)**/*.bak-*'
+        ':(glob,exclude)**/*.before-*', ':(glob,exclude)**/*.bak', ':(glob,exclude)**/*.bak-*',
+        # Operator-run read-only query (B10 qualification snapshot): not an image input, and the image
+        # archive allows no non-migration SQL.
+        ':(exclude)scripts/qualification-status-snapshot.sql'
     )
 }
 

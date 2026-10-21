@@ -98,10 +98,11 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /report\.applied\.length < STAGING_RELEASE_FIRST_RECORDED/);
   assert.match(runner, /STAGING_RELEASE_PENDING\.slice\(report\.applied\.length - STAGING_RELEASE_FIRST_RECORDED\)/);
   assert.match(runner, /STAGING_RELEASE_NOTHING_PENDING/);
-  // A migration that loses a lock race with the serving image is retried, bounded, as one transaction.
-  assert.match(runner, /const RETRYABLE_LOCK_ERRORS = new Set\(\["40P01", "55P03"\]\);/);
+  // Lock waits are bounded; a failed migration (including a lost deadlock) is never retried automatically: the
+  // apply stops for review and a reviewed re-run resumes from that file.
   assert.match(runner, /set lock_timeout = '\$\{MIGRATION_LOCK_TIMEOUT\}'/);
-  assert.match(runner, /attempt >= MIGRATION_LOCK_ATTEMPTS\) throw error/);
+  assert.match(runner, /retried: false \}\)\);\s+throw error;/);
+  assert.doesNotMatch(runner, /RETRYABLE_LOCK_ERRORS|MIGRATION_LOCK_ATTEMPTS|retrying:/);
   assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"047_fleet_inventory_feature_catalog\.sql",\s+"048_equipment_out_of_service_lifecycle\.sql",/);
   assert.match(runner, /"062_armory_audit_and_access\.sql",\s+\]\)/);
   assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"04[2-6]_/);

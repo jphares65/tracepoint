@@ -11,8 +11,13 @@ $script:StagingReleaseBranches = @(
     # Staging release candidate: demo-pd + Agency Documents + production line (2026-10-18).
     'claude/staging-release-agency-documents',
     # Same candidate with the image-archive and Windows PowerShell 5.1 release fixes (2026-10-18).
-    'claude/staging-rc-agency-documents-20261018'
+    'claude/staging-rc-agency-documents-20261018',
+    # The staging lineage with the defect remediation renumbered to 048-062 (2026-10-21).
+    'claude/integration-defects-rebased-20261021'
 )
+# The staging release applies 047-062 on top of the recorded 001-046 (database/aws/MANIFEST.json).
+$script:StagingRecordedThrough = 46
+$script:StagingReleaseLast = 62
 
 function Get-ReviewedImageTag {
     [CmdletBinding()]
@@ -189,11 +194,36 @@ function Assert-MigrationLedgerReport {
     foreach ($version in $expectedVersions) {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
-    if ($filesByVersion.Count -ne 47 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql' -or $filesByVersion[47] -cne '047_fleet_inventory_feature_catalog.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 047, preserving the Agency Documents lineage at 038-041.' }
-    # Staging records 001-046 (046 applied by 75499335 on 2026-10-20); this release applies only 047.
-    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(47))) { throw 'Apply requires exactly migration 047 pending.' }
+    if ($filesByVersion.Count -ne $script:StagingReleaseLast -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql' -or $filesByVersion[47] -cne '047_fleet_inventory_feature_catalog.sql') { throw "Reviewed staging release requires the manifest-listed AWS migration set 001-$('{0:d3}' -f $script:StagingReleaseLast), preserving the Agency Documents lineage at 038-047." }
+    # Every file must be the one database/aws/MANIFEST.json allocates at the reviewed commit, byte for byte.
+    $manifest = Get-AwsMigrationManifest -RepositoryRoot $RepositoryRoot -Commit $MigrationCommit
+    if (@($manifest.migrations).Count -ne $filesByVersion.Count) { throw 'Migration files do not match database/aws/MANIFEST.json.' }
+    foreach ($entry in @($manifest.migrations)) {
+        $version = [int]$entry.version
+        if ($filesByVersion[$version] -cne [string]$entry.filename -or $hashesByVersion[$version] -cne [string]$entry.sha256Crlf) { throw "Migration $('{0:d3}' -f $version) does not match database/aws/MANIFEST.json." }
+    }
+    # Staging records 001-046 (the staging lineage; 046 applied by 75499335 on 2026-10-20); the release applies
+    # the rest, 047-062, as a contiguous continuation of the recorded prefix.
+    foreach ($version in 1..$script:StagingRecordedThrough) {
+        if (-not $appliedByVersion.ContainsKey($version)) { throw "Migration $('{0:d3}' -f $version) of the recorded staging lineage is not applied." }
+    }
+    if ($appliedByVersion.Count -and $pendingByVersion.Count -and (($appliedByVersion.Keys | Measure-Object -Maximum).Maximum -gt ($pendingByVersion.Keys | Measure-Object -Minimum).Minimum)) { throw 'Migration ledger is not a contiguous applied prefix.' }
+    if ($Expectation -eq 'before-apply' -and $pendingByVersion.Count -eq 0) { throw 'Apply requires pending migrations from 047-062; nothing is pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
+}
+
+function Get-AwsMigrationManifest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$Commit
+    )
+    $text = @(& git.exe -C $RepositoryRoot show "${Commit}:database/aws/MANIFEST.json" 2>$null) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($text)) { throw 'The reviewed commit has no database/aws/MANIFEST.json.' }
+    try { $manifest = $text | ConvertFrom-Json -ErrorAction Stop } catch { throw 'database/aws/MANIFEST.json is not valid JSON.' }
+    if ($null -eq $manifest.PSObject.Properties['migrations'] -or @($manifest.migrations).Count -eq 0) { throw 'database/aws/MANIFEST.json lists no migrations.' }
+    return $manifest
 }
 
 function Assert-EntitlementMigrationRecord {
@@ -202,13 +232,18 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)]$Report,
         [Parameter(Mandatory)][string]$ApplicationCommit,
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-        # The migrations one release applied: 047 by default (this release); 046 by 75499335; 043-045 by e3b06e6a.
-        [ValidateSet(43, 44, 45, 46, 47)][int[]]$Versions = @(47)
+        # The migrations one release applied: 047-062 by default (this release, or the part it applied);
+        # 046 by 75499335; 043-045 by e3b06e6a.
+        [ValidateRange(43, 62)][int[]]$Versions = @(47..62)
     )
     # Every migration a release applies must be recorded by its commit, in this environment, as an apply.
     # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
     # 042 was recorded by an earlier staging release (its content is still verified by Assert-MigrationLedgerReport).
-    $known = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'), @(46, '046_agency_documents_module_toggle.sql'), @(47, '047_fleet_inventory_feature_catalog.sql'))
+    $known = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'), @(46, '046_agency_documents_module_toggle.sql'), @(47, '047_fleet_inventory_feature_catalog.sql'),
+        @(48, '048_equipment_out_of_service_lifecycle.sql'), @(49, '049_account_access_remediation.sql'), @(50, '050_fleet_field_write_authorization.sql'), @(51, '051_equipment_self_custody.sql'),
+        @(52, '052_range_packet_ready_is_not_final.sql'), @(53, '053_fleet_inspection_audit_outbox.sql'), @(54, '054_personnel_import_preservation.sql'), @(55, '055_fleet_inspection_eligibility.sql'),
+        @(56, '056_fleet_safety_hold_clearance.sql'), @(57, '057_training_record_visibility.sql'), @(58, '058_equipment_separated_holder.sql'), @(59, '059_training_closeout_records.sql'),
+        @(60, '060_range_instructor_line_actions.sql'), @(61, '061_armory_separation_of_duties.sql'), @(62, '062_armory_audit_and_access.sql'))
     # Built with a loop: piping the pairs would unroll a single selected pair into its two elements.
     $expected = [System.Collections.Generic.List[object]]::new()
     foreach ($pair in $known) { if ($Versions -contains [int]$pair[0]) { $expected.Add($pair) } }
@@ -250,4 +285,4 @@ function Assert-StagingTargetHealth {
     return [pscustomobject]@{ Active = $activeIds; Draining = @($draining | ForEach-Object { [string]$_.Target.Id }) }
 }
 
-Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Get-AwsMigrationArchiveHashes,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord,Assert-StagingTargetHealth
+Export-ModuleMember -Function Get-ReviewedImageTag,Assert-ReviewedImageTag,Assert-ReleaseBranch,Assert-StagingIdentity,Assert-ImageDigest,ConvertFrom-MigrationRunnerLog,Get-AwsMigrationFiles,Get-AwsMigrationArchiveHashes,Get-AwsMigrationManifest,Assert-MigrationLedgerReport,Assert-EntitlementMigrationRecord,Assert-StagingTargetHealth

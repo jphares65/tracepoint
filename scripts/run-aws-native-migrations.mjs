@@ -42,10 +42,7 @@ function migrationSqlWithLedgerEntry(migration, context) {
   return migration.contents.replace(/commit;\s*$/i, entry);
 }
 function quote(value) { return `'${String(value).replaceAll("'", "''")}'`; }
-// deadlock_detected and lock_not_available: the migration lost a lock race with live traffic.
-const RETRYABLE_LOCK_ERRORS = new Set(["40P01", "55P03"]);
 const MIGRATION_LOCK_TIMEOUT = "15s";
-const MIGRATION_LOCK_ATTEMPTS = 5;
 
 async function connect() {
   setMobilePreflightStage("RUNTIME_CONFIGURATION");
@@ -413,19 +410,18 @@ try {
       if (requestedEnvironment === "staging" && action === "apply") requireStagingReleaseMigrations(await report(client, files), files);
       const applied = new Set(before.map((row) => Number(row.version)));
       // The previous image keeps serving while migrations apply. Bound how long a queued exclusive lock can
-      // stall its requests, and retry a migration that loses a deadlock or lock wait: each file is one
-      // transaction with its ledger row, so a failed attempt leaves nothing behind.
+      // stall its requests. A migration that fails (including a lost deadlock or lock wait) is never retried
+      // here: each file is one transaction with its ledger row, so it leaves nothing behind, the apply stops,
+      // and a reviewed re-run continues from that file (the staging guard accepts the recorded prefix).
       await client.query(`set lock_timeout = '${MIGRATION_LOCK_TIMEOUT}'`);
       for (const file of files.filter((entry) => !applied.has(entry.version))) {
         console.log(JSON.stringify({ applying: publicMigration(file) }));
-        const sql = migrationSqlWithLedgerEntry(file, { environment: requestedEnvironment, action: "apply" });
-        for (let attempt = 1; ; attempt += 1) {
-          try { await client.query(sql); break; } catch (error) {
-            await client.query("rollback").catch(() => undefined);
-            if (!RETRYABLE_LOCK_ERRORS.has(error?.code) || attempt >= MIGRATION_LOCK_ATTEMPTS) throw error;
-            console.log(JSON.stringify({ retrying: { filename: file.filename, code: error.code, attempt } }));
-            await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
-          }
+        try {
+          await client.query(migrationSqlWithLedgerEntry(file, { environment: requestedEnvironment, action: "apply" }));
+        } catch (error) {
+          await client.query("rollback").catch(() => undefined);
+          console.log(JSON.stringify({ failed: { filename: file.filename, code: error?.code ?? null }, retried: false }));
+          throw error;
         }
       }
     }

@@ -6,7 +6,7 @@ $ErrorActionPreference='Stop'
 $temporaryRoot=Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-publish-only-test-'+[guid]::NewGuid().ToString('N'))
 $scriptRoot=Join-Path $temporaryRoot 'scripts'
 New-Item -ItemType Directory -Path $scriptRoot | Out-Null
-foreach($file in @('deploy-app.ps1','deploy-app-rollout-core.ps1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $scriptRoot}
+foreach($file in @('deploy-app.ps1','deploy-app-rollout-core.ps1','migration-release-core.psm1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $file) -Destination $scriptRoot}
 $global:PublishOnlySha='b'*40
 $global:PublishOnlyCalls=[System.Collections.Generic.List[string]]::new()
 function global:git.exe {
