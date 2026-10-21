@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
     # Staging release lane: status, baseline, reconcile, apply, diagnose.
     # Production lane: inspect, publish-only, range-workspace-hotfix and the guarded live final-database actions.
-    [ValidateSet('status','baseline','reconcile','apply','diagnose','inspect','publish-only','range-workspace-hotfix','precheck','inventory-035-037','password-scope-039-040')][string]$Action = 'status',
+    [ValidateSet('status','baseline','reconcile','apply','diagnose','inspect','publish-only','range-workspace-hotfix','precheck','inventory-035-037','password-scope-039-040','agency-documents-038-047')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit,
     [ValidatePattern('^[0-9a-f]{40}$')][string]$MigrationSourceCommit,
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ApplicationImageDigest,
@@ -40,8 +40,8 @@ if ($Action -eq 'publish-only' -and $Environment -ne 'production') { throw 'Publ
 if ($Action -eq 'publish-only' -and -not $ImageCommit) { throw 'Publish-only requires an explicit immutable -ImageCommit.' }
 # Guarded actions on the live final-cutover database. They run the owner
 # credential against the pinned live host; two of them change the database.
-$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039-040')
-$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039-040')
+$liveOwnerActions = @('precheck','inventory-035-037','password-scope-039-040','agency-documents-038-047')
+$liveDatabaseChangeActions = @('inventory-035-037','password-scope-039-040','agency-documents-038-047')
 if ($Action -in $liveOwnerActions -and $Environment -ne 'production') { throw 'Live final-database actions are production-only.' }
 # The reviewed list of password operations to resolve travels with the task;
 # the runner validates it in full before connecting.

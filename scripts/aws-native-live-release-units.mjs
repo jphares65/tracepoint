@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 // ledgered apply path cannot target it. Each unit runs its pinned migration
 // files as one transaction and commits only after its postconditions hold.
 
-export const liveOwnerActions = Object.freeze(["precheck", "inventory-035-037", "password-scope-039-040"]);
+export const liveOwnerActions = Object.freeze(["precheck", "inventory-035-037", "password-scope-039-040", "agency-documents-038-047"]);
 
 export const liveReleaseUnits = Object.freeze({
   "inventory-035-037": Object.freeze([
@@ -21,10 +21,27 @@ export const liveReleaseUnits = Object.freeze({
     { version: 44, filename: "044_cognito_password_global_scope.sql", sha256: "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987" },
     { version: 45, filename: "045_password_operation_resolution.sql", sha256: "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b" },
   ]),
+  // Agency Documents (038-041), its default-off module toggle (046) and the Fleet/Inventory catalog rows (047).
+  // 042 (default module entitlements) is deliberately absent: its triggers and backfill would enable every
+  // module for every production agency.
+  "agency-documents-038-047": Object.freeze([
+    { version: 38, filename: "038_agency_documents_template_builder.sql", sha256: "e5d9731e6eef405945ca1c222c69bdd76559646fc97c393beec537cd656eee89" },
+    { version: 39, filename: "039_document_template_analysis.sql", sha256: "894c51ea4d74e8e6d4a6b988a4bf3add34266cf5fde9a199f18a2660ecfa6086" },
+    { version: 40, filename: "040_document_template_structured_bindings.sql", sha256: "908c2e8704c331d4122ee820143ab645f851761c9747b6d65dee8743e3007525" },
+    { version: 41, filename: "041_document_template_write_authority.sql", sha256: "e0d5cb1b4abb1257debff25c6de00785e7853b9b5157b459cae592f8545ca06c" },
+    { version: 46, filename: "046_agency_documents_module_toggle.sql", sha256: "f308741ec52ab2947cc5cf8a08bde0e20e0dd7d89c25b633ccc0c714f1457f4b" },
+    { version: 47, filename: "047_fleet_inventory_feature_catalog.sql", sha256: "b1ca090ad5fb0f5b09f20cb6620cc59737b03303798bd0c21b911906138338ab" },
+  ]),
 });
 
 const inventoryTables = ["inventory_items", "inventory_locations", "inventory_balances", "inventory_transactions", "inventory_checkouts", "inventory_checkout_returns"];
 const passwordScopeTables = ["authentication_lifecycle_operations", "department_memberships", "platform_admins"];
+const agencyDocumentTables = ["document_templates", "document_template_versions", "document_template_fields", "generated_documents",
+  "document_template_analysis_proposals", "document_template_structured_bindings"];
+const agencyDocumentPermissions = ["view_agency_documents", "generate_agency_documents", "manage_document_templates"];
+// 042's auto-enable triggers; production must never have them.
+const moduleEntitlementTriggers = ["departments_default_module_entitlements", "feature_catalog_default_department_entitlements"];
+const entitlementDigestSql = "select md5(coalesce(string_agg(department_id::text || ':' || feature_code || ':' || coalesce(is_enabled::text, 'null'), ',' order by department_id, feature_code), '')) from public.department_features";
 
 // Line endings depend on the checkout that built the image; pins use LF.
 export function normalizedSha256(contents) {
@@ -116,6 +133,29 @@ export const livePrecheckSql = `with password_operations as (
     to_regclass('public.tracepoint_aws_schema_migrations') is not null as aws_native_ledger_present,
     to_regclass('tracepoint_migrations.applied_migrations') is not null as imported_ledger_present`;
 
+const agencyDocumentsPrerequisitesSql = `select (${["departments", "permissions", "feature_catalog", "department_features", "department_feature_events", "fleet_vehicles", "inventory_items"]
+  .map(name => `to_regclass('public.${name}') is not null`).join(" and ")}) as present`;
+
+// Agency names and IDs (no people) with each agency's entitlement rows and its Fleet and Inventory usage, so the
+// owner can keep every module an agency uses before this release gates Fleet and Inventory on entitlements.
+export const agencyDocumentsPrecheckSql = `select
+    (select coalesce(jsonb_agg(name order by name), '[]'::jsonb) from unnest(${textArray(agencyDocumentTables)}) as name where to_regclass('public.' || name) is not null) as agency_documents_tables_present,
+    (select count(*)::int from public.permissions where code = any(${textArray(agencyDocumentPermissions)})) as agency_documents_permissions_present,
+    (to_regclass('public.feature_catalog') is not null and to_regclass('public.department_features') is not null
+      and to_regclass('public.department_feature_events') is not null) as entitlement_tables_present,
+    (select coalesce(jsonb_agg(code order by code), '[]'::jsonb) from public.feature_catalog) as feature_catalog_codes,
+    exists (select 1 from pg_attribute where attrelid = to_regclass('public.feature_catalog') and attname = 'default_enabled' and not attisdropped) as feature_catalog_default_enabled_present,
+    (select count(*)::int from pg_trigger where not tgisinternal and tgname = any(${textArray(moduleEntitlementTriggers)})) as module_entitlement_triggers,
+    (select count(*)::int from public.department_features) as department_features_rows,
+    (${entitlementDigestSql}) as department_features_digest,
+    (select count(*)::int from public.departments) as departments_total,
+    (select coalesce(jsonb_agg(jsonb_build_object(
+        'id', d.id, 'name', d.name,
+        'entitlements', (select coalesce(jsonb_object_agg(f.feature_code, f.is_enabled), '{}'::jsonb) from public.department_features f where f.department_id = d.id),
+        'fleet_vehicles', (select count(*) from public.fleet_vehicles v where v.department_id = d.id),
+        'inventory_items', (select count(*) from public.inventory_items i where i.department_id = d.id)
+      ) order by d.name, d.id), '[]'::jsonb) from public.departments d) as agencies`;
+
 const resolutionAwarePrecheckSql = `with holding as (
     select o.tracepoint_user_id, o.department_id from public.authentication_lifecycle_operations o
     where o.operation_kind in ('assign_password','reset_password') and o.state <> 'committed'
@@ -142,7 +182,28 @@ export function liveUnitReadiness(precheck) {
   if (precheck.password_operation_resolutions_present !== false) passwordScope.push("password_operation_resolutions_already_present");
   // Unfinished password operations are not a readiness blocker here: the
   // unit requires every one of them to be on the reviewed resolution list.
-  return { inventory: { ready: inventory.length === 0, blockers: inventory }, passwordScope: { ready: passwordScope.length === 0, blockers: passwordScope } };
+  const agencyDocuments = [];
+  const documents = precheck.agency_documents ?? {};
+  if (documents.prerequisite_tables_present === false) {
+    agencyDocuments.push("agency_documents_prerequisite_tables_missing");
+  } else {
+    if (documents.agency_documents_tables_present?.length) agencyDocuments.push("agency_documents_tables_already_present");
+    if (documents.agency_documents_permissions_present !== 0) agencyDocuments.push("agency_documents_permissions_already_present");
+    if (documents.entitlement_tables_present !== true) agencyDocuments.push("entitlement_tables_missing");
+    if (documents.feature_catalog_default_enabled_present !== false) agencyDocuments.push("feature_catalog_default_enabled_already_present");
+    if (documents.feature_catalog_codes?.includes("agency_documents")) agencyDocuments.push("agency_documents_catalog_row_already_present");
+    if (documents.module_entitlement_triggers !== 0) agencyDocuments.push("module_entitlement_triggers_present");
+  }
+  if (precheck.permissions_code_unique !== true) agencyDocuments.push("permissions_code_not_unique");
+  if (precheck.permissions_writable !== true) agencyDocuments.push("permissions_not_writable");
+  if (precheck.public_schema_create !== true) agencyDocuments.push("public_schema_create_denied");
+  if (precheck.tracepoint_auth_schema_create !== true) agencyDocuments.push("tracepoint_auth_schema_create_denied");
+  if (precheck.inventory_prerequisites_present !== true) agencyDocuments.push("agency_documents_prerequisites_missing");
+  return {
+    inventory: { ready: inventory.length === 0, blockers: inventory },
+    passwordScope: { ready: passwordScope.length === 0, blockers: passwordScope },
+    agencyDocuments: { ready: agencyDocuments.length === 0, blockers: agencyDocuments },
+  };
 }
 
 export async function runLivePrecheck(client, options = {}) {
@@ -157,6 +218,11 @@ export async function runLivePrecheck(client, options = {}) {
     if (precheck.password_operation_resolutions_present === true) {
       precheck.resolution_aware = (await client.query(resolutionAwarePrecheckSql)).rows[0];
     }
+    // The Agency Documents report reads tables a partial database may lack; report them missing rather than fail.
+    const documentsPrerequisites = (await client.query(agencyDocumentsPrerequisitesSql)).rows[0];
+    precheck.agency_documents = documentsPrerequisites.present
+      ? (await client.query(agencyDocumentsPrecheckSql)).rows[0]
+      : { entitlement_tables_present: false, prerequisite_tables_present: false };
     await client.query("COMMIT");
     return { status: "PASSED", inspection: "read-only", identity, precheck, readiness: liveUnitReadiness(precheck) };
   } catch (error) {
@@ -389,6 +455,75 @@ export async function applyPasswordScopeResolutionUnit(client, files, resolution
     executed_at: new Date().toISOString(),
     files: selected.map(({ version, filename, sha256 }) => ({ version, filename, sha256 })),
     resolved_operations: ids.length,
+    ledger_modified: false,
+    identity: before.identity,
+    postconditions,
+  };
+}
+
+// $1 is the department_features digest read inside the unit's transaction: the unit adds catalog rows but must
+// not change any agency's entitlements (Agency Documents, Fleet and Inventory stay off until enabled).
+const agencyDocumentsPostconditionsSql = `select
+  (select count(*)::int from unnest(${textArray(agencyDocumentTables)}) as name where to_regclass('public.' || name) is not null) as tables_present,
+  (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relname = any(${textArray(agencyDocumentTables)}) and c.relrowsecurity) as tables_with_rls,
+  (select count(*)::int from pg_policies where schemaname = 'public' and tablename = any(${textArray(agencyDocumentTables)})) as policies_present,
+  (select count(*)::int from public.permissions where code = any(${textArray(agencyDocumentPermissions)})) as permissions_present,
+  (select count(*)::int from unnest(${textArray(agencyDocumentTables)}) as name where has_table_privilege('authenticated', 'public.' || name, 'SELECT')) as authenticated_select_tables,
+  (select count(*)::int from unnest(${textArray(agencyDocumentTables)}) as name cross join (select rolname from pg_roles where rolname = 'anon') roles
+    where has_table_privilege(roles.rolname, 'public.' || name, 'SELECT') or has_table_privilege(roles.rolname, 'public.' || name, 'INSERT')
+      or has_table_privilege(roles.rolname, 'public.' || name, 'UPDATE') or has_table_privilege(roles.rolname, 'public.' || name, 'DELETE')) as anon_privileges,
+  exists (select 1 from public.feature_catalog where code = 'agency_documents' and is_active and default_enabled = false) as agency_documents_catalog_default_off,
+  (select count(*)::int from public.feature_catalog where code in ('fleet','inventory') and is_active) as fleet_inventory_catalog_rows,
+  (select count(*)::int from public.department_features where feature_code = 'agency_documents') as agency_documents_entitlement_rows,
+  (${entitlementDigestSql}) = $1 as entitlements_unchanged,
+  (select count(*)::int from pg_trigger where not tgisinternal and tgname = any(${textArray(moduleEntitlementTriggers)})) as module_entitlement_triggers`;
+
+export function assertAgencyDocumentsPostconditions(row) {
+  const failures = Object.entries({
+    tables_present: row.tables_present === agencyDocumentTables.length,
+    tables_with_rls: row.tables_with_rls === agencyDocumentTables.length,
+    policies_present: row.policies_present === 12,
+    permissions_present: row.permissions_present === agencyDocumentPermissions.length,
+    authenticated_select_tables: row.authenticated_select_tables === agencyDocumentTables.length,
+    anon_privileges: row.anon_privileges === 0,
+    agency_documents_catalog_default_off: row.agency_documents_catalog_default_off === true,
+    fleet_inventory_catalog_rows: row.fleet_inventory_catalog_rows === 2,
+    agency_documents_entitlement_rows: row.agency_documents_entitlement_rows === 0,
+    entitlements_unchanged: row.entitlements_unchanged === true,
+    module_entitlement_triggers: row.module_entitlement_triggers === 0,
+  }).filter(([, passed]) => !passed).map(([name]) => name);
+  if (failures.length) throw new Error(`LIVE_AGENCY_DOCUMENTS_POSTCONDITION_FAILED: ${failures.join(", ")}`);
+  return true;
+}
+
+// 038-041, 046 and 047 commit together or not at all. The entitlement table is locked so no platform admin
+// toggle can land between the digest read and the commit.
+export async function applyAgencyDocumentsUnit(client, files, options = {}) {
+  const selected = selectUnitFiles("agency-documents-038-047", files);
+  if (selected.some(file => file.version === 42)) throw new Error("LIVE_RELEASE_UNIT_INCLUDES_042");
+  const before = await runLivePrecheck(client, options);
+  if (!before.readiness.agencyDocuments.ready) {
+    throw new Error(`LIVE_RELEASE_UNIT_PRECONDITION_FAILED: ${before.readiness.agencyDocuments.blockers.join(", ")}`);
+  }
+  await client.query("BEGIN");
+  let postconditions;
+  try {
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("LOCK TABLE public.department_features IN SHARE ROW EXCLUSIVE MODE");
+    const digest = (await client.query(entitlementDigestSql)).rows[0].md5;
+    for (const file of selected) await client.query(file.body);
+    postconditions = (await client.query(agencyDocumentsPostconditionsSql, [digest])).rows[0];
+    assertAgencyDocumentsPostconditions(postconditions);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  }
+  return {
+    action: "agency-documents-038-047",
+    status: "APPLIED",
+    executed_at: new Date().toISOString(),
+    files: selected.map(({ version, filename, sha256 }) => ({ version, filename, sha256 })),
     ledger_modified: false,
     identity: before.identity,
     postconditions,

@@ -4,8 +4,12 @@ param(
     [ValidatePattern('^arn:aws:ecs:us-east-1:[0-9]{12}:task-definition/[^:]+:[0-9]+$')][string]$RollbackTaskDefinitionArn,
     [ValidatePattern('^[0-9a-fA-F]{40}$')][string]$ImageCommit,
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ExpectedImageDigest,
-    [switch]$SkipLocalValidation
+    [switch]$SkipLocalValidation,
+    # Build, scan and verify the immutable image, then stop before any task definition or ECS change. Live
+    # database units run their migration runner from this image before the application is deployed.
+    [switch]$PublishOnly
 )
+if ($PublishOnly -and $RollbackTaskDefinitionArn) { throw '-PublishOnly cannot be combined with a rollback.' }
 
 # Application-only deployment. This script intentionally does not call CDK or
 # CloudFormation and has no commands that modify platform resources.
@@ -448,6 +452,10 @@ if ($SkipLocalValidation) {
 $imageTag = "$commit$($configuration.ImageSuffix)"
 $image = Publish-Image -Commit $commit -ImageTag $imageTag
 if ($ExpectedImageDigest) { Assert-ImageDigest -Actual $image.imageDigest -Expected $ExpectedImageDigest | Out-Null }
+if ($PublishOnly) {
+    Write-Host "IMAGE PUBLISHED - ECS unchanged: $Environment commit $commit, tag $imageTag, digest $($image.imageDigest)."
+    exit 0
+}
 $imageUri = "${imageRepository}@$($image.imageDigest)"
 $registered = Register-ApplicationTaskRevision -CurrentTask (Get-TaskDefinition -TaskDefinition $previousHealthyTaskArn) -ImageUri $imageUri
 $deploymentStarted = $false

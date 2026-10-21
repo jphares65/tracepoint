@@ -17,7 +17,7 @@ import {
 import { assertDatabaseTargetIdentity, assertExpectedDatabaseHost, assertInspectionSql, classifyMigrationInspection, inspectMigrationLedgerEvidence, inspectionCatalogQueries, inspectionSearchPathSql, inspectionTargetIdentitySql, migrationInspectionManifest, migrationLedgerDiscoverySql, awsNativeMigrationLedgerSql, importedAwsMigrationLedgerSql, migrationLedgerTransactionSql, mobileApiDependenciesSql } from "./aws-native-migration-inspection.mjs";
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { mobilePreflightFailureDetails } from "./aws-native-mobile-preflight-diagnostics.mjs";
-import { applyInventoryUnit, applyPasswordScopeResolutionUnit, liveOwnerActions, liveReleaseUnits, liveUnitReadiness, normalizedSha256, parsePasswordScopeResolutions, runAtomicLiveUnit, runLivePrecheck, selectUnitFiles, transactionBody } from "./aws-native-live-release-units.mjs";
+import { applyAgencyDocumentsUnit, applyInventoryUnit, applyPasswordScopeResolutionUnit, liveOwnerActions, liveReleaseUnits, liveUnitReadiness, normalizedSha256, parsePasswordScopeResolutions, runAtomicLiveUnit, runLivePrecheck, selectUnitFiles, transactionBody } from "./aws-native-live-release-units.mjs";
 
 const sourceExtensions = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs"];
 const typecheckExtensions = new Set([".ts", ".tsx", ".mts", ".cts"]);
@@ -281,9 +281,12 @@ test("live release units pin the exact repository migration files and route only
   for (const pins of Object.values(liveReleaseUnits)) {
     for (const pin of pins) assert.equal(normalizedSha256(await readFile(path.join(directory, pin.filename), "utf8")), pin.sha256, pin.filename);
   }
-  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039-040"]);
+  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039-040", "agency-documents-038-047"]);
   assert.deepEqual(liveReleaseUnits["inventory-035-037"].map(file => file.version), [35, 36, 37]);
   assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [44, 45]);
+  // 042 (default module entitlements) would enable every module for every production agency: no unit may include it.
+  assert.deepEqual(liveReleaseUnits["agency-documents-038-047"].map(file => file.version), [38, 39, 40, 41, 46, 47]);
+  for (const pins of Object.values(liveReleaseUnits)) assert.ok(pins.every(pin => pin.version !== 42));
   const files = [{ version: 35, filename: "035_inventory_phase1.sql", contents: "begin;\nselect 1;\ncommit;\n" }];
   assert.throws(() => selectUnitFiles("inventory-035-037", files), /LIVE_RELEASE_UNIT_FILE_MISMATCH: 035_inventory_phase1\.sql/);
   assert.throws(() => selectUnitFiles("apply", files), /LIVE_RELEASE_UNIT_UNKNOWN/);
@@ -297,16 +300,24 @@ test("live release units pin the exact repository migration files and route only
   assert.match(runner, /action === "precheck"\) \{\s*console\.log\(JSON\.stringify\(await runLivePrecheck\(client\)\)\);/);
   assert.match(runner, /action === "inventory-035-037"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyInventoryUnit\(client, files\)\)\)\);/);
   assert.match(runner, /action === "password-scope-039-040"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyPasswordScopeResolutionUnit\(client, files, passwordScopeResolutions\)\)\)\);/);
+  assert.match(runner, /action === "agency-documents-038-047"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyAgencyDocumentsUnit\(client, files\)\)\)\);/);
   const units = await readFile(new URL("./aws-native-live-release-units.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(units, /insert into public\.tracepoint_aws_schema_migrations|ensureLedger/);
 
   const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
   assert.match(publisher, /\$liveOwnerActions -and \$Environment -ne 'production'\) \{ throw 'Live final-database actions are production-only\.' \}/);
   assert.match(publisher, /\$liveDatabaseChangeActions -and -not \$AuthorizeLiveDatabaseChange\) \{ throw/);
+  assert.match(publisher, /\$liveDatabaseChangeActions = @\('inventory-035-037','password-scope-039-040','agency-documents-038-047'\)/);
   // Each image build archives only its own Dockerfile, so the required set
   // follows the build environment. A required Dockerfile that is missing
   // fails the read below; it is never skipped.
   const deployScript = await readFile(new URL("./deploy-app.ps1", import.meta.url), "utf8");
+  // -PublishOnly publishes the image the live units run from, and stops before any task definition or ECS change.
+  const publishOnlyExit = deployScript.indexOf("if ($PublishOnly) {");
+  assert.ok(publishOnlyExit > deployScript.indexOf("$image = Publish-Image -Commit $commit -ImageTag $imageTag"));
+  assert.ok(publishOnlyExit < deployScript.indexOf("$registered = Register-ApplicationTaskRevision"));
+  assert.match(deployScript.slice(publishOnlyExit, publishOnlyExit + 220), /IMAGE PUBLISHED - ECS unchanged[\s\S]*exit 0/);
+  assert.match(deployScript, /if \(\$PublishOnly -and \$RollbackTaskDefinitionArn\) \{ throw/);
   assert.match(deployScript, /if \(\$Environment -eq 'staging'\) \{ \$archivePaths \+= @\('Dockerfile', 'buildspec\.staging-image\.yml'\) \}/);
   assert.match(deployScript, /else \{ \$archivePaths \+= @\('Dockerfile\.aws-native-production', 'buildspec\.production-image\.yml'\) \}/);
   const requiredDockerfiles = {
@@ -424,7 +435,10 @@ test("embedded Postgres applies the inventory and password-scope units atomicall
     const precheck = await runLivePrecheck(owner, options);
     assert.equal(precheck.inspection, "read-only");
     assert.equal(precheck.identity.database_user, "tracepoint_migrator");
-    assert.deepEqual(precheck.readiness, { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
+    assert.deepEqual({ inventory: precheck.readiness.inventory, passwordScope: precheck.readiness.passwordScope }, { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
+    // This database has no entitlement tables: the Agency Documents report says so instead of failing the precheck.
+    assert.deepEqual(precheck.precheck.agency_documents, { entitlement_tables_present: false, prerequisite_tables_present: false });
+    assert.deepEqual(precheck.readiness.agencyDocuments.blockers, ["agency_documents_prerequisite_tables_missing"]);
     assert.equal(precheck.precheck.multi_agency_users_any, 1);
     assert.equal(precheck.precheck.unresolved_password_operation_users, 0);
     assert.deepEqual(precheck.precheck.inventory_tables_present, []);
@@ -462,7 +476,10 @@ test("embedded Postgres applies the inventory and password-scope units atomicall
 test("live unit readiness reports every blocker instead of guessing", () => {
   const clean = { inventory_tables_present: [], permissions_code_unique: true, permissions_writable: true, public_schema_create: true, inventory_prerequisites_present: true,
     password_scope_functions_present: 0, password_scope_triggers_present: 0, password_scope_tables_present: 3, password_scope_tables_owned: true, tracepoint_auth_schema_create: true, password_operation_resolutions_present: false, unresolved_password_operation_users: 2 };
-  assert.deepEqual(liveUnitReadiness(clean), { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
+  const { inventory, passwordScope, agencyDocuments } = liveUnitReadiness(clean);
+  assert.deepEqual({ inventory, passwordScope }, { inventory: { ready: true, blockers: [] }, passwordScope: { ready: true, blockers: [] } });
+  // Without the Agency Documents report the unit is never ready.
+  assert.equal(agencyDocuments.ready, false);
   const blocked = liveUnitReadiness({ ...clean, inventory_tables_present: ["inventory_items"], permissions_code_unique: false, password_scope_tables_owned: false, password_operation_resolutions_present: true });
   assert.deepEqual(blocked.inventory.blockers, ["inventory_tables_already_present", "permissions_code_not_unique"]);
   assert.deepEqual(blocked.passwordScope.blockers, ["password_scope_tables_not_owned", "password_operation_resolutions_already_present"]);
@@ -1287,13 +1304,13 @@ test("final migration stages contain the recursive local runtime dependency clos
   }
 });
 
-test("migration versions are unique and 038-046 hold the reconciled lineage with unchanged contents", async () => {
+test("migration versions are unique and 038-047 hold the reconciled lineage with unchanged contents", async () => {
   // Agency Documents keeps 038-041 (recorded in the staging ledger). The release line's range-workspace and
   // password-scope migrations, applied to production without ledger rows, moved byte-for-byte to 043-045.
   // 042 is the staging line's default module entitlements migration. Hashes here are of LF content
   // (normalizedSha256), as the live release-unit pins record; staging's ledger records the SHA-256 of the
   // CRLF bytes of the core.autocrlf=true migration archive, checked below for 038 and 042.
-  // 046 adds the default-off Agency Documents module toggle to the catalog.
+  // 046 adds the default-off Agency Documents module toggle to the catalog; 047 the Fleet/Inventory catalog rows.
   const directory = new URL("../database/aws/", import.meta.url);
   const names = (await readdir(directory)).filter((name) => /^\d{3}_.*\.sql$/.test(name)).sort();
   const versions = names.map((name) => Number(name.slice(0, 3)));
@@ -1308,12 +1325,13 @@ test("migration versions are unique and 038-046 hold the reconciled lineage with
     44: ["044_cognito_password_global_scope.sql", "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987"],
     45: ["045_password_operation_resolution.sql", "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b"],
     46: ["046_agency_documents_module_toggle.sql", "f308741ec52ab2947cc5cf8a08bde0e20e0dd7d89c25b633ccc0c714f1457f4b"],
+    47: ["047_fleet_inventory_feature_catalog.sql", "b1ca090ad5fb0f5b09f20cb6620cc59737b03303798bd0c21b911906138338ab"],
   };
   for (const [version, [filename, sha256]] of Object.entries(expected)) {
     assert.ok(names.includes(filename), `${filename} is version ${version}`);
     assert.equal(normalizedSha256(await readFile(new URL(filename, directory), "utf8")), sha256, `${filename} contents are unchanged`);
   }
-  assert.deepEqual(versions, Array.from({ length: 46 }, (_, index) => index + 1), "migrations are 001-046 contiguous");
+  assert.deepEqual(versions, Array.from({ length: 47 }, (_, index) => index + 1), "migrations are 001-047 contiguous");
   assert.equal(names.find((name) => name.startsWith("042_")), "042_default_module_entitlements.sql", "042 holds the default module entitlements");
   const crlfSha256 = async (filename) => createHash("sha256").update((await readFile(new URL(filename, directory), "utf8")).replace(/\r\n/g, "\n").replace(/\n/g, "\r\n")).digest("hex");
   assert.equal(await crlfSha256("038_agency_documents_template_builder.sql"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a", "038 staging ledger (CRLF archive) hash");
@@ -1336,4 +1354,116 @@ test("duplicate migration versions fail before the runner connects to PostgreSQL
   assert.match(runner, /result\[index - 1\]\.version >= result\[index\]\.version/);
   assert.ok(runner.indexOf("files = await migrations();") >= 0);
   assert.ok(runner.indexOf("files = await migrations();") < runner.indexOf("client = await connect();"));
+});
+
+test("embedded Postgres applies the Agency Documents unit to a production-shaped database without changing entitlements", { timeout: 180_000 }, async () => {
+  let server;
+  let owner;
+  let directory;
+  try {
+    directory = await mkdtemp(path.join(tmpdir(), "tp-live-agency-documents-"));
+    const port = await localPostgresPort();
+    server = new EmbeddedPostgres({ databaseDir: directory, user: "postgres", password: "local-units-only", port, persistent: true,
+      postgresFlags: ["-h", "127.0.0.1"], initdbFlags: ["--encoding=UTF8", "--locale=C"], onLog: () => {}, onError: () => {} });
+    await server.initialise();
+    await server.start();
+    const config = { host: "127.0.0.1", port };
+    const admin = new pg.Client({ ...config, database: "postgres", user: "postgres", password: "local-units-only" });
+    await admin.connect();
+    await admin.query("CREATE DATABASE tracepoint");
+    await admin.end();
+    const superuser = new pg.Client({ ...config, database: "tracepoint", user: "postgres", password: "local-units-only" });
+    await superuser.connect();
+    await superuser.query(`
+      create role authenticated nologin; create role anon nologin; create role service_role nologin;
+      create role tracepoint_migrator login password 'owner-local-only';
+      grant create on schema public to tracepoint_migrator;
+      create schema tracepoint_auth authorization tracepoint_migrator;`);
+    await superuser.end();
+    owner = new pg.Client({ ...config, database: "tracepoint", user: "tracepoint_migrator", password: "owner-local-only" });
+    await owner.connect();
+    // Production's shape: the 015-era entitlement tables with no 042 triggers or default_enabled column, some
+    // agencies with partial entitlement rows, Fleet and Inventory data but no fleet/inventory catalog rows.
+    await owner.query(`
+      create table public.departments(id uuid primary key, name text not null);
+      create table public.profiles(id uuid primary key, email text, full_name text);
+      create table public.permissions(code text primary key, display_name text, description text);
+      create table public.department_memberships(department_id uuid not null references public.departments(id), user_id uuid not null references public.profiles(id), is_active boolean not null default true);
+      create table public.platform_admins(user_id uuid primary key references public.profiles(id), is_active boolean not null default true);
+      create table public.authentication_lifecycle_operations(id uuid primary key, operation_kind text not null, tracepoint_user_id uuid not null references public.profiles(id),
+        department_id uuid references public.departments(id), state text not null, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+      create table public.feature_catalog(code text primary key, display_name text not null, description text, sort_order integer not null default 0, is_active boolean not null default true, created_at timestamptz not null default now());
+      create table public.department_features(department_id uuid not null references public.departments(id) on delete cascade, feature_code text not null references public.feature_catalog(code),
+        is_enabled boolean not null default false, enabled_at timestamptz, disabled_at timestamptz, updated_at timestamptz not null default now(), updated_by uuid, primary key(department_id, feature_code));
+      create table public.department_feature_events(id uuid primary key default gen_random_uuid(), department_id uuid not null references public.departments(id) on delete cascade,
+        feature_code text not null references public.feature_catalog(code), previous_enabled boolean, new_enabled boolean not null, actor_user_id uuid, reason text, created_at timestamptz not null default now());
+      create table public.fleet_vehicles(id uuid primary key default gen_random_uuid(), department_id uuid not null references public.departments(id));
+      create table public.inventory_items(id uuid primary key default gen_random_uuid(), department_id uuid not null references public.departments(id));
+      create function tracepoint_auth.subject_id() returns uuid language sql stable as $$ select null::uuid $$;
+      create function tracepoint_auth.department_id() returns uuid language sql stable as $$ select null::uuid $$;
+      create function public.is_department_member(p_department_id uuid) returns boolean language sql stable as $$ select true $$;
+      create function public.has_department_permission(p_department_id uuid, p_code text) returns boolean language sql stable as $$ select true $$;
+      insert into public.departments values ('00000000-0000-0000-0000-00000000000a', 'Alpha PD'), ('00000000-0000-0000-0000-00000000000b', 'Bravo PD');
+      insert into public.feature_catalog(code, display_name, sort_order) values ('firearms', 'Firearms', 60), ('ammunition', 'Ammunition', 10);
+      insert into public.department_features(department_id, feature_code, is_enabled) values
+        ('00000000-0000-0000-0000-00000000000a', 'firearms', true), ('00000000-0000-0000-0000-00000000000a', 'ammunition', true),
+        ('00000000-0000-0000-0000-00000000000b', 'firearms', true);
+      insert into public.fleet_vehicles(department_id) values ('00000000-0000-0000-0000-00000000000a'), ('00000000-0000-0000-0000-00000000000a');
+      insert into public.inventory_items(department_id) values ('00000000-0000-0000-0000-00000000000b');`);
+    const options = { expectedPort: port };
+    const migrationDirectory = path.resolve(import.meta.dirname, "../database/aws");
+    const files = await Promise.all((await readdir(migrationDirectory)).filter(name => /^\d{3}_[a-z0-9_]+\.sql$/.test(name)).sort().map(async filename => ({
+      version: Number(filename.slice(0, 3)), filename, contents: await readFile(path.join(migrationDirectory, filename), "utf8"),
+    })));
+    const entitlements = async () => (await owner.query("select department_id::text, feature_code, is_enabled from public.department_features order by 1, 2")).rows;
+    const before = await entitlements();
+
+    const precheck = await runLivePrecheck(owner, options);
+    assert.deepEqual(precheck.readiness.agencyDocuments, { ready: true, blockers: [] });
+    const documents = precheck.precheck.agency_documents;
+    assert.deepEqual(documents.feature_catalog_codes, ["ammunition", "firearms"]);
+    assert.equal(documents.module_entitlement_triggers, 0);
+    assert.equal(documents.department_features_rows, 3);
+    assert.deepEqual(documents.agencies.map(agency => [agency.name, agency.entitlements, Number(agency.fleet_vehicles), Number(agency.inventory_items)]), [
+      ["Alpha PD", { firearms: true, ammunition: true }, 2, 0],
+      ["Bravo PD", { firearms: true }, 0, 1],
+    ]);
+
+    const result = await applyAgencyDocumentsUnit(owner, files, options);
+    assert.equal(result.status, "APPLIED");
+    assert.equal(result.ledger_modified, false);
+    assert.deepEqual(result.files.map(file => file.version), [38, 39, 40, 41, 46, 47]);
+    assert.equal(result.postconditions.tables_present, 6);
+    assert.equal(result.postconditions.policies_present, 12);
+    assert.equal(result.postconditions.entitlements_unchanged, true);
+    assert.deepEqual(await entitlements(), before, "no agency's entitlements change");
+    assert.deepEqual((await owner.query("select code, is_active, default_enabled from public.feature_catalog order by code")).rows, [
+      { code: "agency_documents", is_active: true, default_enabled: false },
+      { code: "ammunition", is_active: true, default_enabled: true },
+      { code: "firearms", is_active: true, default_enabled: true },
+      { code: "fleet", is_active: true, default_enabled: true },
+      { code: "inventory", is_active: true, default_enabled: true },
+    ]);
+    assert.equal((await owner.query("select count(*)::int as total from public.department_feature_events")).rows[0].total, 0);
+    assert.equal((await owner.query("select to_regclass('public.tracepoint_aws_schema_migrations') is null as absent")).rows[0].absent, true);
+    // The adding of a department later must not provision anything either: 042's triggers are absent.
+    await owner.query("insert into public.departments values ('00000000-0000-0000-0000-00000000000c', 'Charlie PD')");
+    assert.equal((await owner.query("select count(*)::int as total from public.department_features where department_id = '00000000-0000-0000-0000-00000000000c'")).rows[0].total, 0);
+
+    await assert.rejects(applyAgencyDocumentsUnit(owner, files, options), /LIVE_RELEASE_UNIT_PRECONDITION_FAILED: .*agency_documents_tables_already_present/);
+  } finally {
+    await owner?.end().catch(() => undefined);
+    await server?.stop().catch(() => undefined);
+    if (directory) await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
+
+test("Agency Documents readiness refuses 042's triggers and any earlier Agency Documents objects", () => {
+  const ready = { permissions_code_unique: true, permissions_writable: true, public_schema_create: true, tracepoint_auth_schema_create: true, inventory_prerequisites_present: true,
+    agency_documents: { agency_documents_tables_present: [], agency_documents_permissions_present: 0, entitlement_tables_present: true, feature_catalog_codes: ["firearms"],
+      feature_catalog_default_enabled_present: false, module_entitlement_triggers: 0 } };
+  assert.deepEqual(liveUnitReadiness(ready).agencyDocuments, { ready: true, blockers: [] });
+  const blocked = { ...ready, agency_documents: { ...ready.agency_documents, module_entitlement_triggers: 2, feature_catalog_codes: ["agency_documents"], agency_documents_tables_present: ["document_templates"] } };
+  assert.deepEqual(liveUnitReadiness(blocked).agencyDocuments.blockers, ["agency_documents_tables_already_present", "agency_documents_catalog_row_already_present", "module_entitlement_triggers_present"]);
+  assert.equal(liveUnitReadiness({ ...ready, agency_documents: undefined }).agencyDocuments.ready, false);
 });

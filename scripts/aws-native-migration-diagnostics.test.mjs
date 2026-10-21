@@ -90,12 +90,12 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /action === "diagnose"/);
   assert.match(runner, /requestedEnvironment !== "staging"/);
   assert.match(runner, /MIGRATION_DRIFT/);
-  // Staging apply: contiguous 001-046, 001-045 recorded (043-045 applied by e3b06e6a), exactly 046 pending.
-  assert.match(runner, /versions\.length !== 46/);
-  assert.match(runner, /const STAGING_RELEASE_RECORDED = 45;/);
+  // Staging apply: contiguous 001-047, 001-046 recorded (046 applied by 75499335), exactly 047 pending.
+  assert.match(runner, /versions\.length !== 47/);
+  assert.match(runner, /const STAGING_RELEASE_RECORDED = 46;/);
   assert.match(runner, /report\.applied\.length !== STAGING_RELEASE_RECORDED/);
-  assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"046_agency_documents_module_toggle\.sql",\s+\]\)/);
-  assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"04[2-5]_/);
+  assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"047_fleet_inventory_feature_catalog\.sql",\s+\]\)/);
+  assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"04[2-6]_/);
   assert.match(runner, /await import\("\.\/aws-native-migration-diagnostics\.mjs"\)/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed/);
