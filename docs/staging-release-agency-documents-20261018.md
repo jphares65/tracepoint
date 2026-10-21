@@ -4,6 +4,46 @@ Branch `claude/staging-rc-agency-documents-20261018` (supersedes
 `claude/staging-release-agency-documents` at `bd615bb5`, which is left unchanged). Validation
 evidence is in the commit history and the final report; this file is the operator's procedure.
 
+## Production release for the Agency Documents pilot (in progress, 2026-10-21)
+
+Owner decisions (2026-10-21):
+- Keep every module each production agency can reach today. This release gates more pages
+  (Fleet and Inventory included) on module entitlements, so the needed entitlements are enabled
+  *before* the application deploy. Fleet and Inventory stay on for agencies that use them today.
+- Agency Documents goes to the production Demo PD first; the owner names pilot agencies afterwards.
+- Add the `Backup=daily` tag to the live database, and take a manual snapshot, before the schema
+  change.
+
+Path: production has no migration ledger and must never run 042, so the schema arrives through
+the pinned live unit `agency-documents-038-047`. It runs 038–041, 046 and 047 in one
+transaction, changes no entitlements, and is checked by an embedded production-shaped test.
+
+Order (each step that writes to AWS needs explicit approval):
+1. Staging: release the final commit with `APPLY 047` (on staging, 047 is a no-op), then repeat
+   the Agency Documents smoke test.
+2. Production, read-only: confirm the service is on `:27` (`e49e73dc`) and healthy.
+3. `deploy-app.ps1 -Environment production -ImageCommit <REL> -PublishOnly`: build and scan
+   only; ECS is not touched.
+4. `apply-app-migrations.ps1 -Environment production -Action precheck -ImageCommit <REL>`:
+   read-only. It reports each agency's entitlements and its Fleet/Inventory usage, and
+   `readiness.agencyDocuments`.
+5. Enable in `/super-admin` (today's app) the modules each agency reaches today; re-run the
+   precheck.
+6. `Backup=daily` tag, then a manual snapshot
+   `tracepoint-final-pre-agency-documents-<date>`; wait until it is available.
+7. `apply-app-migrations.ps1 -Environment production -Action agency-documents-038-047
+   -ImageCommit <REL> -AuthorizeLiveDatabaseChange`. Save its JSON as evidence.
+8. Enable Fleet and Inventory for the agencies that use them (the catalog rows now exist).
+9. `deploy-app.ps1 -Environment production -ImageCommit <REL>` (reuses the image; rolls back
+   automatically). Then verify: health, logins, each agency's menu, `/super-admin`, Agency
+   Documents hidden (403), and date fields.
+10. Enable Agency Documents for the Demo PD only, then run the synthetic cycle (upload, set up,
+    publish, generate, unpublish, revision 2).
+
+Rollback: application to `:27` (`deploy-app.ps1 -Environment production
+-RollbackTaskDefinitionArn …:27`); `e49e73dc` runs on the additive schema. A failed unit rolls
+back on its own. A full database restore from the step 6 snapshot is the last resort.
+
 ## Status: follow-up fixes deployed to staging 2026-10-21 (revision 189)
 
 Deploy-only release of `d9d2624d` (no migration):
