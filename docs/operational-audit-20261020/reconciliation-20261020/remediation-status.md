@@ -129,3 +129,37 @@ Open owner decisions from B8/B11:
 | B8a armory audit history and access | `claude/fix-b8a-armory-access` @ `de82a0d` | 052 (edited in place, unapplied anywhere), 053 | Green (run 18 on `196542a`; run 17 was superseded) |
 
 **Candidate staging code commit:** `8574db3`. Everything after it on the branch is documentation only. The staging package covers the 15 pending migrations 038–046 and 048–053, plus steps S1–S24 with S22a and the revised S23-3. The open information-disclosure items are in [security-backlog.md](security-backlog.md).
+
+## Update: release safety and final candidate (2026-10-21)
+
+**Final release candidate (code):** `5b9ec98` on `claude/integration-defects-20261020`. The branch head `5b6cc00` adds documentation only. CI run 23 is green.
+
+**Release-safety fixes included:**
+- **053:** the expand-only version, so a rollback to the previous image stays compatible.
+- **046** (edited in place, unapplied anywhere):
+  - outbox delivery no longer duplicates fleet audit rows;
+  - a status guard keeps held vehicles Out of Service under any app version.
+- **042/052** (edited in place): range correction history and ammunition actors are preserved, and old-app corrections are accounted for.
+- **Release tooling:**
+  - the staging image tag is fixed;
+  - the build archive inputs are fixed;
+  - `deploy-app.ps1 -PublishOnly` is added, staging only.
+
+**Final mixed-version and rollback regression** (PostgreSQL 18.4, real `555f061` and `5b9ec98` route code): **PASS**, no blockers. Every history and audit invariant holds across these phases:
+- baseline;
+- migrate;
+- failed deploy and automatic rollback;
+- roll-forward;
+- alternating old/new requests;
+- concurrent writes.
+
+**Accepted residuals:**
+- Previous-app personal-rifle actions return 500. This already happens at 037. The database now writes exactly one history row, but the reviewer note is missing from it.
+- While rolled back, old-app fleet responses show a status the database did not keep.
+- Ammunition document last-writer-wins row loss (ARM-21 deferral).
+
+**054** (the contract step, separately approved) is on `claude/fix-b8a-contract-054` @ `c50f73b`, rebuilt on the final candidate.
+
+**Read-only preflight procedure:** `claude/staging-preflight-20261020` @ `3e59826`.
+
+**New pre-existing defect found (not caused by this release):** instructor rostering with `manage_training` is refused with "not active department members". Logged for the backlog.
