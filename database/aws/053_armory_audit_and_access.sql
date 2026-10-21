@@ -6,8 +6,10 @@ begin;
 
 -- A firearm status change and its history row are one statement. The firearm
 -- changes only from the status the caller read; false means it changed
--- underneath. The actor is the signed-in subject. Users can no longer write
--- firearm_status_history directly, so every row is a real change.
+-- underneath. The actor is the signed-in subject. The 037 direct-write grants
+-- and insert policy on firearm_status_history stay in place here, because the
+-- previous image writes history directly and is the automatic rollback target;
+-- 054 removes them once that rollback window is closed.
 create or replace function public.change_firearm_status(
   p_department_id uuid,
   p_firearm_id uuid,
@@ -57,9 +59,6 @@ $$;
 
 revoke all on function public.change_firearm_status(uuid,uuid,text,text,text) from public,anon,service_role,tracepoint_runtime;
 grant execute on function public.change_firearm_status(uuid,uuid,text,text,text) to authenticated;
-
-drop policy if exists firearm_status_history_insert_managers on public.firearm_status_history;
-revoke insert, update, delete on public.firearm_status_history from authenticated;
 
 -- Names for the armory, for the caller's own agency only. A member is
 -- returned when the caller may see them in the armory:

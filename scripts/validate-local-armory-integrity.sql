@@ -4,10 +4,12 @@
 -- nobody decides their own off-duty request, reviews or reinstates their own
 -- personal rifle, or certifies an ammunition count they submitted; a failed
 -- off-duty inspection marks the request Non-Compliant. Also B8a (052, 053):
--- rifle and firearm status history is written only by the database, with the
--- change, as the signed-in actor, and cannot be changed; armory staff see the
--- names the armory shows without reading profiles; an inspection manager can
--- record an off-duty inspection without reading the request.
+-- rifle history is written only by the database, with the change, as the
+-- signed-in actor, and cannot be changed; change_firearm_status writes the
+-- status and its history row together; the 037 firearm history insert policy
+-- still applies for the previous image (054 removes it later); armory staff
+-- see the names the armory shows without reading profiles; an inspection
+-- manager can record an off-duty inspection without reading the request.
 begin;
 insert into auth.users(id,email) values
  ('0e520000-0000-4000-8000-0000000000b1','ai-chief@example.invalid'),
@@ -76,6 +78,7 @@ insert into public.personal_rifles(id,department_id,owner_user_id,manufacturer,m
  ('0e520000-0000-4000-8000-0000000002a4','0e520000-0000-4000-8000-00000000000a','0e520000-0000-4000-8000-0000000000b4','Colt','M4','AI-PR-4','5.56','Draft');
 -- Lets the atomicity case make the history insert fail; rolled back below.
 alter table public.personal_rifle_status_history add constraint ai_force_history_failure check (notes is distinct from 'force history failure');
+alter table public.firearm_status_history add constraint ai_force_firearm_history_failure check (notes is distinct from 'force history failure');
 insert into public.ammunition_reconciliations(id,department_id,cycle_name,cycle_year,cycle_start,cycle_end,status,created_by,submitted_by,submitted_at) values
  ('0e520000-0000-4000-8000-0000000003a1','0e520000-0000-4000-8000-00000000000a','Spring',2026,'2026-04-01','2026-06-30','Submitted','0e520000-0000-4000-8000-0000000000b3','0e520000-0000-4000-8000-0000000000b3',now());
 
@@ -167,9 +170,13 @@ begin
   ('owner inserts history for own rifle without a transition', chief, a, format($s$insert into public.personal_rifle_status_history(department_id,personal_rifle_id,actor_user_id,from_status,to_status,action,created_at) values (%L,%L,%L,'Pending Chief Approval','Pending Chief Approval','Owner Saved Draft',now()-interval '1 year')$s$, a, rifle, chief), '42501'),
   ('reviewer changes a rifle history row', lieutenant, a, $s$update public.personal_rifle_status_history set notes='edited'$s$, '42501'),
   ('reviewer deletes rifle history', lieutenant, a, $s$delete from public.personal_rifle_status_history$s$, '42501'),
-  ('armorer inserts firearm history directly', armorer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'Out of Service','In Service',%L,'Inspection result Passed (inspection x).')$s$, a, firearm, armorer), '42501'),
-  ('armorer changes a firearm history row', armorer, a, $s$update public.firearm_status_history set notes='edited'$s$, '42501'),
-  ('armorer deletes firearm history', armorer, a, $s$delete from public.firearm_status_history$s$, '42501'),
+  -- Until 054: the 037 policy, which the previous image's status route uses.
+  ('armorer inserts firearm history as self (037 policy)', armorer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'Old route')$s$, a, firearm, armorer), 'ok'),
+  ('armorer inserts firearm history as another user', armorer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'x')$s$, a, firearm, officer), '42501'),
+  ('officer inserts firearm history', officer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'x')$s$, a, firearm, officer), '42501'),
+  ('another agency inserts agency A firearm history', other, b, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'x')$s$, a, firearm, other), '42501'),
+  ('armorer changes a firearm history row', armorer, a, $s$update public.firearm_status_history set notes='edited'$s$, 'no rows'),
+  ('armorer deletes firearm history', armorer, a, $s$delete from public.firearm_status_history$s$, 'no rows'),
   ('officer changes firearm status', officer, a, format($s$select public.change_firearm_status(%L,%L,'In Service','Out of Service','x')$s$, a, firearm), '42501'),
   ('armorer of another agency changes firearm status', other, b, format($s$select public.change_firearm_status(%L,%L,'In Service','Out of Service','x')$s$, a, firearm), '42501'),
   ('armorer of another agency claims agency A', other, a, format($s$select public.change_firearm_status(%L,%L,'In Service','Out of Service','x')$s$, a, firearm), '42501'),
@@ -259,7 +266,8 @@ begin
  end if;
 end $$;
 
--- A firearm status change and its history row are one call; a stale change
+-- A firearm status change and its history row are one call: exactly one row,
+-- and a failed history write leaves the status unchanged; a stale change
 -- writes nothing.
 do $$
 declare a text := '0e520000-0000-4000-8000-00000000000a'; armorer uuid := '0e520000-0000-4000-8000-0000000000b3';
@@ -268,8 +276,19 @@ begin
  perform set_config('tracepoint.subject_id',armorer::text,true), set_config('tracepoint.department_id',a,true);
  changed := public.change_firearm_status(a::uuid,firearm,'In Service','Out of Service','Cracked frame');
  select * into row from public.firearm_status_history where firearm_id=firearm and new_status='Out of Service';
- if not changed or row.changed_by_user_id is distinct from armorer or row.old_status <> 'In Service' or row.notes <> 'Cracked frame' then
-  raise exception 'Firearm status change returned % with history %', changed, to_jsonb(row);
+ select count(*) into history_count from public.firearm_status_history where firearm_id=firearm;
+ if not changed or history_count <> 2 or row.changed_by_user_id is distinct from armorer or row.old_status <> 'In Service' or row.notes <> 'Cracked frame' then
+  raise exception 'Firearm status change returned % with % rows, history %', changed, history_count, to_jsonb(row);
+ end if;
+ begin
+  perform public.change_firearm_status(a::uuid,firearm,'Out of Service','Maintenance','force history failure');
+  raise exception 'The firearm status change succeeded although its history row failed';
+ exception when check_violation then null;
+ end;
+ select condition_status, (select count(*) from public.firearm_status_history h where h.firearm_id=firearm) into current_status, history_count
+ from public.firearms where id=firearm;
+ if current_status <> 'Out of Service' or history_count <> 2 then
+  raise exception 'A failed firearm history write left status % and % history rows', current_status, history_count;
  end if;
  changed := public.change_firearm_status(a::uuid,firearm,'In Service','Maintenance','stale');
  select condition_status, (select count(*) from public.firearm_status_history h where h.firearm_id=firearm) into current_status, history_count
