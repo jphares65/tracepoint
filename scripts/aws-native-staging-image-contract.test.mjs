@@ -87,6 +87,7 @@ test('deploy-app -PublishOnly stops after the scan-checked publish and before an
  const deploy=read('scripts/deploy-app.ps1');
  assert.match(deploy,/\[switch\]\$PublishOnly/);
  assert.match(deploy,/if \(\$PublishOnly -and \$RollbackTaskDefinitionArn\) \{ throw/);
+ assert.match(deploy,/if \(\$PublishOnly -and \$Environment -ne 'staging'\) \{ throw/);
  const publish=deploy.indexOf('$image = Publish-Image -Commit $commit -ImageTag $imageTag');
  const stop=deploy.indexOf('if ($PublishOnly) {');
  const register=deploy.indexOf('$registered = Register-ApplicationTaskRevision');

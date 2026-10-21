@@ -381,6 +381,7 @@ function Invoke-PostDeploymentDiagnostics {
 }
 
 if ($PublishOnly -and $RollbackTaskDefinitionArn) { throw '-PublishOnly cannot be combined with -RollbackTaskDefinitionArn.' }
+if ($PublishOnly -and $Environment -ne 'staging') { throw '-PublishOnly is limited to staging in this release.' }
 $deploymentLock = Acquire-DeploymentLock -LockEnvironment $Environment
 try {
 Assert-AwsIdentity | Out-Null
