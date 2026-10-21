@@ -20,6 +20,9 @@ Contents:
 - `6dcbc685`: `/super-admin` preselects the active or Support Mode agency.
 - `d9d2624d`: the pre-release pin moves to revision 188.
 
+Confirmed by the owner in the browser (2026-10-21): the home dashboard no longer shows "sources
+unavailable", and `/super-admin` opens on the right agency.
+
 The branch `claude/fix-notifications-loopback-bind` was fast-forwarded into this branch. A side
 session had committed its fix, and two later commits from this release work, on that branch inside
 this worktree.
