@@ -107,6 +107,7 @@ export type FleetSafetyHold = { since: string; source: "inspection" | "work_orde
 // A critical condition (an inspection with a critical defect, or a Critical or availability-affecting work order) holds the
 // vehicle, even after that work order is completed or cancelled, until a later inspection records no critical defects or a
 // fleet manager clears the hold (database/aws/046). It applies whatever the agency's automation and notification settings.
+// database/aws/046 guard_fleet_safety_hold_status applies the same rule to every write of the vehicle's status; keep them in step.
 export async function findSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, vehicle: FleetRow): Promise<FleetSafetyHold | null> {
   const scoped = (table: string, columns: string) => context.admin.from(table).select(columns).eq("department_id", context.departmentId).eq("vehicle_id", vehicleId);
   const latest = (query: ReturnType<typeof scoped>) => query.order("created_at", { ascending: false }).limit(1).maybeSingle();
