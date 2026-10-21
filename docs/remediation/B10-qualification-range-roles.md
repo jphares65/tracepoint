@@ -88,7 +88,7 @@ Before = Supabase lineage + `database/aws` 001–049 (127 migrations); after = +
 ```sh
 # in the authorised environment, from a checkout of this branch:
 psql "$DATABASE_URL" -X -At -v department_id= -f scripts/qualification-status-snapshot.sql > snapshot.json   # department_id=<uuid> for one agency
-node --import tsx scripts/qualification-status-diff.mjs snapshot.json --before 7f7f85f   # add --json for machine output
+node --import tsx scripts/qualification-status-diff.mjs snapshot.json --before <commit currently deployed on staging>   # add --json for machine output
 rm snapshot.json   # it holds names and scores
 ```
 

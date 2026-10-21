@@ -125,7 +125,7 @@ Scratch file `b8a/harness.cjs`. Before = `e19e84c` source and schema; after = th
 - **Application:** revert the commit and redeploy. Bridge behaviour is identical either way. On AWS, the old code inserts rifle history directly, which the edited 052 refuses. So roll back the application **together with** a forward migration that restores the old grants, or keep the B8a image.
 - **Database (052 edited, 053 new):** the ledger is hash-checked, so use a new forward migration:
   - drop `personal_rifles_status_history` and `personal_rifles_status_history_created`, and drop `record_personal_rifle_status_history()`. `workflow_note` can stay; it is always null.
-  - only if the old route code returns: re-grant INSERT on `personal_rifle_status_history` with the B8 policy, and on `firearm_status_history` with `firearm_status_history_insert_managers` (from `202609100001_complete_module_tables.sql`, with `auth.uid()` replaced by `tracepoint_auth.subject_id()`).
+  - only if the old route code returns: on `firearm_status_history`, re-grant INSERT with `firearm_status_history_insert_managers` (from `202609100001_complete_module_tables.sql`, with `auth.uid()` replaced by `tracepoint_auth.subject_id()`) **and** `grant update, delete` to `authenticated`, which is the exact 037 state. **Do not** re-grant INSERT on `personal_rifle_status_history`: that grant never existed at 037 and would recreate the forgeable B8 policy. (Corrected after the staging rehearsal.)
   - drop `change_firearm_status` and `armory_member_identities`.
 
   The `P0002` errcode on the off-duty function is harmless to old code, which pre-reads the request.

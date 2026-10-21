@@ -149,7 +149,7 @@ The native client's code is not available. No `/api/mobile/**` route and no libr
 1. Run `scripts/migrate-db.ps1 staging -Action status`. Expect `052` to be pending. Then run `apply`. **Apply 052 with or before the image.** Without it, certification by a second person fails on AWS RLS, and every personal-rifle action still returns 500 after changing the rifle.
 2. Verify with these queries:
    - `select tgname from pg_trigger where tgname in ('off_duty_requests_self_decision_guard','personal_rifles_self_review_guard','ammunition_reconciliations_certifier_guard')` → 3 rows.
-   - `select has_table_privilege('authenticated','public.personal_rifle_status_history','insert')` → true.
+   - ~~`select has_table_privilege('authenticated','public.personal_rifle_status_history','insert')` → true.~~ **Superseded by B8a:** expect false (and false for `firearm_status_history`).
 3. Deploy the image. Run step **S22** below with `acceptance-<UUID>` tenants.
 4. Production needs separate authorization: the same apply, then S22 on a synthetic tenant.
 

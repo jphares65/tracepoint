@@ -52,6 +52,8 @@ This package can move items to stage 3 only. Nothing in this document moves any 
 
 ## 1. Pre-flight (read-only)
 
+**Read-only kit:** `docs/remediation/preflight/` on branch `claude/staging-preflight-20261020` (SQL and README, rehearsed locally on the 037 and 053 states). Staging RDS has no workstation path: running the kit needs an owner-approved one-shot read path (README, "Connection"). Staging runs PostgreSQL 18.4; the rehearsal ran on 16.15.
+
 1. Record the current staging state:
    - ECS task definition revision and image digest: `aws ecs describe-services --cluster tracepoint-staging --services tracepoint-staging`. This is the **rollback target**.
    - `scripts/migrate-db.ps1 staging -Action status`. Expected: ledger present, 001–037 applied, 038–046 and 048–053 pending (15 files, no 047), no `MIGRATION_DRIFT`.
