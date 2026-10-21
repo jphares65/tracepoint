@@ -141,15 +141,15 @@ foreach ($name in @('ToolingCommit', 'ApplicationCommit')) {
     if ($mandatory.Count -ne 1) { throw "Release parameter -$name must be mandatory." }
     if ($null -ne $parameter.DefaultValue) { throw "Release parameter -$name must have no default commit." }
 }
-# The live pre-release revision is pinned: only 187 passes, and the check runs before the image is published.
+# The live pre-release revision is pinned: only 188 passes, and the check runs before the image is published.
 $revisionChecks = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -match '^\$previousTaskDefinition -notmatch ' }, $true))
 if ($revisionChecks.Count -ne 1) { throw 'Expected exactly one pre-release task revision check.' }
 $revisionCheck = $revisionChecks[0]
 $revisionComparison = @($revisionCheck.Clauses[0].Item1.FindAll({ param($node) $node -is [System.Management.Automation.Language.BinaryExpressionAst] }, $true)) | Select-Object -First 1
 $revisionPattern = [string]$revisionComparison.Right.Value
-if ($revisionPattern -cne ':187$') { throw "Pre-release revision pin is '$revisionPattern', expected ':187$'." }
-foreach ($revision in @(185, 186, 188, 1187)) { if ("arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:$revision" -match $revisionPattern) { throw "Revision $revision passed the pre-release pin." } }
-if ('arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:187' -notmatch $revisionPattern) { throw 'Revision 187 failed the pre-release pin.' }
+if ($revisionPattern -cne ':188$') { throw "Pre-release revision pin is '$revisionPattern', expected ':188$'." }
+foreach ($revision in @(186, 187, 189, 1188)) { if ("arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:$revision" -match $revisionPattern) { throw "Revision $revision passed the pre-release pin." } }
+if ('arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:188' -notmatch $revisionPattern) { throw 'Revision 188 failed the pre-release pin.' }
 if ($revisionCheck.Clauses[0].Item2.Extent.Text -notmatch '^\{\s*throw ') { throw 'The pre-release revision check must stop the release.' }
 $publishCall = $releaseAst.Extent.Text.IndexOf("'publish-tracepoint-staging-image.ps1'")
 if ($publishCall -lt 0 -or $revisionCheck.Extent.StartOffset -ge $publishCall) { throw 'The pre-release revision check must run before the image is published.' }
