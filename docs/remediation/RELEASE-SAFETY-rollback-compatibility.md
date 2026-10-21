@@ -343,3 +343,31 @@ Required checks on `8c9ac59`:
 - `node --test --test-concurrency=1 scripts/*.test.mjs`: 351 tests, 350 pass. The failure is the SheetJS round trip.
 - `npx eslint scripts/validate-clean-bootstrap.mjs`: clean.
 - Clean apply: 131/131.
+
+## 8. Record for 054 (this branch only: `claude/fix-b8a-contract-054`)
+
+**Status:** not part of the release package. Apply it only after the B8a (or later) image is verified and the owner has closed the image rollback window, under a separate approval (STAGING-VERIFICATION §5a).
+
+**Change.** `054_armory_history_contract.sql`:
+1. It refuses to run unless `change_firearm_status` (053) exists.
+2. It drops `firearm_status_history_insert_managers`.
+3. It revokes INSERT, UPDATE and DELETE on `firearm_status_history` from `authenticated`.
+
+054 leaves the 042/052 JSON-preservation triggers (§2a) in place: they are not a rollback-only grant, and they keep range history append-only for any writer.
+
+This closes B8a-2: a firearm or inspection manager can no longer forge a history row, including an "Inspection result …" note that ARM-17 trusts. After 054, only `change_firearm_status` writes firearm history, in the same statement as the change and as the signed-in actor. 054 is idempotent: a re-run is a no-op.
+
+**Rollback after 054.** An image rollback **below B8a** requires the forward restore migration (§4 step 7) **first**, because older images insert firearm history directly. Without it, every firearm status change on the older image returns 500 (§3, 054 row). Rollbacks to B8a or later need nothing. Every image deployed after 054 must contain the file (ledger drift check).
+
+**Verification (local, PostgreSQL 16):**
+
+| Check | Result |
+|---|---|
+| Clean apply, then 054 twice more | 132/132; re-runs succeed (NOTICE only) |
+| 054 on a 037 schema (053 missing) | Refused: "054 requires change_firearm_status from 053" |
+| Catalog diff against the expand 053 | Only `firearm_status_history_insert_managers` removed; `authenticated` grants on the table: SELECT only |
+| Armory validator, 054 branch | Passes. Direct firearm-history insert, update and delete as an armorer → 42501, plus all the expand cases. Fail before: the same script on the expand 053 fails at "armorer inserts firearm history directly" (ok, expected 42501). |
+| Validator shim | "Clean bootstrap passed: 79 ordered migrations and 53 AWS-native migrations" |
+| Previous-image harness | Old firearm status route → 500, status reverted, no history row. This is expected and is why 054 waits for the window to close. |
+
+**Staging steps:** STAGING-VERIFICATION §5a.

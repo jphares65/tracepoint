@@ -6,8 +6,8 @@
 -- off-duty inspection marks the request Non-Compliant. Also B8a (052, 053):
 -- rifle history is written only by the database, with the change, as the
 -- signed-in actor, and cannot be changed; change_firearm_status writes the
--- status and its history row together; the 037 firearm history insert policy
--- still applies for the previous image (054 removes it later); armory staff
+-- status and its history row together, and after 054 firearm history cannot
+-- be written directly either; armory staff
 -- see the names the armory shows without reading profiles; an inspection
 -- manager can record an off-duty inspection without reading the request.
 begin;
@@ -170,13 +170,13 @@ begin
   ('owner inserts history for own rifle without a transition', chief, a, format($s$insert into public.personal_rifle_status_history(department_id,personal_rifle_id,actor_user_id,from_status,to_status,action,created_at) values (%L,%L,%L,'Pending Chief Approval','Pending Chief Approval','Owner Saved Draft',now()-interval '1 year')$s$, a, rifle, chief), '42501'),
   ('reviewer changes a rifle history row', lieutenant, a, $s$update public.personal_rifle_status_history set notes='edited'$s$, '42501'),
   ('reviewer deletes rifle history', lieutenant, a, $s$delete from public.personal_rifle_status_history$s$, '42501'),
-  -- Until 054: the 037 policy, which the previous image's status route uses.
-  ('armorer inserts firearm history as self (037 policy)', armorer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'Old route')$s$, a, firearm, armorer), 'ok'),
+  -- 054: the 037 policy and grants are gone.
+  ('armorer inserts firearm history directly', armorer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'Out of Service','In Service',%L,'Inspection result Passed (inspection x).')$s$, a, firearm, armorer), '42501'),
   ('armorer inserts firearm history as another user', armorer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'x')$s$, a, firearm, officer), '42501'),
   ('officer inserts firearm history', officer, a, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'x')$s$, a, firearm, officer), '42501'),
   ('another agency inserts agency A firearm history', other, b, format($s$insert into public.firearm_status_history(department_id,firearm_id,old_status,new_status,changed_by_user_id,notes) values (%L,%L,'In Service','Out of Service',%L,'x')$s$, a, firearm, other), '42501'),
-  ('armorer changes a firearm history row', armorer, a, $s$update public.firearm_status_history set notes='edited'$s$, 'no rows'),
-  ('armorer deletes firearm history', armorer, a, $s$delete from public.firearm_status_history$s$, 'no rows'),
+  ('armorer changes a firearm history row', armorer, a, $s$update public.firearm_status_history set notes='edited'$s$, '42501'),
+  ('armorer deletes firearm history', armorer, a, $s$delete from public.firearm_status_history$s$, '42501'),
   ('officer changes firearm status', officer, a, format($s$select public.change_firearm_status(%L,%L,'In Service','Out of Service','x')$s$, a, firearm), '42501'),
   ('armorer of another agency changes firearm status', other, b, format($s$select public.change_firearm_status(%L,%L,'In Service','Out of Service','x')$s$, a, firearm), '42501'),
   ('armorer of another agency claims agency A', other, a, format($s$select public.change_firearm_status(%L,%L,'In Service','Out of Service','x')$s$, a, firearm), '42501'),
