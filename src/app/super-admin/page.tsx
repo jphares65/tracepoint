@@ -38,6 +38,20 @@ type SuperAdminPayload = {
   entitlements: Entitlement[];
 };
 
+async function fetchSuperAdminPayload() {
+  const response = await fetch("/api/super-admin", {
+    method: "GET",
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return (await response.json()) as SuperAdminPayload;
+}
+
 async function readError(response: Response) {
   try {
     const payload = (await response.json()) as {
@@ -63,53 +77,34 @@ export default function SuperAdminPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  async function load(activeDepartmentId: string) {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/super-admin", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-
-      if (!response.ok) {
-        throw new Error(await readError(response));
-      }
-
-      const nextPayload =
-        (await response.json()) as SuperAdminPayload;
-
-      setPayload(nextPayload);
-
-      setDepartmentId((current) =>
-        initialSuperAdminDepartment(
-          current,
-          nextPayload.departments,
-          activeDepartmentId,
-        ),
-      );
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Super Admin could not be loaded.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    if (access.loading) return;
+    // Non-administrators get the access-required view, which does not depend on this page's loading state.
+    if (access.loading || !access.isSuperAdmin) return;
 
-    if (!access.isSuperAdmin) {
-      setLoading(false);
-      return;
-    }
-
-    void load(access.departmentId);
+    // State changes only in the promise callbacks, never synchronously in the effect; `loading` starts true.
+    const activeDepartmentId = access.departmentId;
+    void fetchSuperAdminPayload().then(
+      (nextPayload) => {
+        setError(null);
+        setPayload(nextPayload);
+        setDepartmentId((current) =>
+          initialSuperAdminDepartment(
+            current,
+            nextPayload.departments,
+            activeDepartmentId,
+          ),
+        );
+        setLoading(false);
+      },
+      (loadError: unknown) => {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Super Admin could not be loaded.",
+        );
+        setLoading(false);
+      },
+    );
   }, [access.loading, access.isSuperAdmin, access.departmentId]);
 
   const entitlementMap = useMemo(() => {
