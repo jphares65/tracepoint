@@ -42,6 +42,10 @@ function migrationSqlWithLedgerEntry(migration, context) {
   return migration.contents.replace(/commit;\s*$/i, entry);
 }
 function quote(value) { return `'${String(value).replaceAll("'", "''")}'`; }
+// deadlock_detected and lock_not_available: the migration lost a lock race with live traffic.
+const RETRYABLE_LOCK_ERRORS = new Set(["40P01", "55P03"]);
+const MIGRATION_LOCK_TIMEOUT = "15s";
+const MIGRATION_LOCK_ATTEMPTS = 5;
 
 async function connect() {
   setMobilePreflightStage("RUNTIME_CONFIGURATION");
@@ -95,8 +99,10 @@ function verifyLedger(files, rows) {
 // The staging release: the Fleet/Inventory catalog rows (047) that production's Agency Documents unit also
 // applies, then the defect-remediation sequence renumbered after the staging lineage (048-062; see
 // database/aws/MANIFEST.json). Staging's ledger records 001-046 (046 applied by 75499335 on 2026-10-20); 047
-// may already be recorded by the Agency Documents release. Its apply must find a contiguous 001-046 or 001-047
-// recorded and exactly the rest of this list pending; anything else stops before any SQL.
+// may already be recorded by the Agency Documents release. Its apply must find a contiguous 001-046 to 001-061
+// recorded and exactly the rest of this list pending; anything else stops before any SQL. Each migration commits
+// on its own, so an apply interrupted part-way (for example a deadlock with live traffic) resumes from the next
+// file with the same runner.
 export const STAGING_RELEASE_PENDING = Object.freeze([
   "047_fleet_inventory_feature_catalog.sql",
   "048_equipment_out_of_service_lifecycle.sql",
@@ -115,17 +121,20 @@ export const STAGING_RELEASE_PENDING = Object.freeze([
   "061_armory_separation_of_duties.sql",
   "062_armory_audit_and_access.sql",
 ]);
-const STAGING_RELEASE_RECORDED = Object.freeze([46, 47]);
+const STAGING_RELEASE_FIRST_RECORDED = 46;
 const STAGING_RELEASE_LAST = 62;
 function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
   if (report.ledger !== "present" || versions.length !== STAGING_RELEASE_LAST || versions.some((version, index) => version !== index + 1)) {
     throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-062.");
   }
-  if (!STAGING_RELEASE_RECORDED.includes(report.applied.length) || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-046, including the Agency Documents lineage and module entitlements, must all be recorded (047 optionally) before the remediation sequence.");
+  if (report.applied.length === STAGING_RELEASE_LAST) {
+    throw new Error("STAGING_RELEASE_NOTHING_PENDING: 001-062 are already recorded.");
   }
-  const expected = STAGING_RELEASE_PENDING.slice(report.applied.length - 46);
+  if (report.applied.length < STAGING_RELEASE_FIRST_RECORDED || report.applied.length > STAGING_RELEASE_LAST || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-046, including the Agency Documents lineage and module entitlements, must all be recorded, followed only by a contiguous part of 047-062.");
+  }
+  const expected = STAGING_RELEASE_PENDING.slice(report.applied.length - STAGING_RELEASE_FIRST_RECORDED);
   if (report.pending.length !== expected.length || report.pending.some((file, index) => file.filename !== expected[index])) {
     throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly the remaining 047-062 pending.");
   }
@@ -403,9 +412,21 @@ try {
       if (!before) throw new Error("AWS-native migration ledger is absent; run the verified staging baseline first.");
       if (requestedEnvironment === "staging" && action === "apply") requireStagingReleaseMigrations(await report(client, files), files);
       const applied = new Set(before.map((row) => Number(row.version)));
+      // The previous image keeps serving while migrations apply. Bound how long a queued exclusive lock can
+      // stall its requests, and retry a migration that loses a deadlock or lock wait: each file is one
+      // transaction with its ledger row, so a failed attempt leaves nothing behind.
+      await client.query(`set lock_timeout = '${MIGRATION_LOCK_TIMEOUT}'`);
       for (const file of files.filter((entry) => !applied.has(entry.version))) {
         console.log(JSON.stringify({ applying: publicMigration(file) }));
-        await client.query(migrationSqlWithLedgerEntry(file, { environment: requestedEnvironment, action: "apply" }));
+        const sql = migrationSqlWithLedgerEntry(file, { environment: requestedEnvironment, action: "apply" });
+        for (let attempt = 1; ; attempt += 1) {
+          try { await client.query(sql); break; } catch (error) {
+            await client.query("rollback").catch(() => undefined);
+            if (!RETRYABLE_LOCK_ERRORS.has(error?.code) || attempt >= MIGRATION_LOCK_ATTEMPTS) throw error;
+            console.log(JSON.stringify({ retrying: { filename: file.filename, code: error.code, attempt } }));
+            await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+          }
+        }
       }
     }
     console.log(JSON.stringify(await report(client, files)));

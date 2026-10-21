@@ -90,11 +90,18 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /action === "diagnose"/);
   assert.match(runner, /requestedEnvironment !== "staging"/);
   assert.match(runner, /MIGRATION_DRIFT/);
-  // Staging apply: contiguous 001-062, 001-046 (or 001-047) recorded (046 applied by 75499335), exactly the rest pending.
+  // Staging apply: contiguous 001-062, at least 001-046 recorded (046 applied by 75499335) and possibly part of
+  // 047-062 (a resumed apply), exactly the rest pending; nothing pending is refused.
   assert.match(runner, /versions\.length !== STAGING_RELEASE_LAST/);
   assert.match(runner, /const STAGING_RELEASE_LAST = 62;/);
-  assert.match(runner, /const STAGING_RELEASE_RECORDED = Object\.freeze\(\[46, 47\]\);/);
-  assert.match(runner, /!STAGING_RELEASE_RECORDED\.includes\(report\.applied\.length\)/);
+  assert.match(runner, /const STAGING_RELEASE_FIRST_RECORDED = 46;/);
+  assert.match(runner, /report\.applied\.length < STAGING_RELEASE_FIRST_RECORDED/);
+  assert.match(runner, /STAGING_RELEASE_PENDING\.slice\(report\.applied\.length - STAGING_RELEASE_FIRST_RECORDED\)/);
+  assert.match(runner, /STAGING_RELEASE_NOTHING_PENDING/);
+  // A migration that loses a lock race with the serving image is retried, bounded, as one transaction.
+  assert.match(runner, /const RETRYABLE_LOCK_ERRORS = new Set\(\["40P01", "55P03"\]\);/);
+  assert.match(runner, /set lock_timeout = '\$\{MIGRATION_LOCK_TIMEOUT\}'/);
+  assert.match(runner, /attempt >= MIGRATION_LOCK_ATTEMPTS\) throw error/);
   assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"047_fleet_inventory_feature_catalog\.sql",\s+"048_equipment_out_of_service_lifecycle\.sql",/);
   assert.match(runner, /"062_armory_audit_and_access\.sql",\s+\]\)/);
   assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"04[2-6]_/);
