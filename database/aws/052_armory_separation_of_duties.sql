@@ -262,4 +262,75 @@ $$;
 
 revoke all on function public.record_off_duty_firearm_inspection_internal(uuid,uuid,uuid,date,text,text) from public,anon,authenticated,service_role,tracepoint_runtime;
 
+-- ARM-21 actors must survive a writer that drops them. The previous image's
+-- ammunition page rebuilds every activity and count from a fixed field list,
+-- so during a rollback or a mixed deployment its next save would remove
+-- recordedByUserId/recordedByName and countedByUserId/countedByName. Before each
+-- write, an activity or count that matches a stored one by id gets back the
+-- stored actor fields the write omits; a new one that has neither field is
+-- stamped with the session subject, as the current image does. Values a write
+-- sends are kept, and rows a write removes stay removed. An upsert is handled
+-- by its update pass.
+create or replace function public.keep_ammunition_workspace_actors()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public, tracepoint_auth
+as $$
+declare
+  v_stored jsonb := '{}'::jsonb;
+  v_actor uuid;
+  v_name text;
+  v_key text;
+  v_user_key text;
+  v_name_key text;
+  v_rows jsonb;
+begin
+  if jsonb_typeof(new.workspace) is distinct from 'object' or new.workspace -> 'schemaVersion' is distinct from '2'::jsonb then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' then
+    v_stored := coalesce(old.workspace, '{}'::jsonb);
+  elsif exists (select 1 from public.pilot_ammunition_workspaces w where w.department_id = new.department_id) then
+    return new;
+  end if;
+  v_actor := coalesce(tracepoint_auth.subject_id(), new.updated_by);
+  if v_actor is not null then
+    select coalesce(nullif(btrim(p.full_name), ''), nullif(split_part(p.email, '@', 1), '')) into v_name
+    from public.profiles p where p.id = v_actor;
+  end if;
+
+  foreach v_key in array array['activity', 'reconciliations'] loop
+    if jsonb_typeof(new.workspace -> v_key) is distinct from 'array' then continue; end if;
+    v_user_key := case v_key when 'activity' then 'recordedByUserId' else 'countedByUserId' end;
+    v_name_key := case v_key when 'activity' then 'recordedByName' else 'countedByName' end;
+    select coalesce(jsonb_agg(case
+        when jsonb_typeof(r.item) is distinct from 'object' then r.item
+        when s.item is not null then r.item || (
+          select coalesce(jsonb_object_agg(k.name, s.item -> k.name), '{}'::jsonb)
+          from unnest(array[v_user_key, v_name_key]) k(name)
+          where not r.item ? k.name and s.item ? k.name)
+        when v_actor is not null and not r.item ? v_user_key and not r.item ? v_name_key
+          then r.item || jsonb_build_object(v_user_key, v_actor, v_name_key, v_name)
+        else r.item end order by r.ord), '[]'::jsonb)
+    into v_rows
+    from jsonb_array_elements(new.workspace -> v_key) with ordinality r(item, ord)
+    left join lateral (
+      select x.item from jsonb_array_elements(case when jsonb_typeof(v_stored -> v_key) = 'array'
+        then v_stored -> v_key else '[]'::jsonb end) x(item)
+      where jsonb_typeof(r.item -> 'id') = 'string' and x.item -> 'id' = r.item -> 'id'
+      limit 1) s on true;
+    if v_rows is distinct from new.workspace -> v_key then
+      new.workspace := new.workspace || jsonb_build_object(v_key, v_rows);
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+revoke all on function public.keep_ammunition_workspace_actors() from public, anon, authenticated, service_role;
+drop trigger if exists pilot_ammunition_workspaces_keep_actors on public.pilot_ammunition_workspaces;
+create trigger pilot_ammunition_workspaces_keep_actors
+before insert or update on public.pilot_ammunition_workspaces
+for each row execute function public.keep_ammunition_workspace_actors();
+
 commit;

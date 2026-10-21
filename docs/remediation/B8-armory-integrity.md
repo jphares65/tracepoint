@@ -37,6 +37,7 @@ It is idempotent (applied three times locally), has `begin;`/`commit;`, and uses
 - `grant insert on personal_rifle_status_history to authenticated` and policy `personal_rifle_history_insert_actor` (ARM-29, AWS history writes). **Superseded by B8a:** 052 was edited in place (it is unapplied anywhere). The grant and policy are gone, and the database writes the history with the change. See `B8a-armory-audit-and-access.md`.
 - `guard_ammunition_reconciliation_certifier()` and trigger `ammunition_reconciliations_certifier_guard`. Policy `ammunition_reconciliations_update` is recreated with the certifier clause (ARM-23).
 - `record_off_duty_firearm_inspection_internal(...)`: the 202608170005 body, plus `compliance_status = 'Non-Compliant'` on Fail. Its EXECUTE stays revoked from every role (ARM-28).
+- `keep_ammunition_workspace_actors()` and trigger `pilot_ammunition_workspaces_keep_actors` (ARM-21). **Edited in place (release safety, commit `8c9ac59`; 052 is unapplied anywhere).** The previous image's ammunition page rebuilds activities and counts from a fixed field list. After a rollback, or in a mixed deployment, it would therefore drop `recordedBy*`/`countedBy*`. The `BEFORE INSERT OR UPDATE` trigger restores omitted actor fields by row id, and stamps rows that have neither field with the session subject. Sent values win, and removed rows stay removed. No grant changes. sha256 `dd12683c…` → `798422b938cde2998c92a137a357c6d9abc4b89b42983c69d1a8ef75b1ae76fd`. Tests: `scripts/validate-local-rollback-json-preservation.sql` and `RELEASE-SAFETY-rollback-compatibility.md` §2a and §7.
 
 ## Tests added
 
@@ -161,7 +162,7 @@ The native client's code is not available. No `/api/mobile/**` route and no libr
 
 ## Rollback
 
-- **Application:** revert the commit and redeploy. Stored data stays valid. Closed "Not Returned" assignments are ordinary closed assignments to older code. Kept archive fields are ignored while a firearm is active. The extra actor fields in the ammunition document are dropped by the old normaliser on its next save.
+- **Application:** revert the commit and redeploy. Stored data stays valid. Closed "Not Returned" assignments are ordinary closed assignments to older code. Kept archive fields are ignored while a firearm is active. The old page's normaliser omits the actor fields in the ammunition document on its next save; the 052 trigger keeps them and stamps the rows it adds.
 - **052:** the ledger is hash-checked, so roll back with a new forward migration:
   - drop the three triggers and their functions;
   - drop `personal_rifle_history_insert_actor` and `revoke insert on public.personal_rifle_status_history from authenticated`;

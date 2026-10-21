@@ -39,6 +39,14 @@ Authorization is unchanged: the same permissions allow the same writes, and the 
 
 **Validator.** The clean-bootstrap validator AWS stage now asserts `range_packet_ready_not_final`.
 
+**Edited in place (release safety, commit `8c9ac59`; 042 was never applied anywhere).** The rollback rehearsal showed a problem with the previous image (`555f061`). After an automatic ECS rollback, or while old and new tasks serve together, its first range save removed `resultRevisions`, and its own corrections left no revision. 042 now also creates `keep_range_result_revisions()` and the `BEFORE UPDATE` trigger `pilot_range_workspaces_keep_result_revisions`:
+- The stored history is kept append-only in front of what a write sends.
+- Every stored result or malfunction a write changes or removes without a sent revision of that version gets one. It is marked `recordedBy: "database"`, with the session subject as `revisedByUserId`.
+- The routes above always send their own revisions, so their writes are stored unchanged. Removals stay removals.
+- It is `SECURITY INVOKER` with a fixed `search_path`, and no grants change.
+
+sha256 `7f645286…` → `3dee6dcb1ed3fadf7c4b9b35e0cd10065b7cd6b2b57065a4d8909b9dfce44707`. Tests: `scripts/validate-local-rollback-json-preservation.sql` and the rerun rehearsal (`RELEASE-SAFETY-rollback-compatibility.md` §2a and §7).
+
 ## Tests added
 
 | Test | What it proves |
@@ -154,7 +162,7 @@ Production needs separate authorization and the same 042 apply. Production shoul
 
 ## Rollback
 
-- **Application:** revert the image. Stored `resultRevisions` entries are inert for older code. Older routes would drop them on the next pilot PUT, because the old `normalizeWorkspace` keeps only six collections; the mobile route would keep them.
+- **Application:** revert the image. Stored `resultRevisions` entries are inert for older code. The old `normalizeWorkspace` keeps only six collections, so older routes omit them on the next pilot PUT; the 042 trigger keeps them and records the old image's corrections (edited in place above). No export or edit freeze is needed.
 - **042:** to restore the old rule, re-run the two function bodies from `202609060002` and `202609030001` as a new migration. Do not edit 042. Restoring it re-locks every packet-Ready day.
 
 ## Deferred / owner decisions
