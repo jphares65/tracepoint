@@ -23,6 +23,8 @@ npm-debug.log*
 !database/aws/MANIFEST.json
 !database/rehearsal/001_readington_officer_first_login.sql
 !database/rehearsal/002_montville_officer_first_login.sql
+# Local validators the image build's native tests execute (training closeout).
+!scripts/validate-local-*.sql
 !supabase/
 !supabase/migrations/
 !supabase/migrations/*.sql

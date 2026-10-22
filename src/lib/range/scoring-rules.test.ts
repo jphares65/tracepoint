@@ -23,8 +23,11 @@ test("RNG-09: an Any-firearm drill is matched to the standard of the firearm use
   assert.equal(standardFirearmType(undefined, "Rifle"), "");
 });
 
+// Normalised to LF: the staging image is built from a CRLF archive (core.autocrlf=true).
+const rangeDaysPage = async () => (await readFile(new URL("../../app/range-days/page.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+
 test("the range scoring page saves through these rules", async () => {
-  const page = await readFile(new URL("../../app/range-days/page.tsx", import.meta.url), "utf8");
+  const page = await rangeDaysPage();
   const save = page.slice(page.indexOf("function handleSaveBatchResults()"), page.indexOf("function handleGeneratePacket()"));
   assert.match(save, /const \{ completed, passed: finalPassed \} = resolveRunCompletion\(\{/);
   assert.match(save, /\n        completed,\n/);
@@ -38,7 +41,7 @@ test("the range scoring page saves through these rules", async () => {
 });
 
 test("RNG-07: the page lets scorers take attendance and add walk-ups but keeps other roster edits for managers", async () => {
-  const page = await readFile(new URL("../../app/range-days/page.tsx", import.meta.url), "utf8");
+  const page = await rangeDaysPage();
   assert.match(page, /const canTakeSelectedRangeDayAttendance =\n    \(canManageRangeDays \|\| canScoreRangeDays\) && !selectedRangeDayFinalized;/);
   assert.match(page, /const canManageOpenAttendance =\n    isOpenAttendance && canTakeSelectedRangeDayAttendance && canScoreRangeDays;/);
   assert.match(page, /function handleToggleRosterAttendance\(rosterEntryId: string\) \{\n    if \(!canTakeSelectedRangeDayAttendance\) return;/);

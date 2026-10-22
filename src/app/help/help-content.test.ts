@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { HELP_ARTICLES } from "./help-content.ts";
@@ -11,7 +11,8 @@ const article = (id: string) => {
   return found;
 };
 const text = (id: string) => JSON.stringify(article(id));
-const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
+// Normalised to LF: the staging image is built from a CRLF archive (core.autocrlf=true).
+const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("ADM-06: notification preferences are reachable by a member with no administrative permission", () => {
   const notifications = article("email-notifications");
@@ -47,6 +48,11 @@ test("ADM-08: live modules are not described as planned", () => {
 test("ADM-07 (verify): web sign-in hands off to Cognito managed login, whose pool offers email recovery", () => {
   assert.match(source("../login/LoginForm.tsx"), /providerMode === "aws-native"[\s\S]*<form action="\/api\/auth\/cognito\/login" method="post">/);
   assert.match(source("../../lib/authentication/cognito-pkce.ts"), /new URL\(domain\+'\/oauth2\/authorize'\)/);
+});
+
+// infra/ is not in the application image build context (.dockerignore), so the pool definition is checked
+// wherever the repository is complete (local and CI runs) and skipped, with this reason, in the image build.
+test("ADM-07 (verify): the Cognito pool offers email recovery", { skip: !existsSync(new URL("../../../infra/lib/cognito-foundation-stack.ts", import.meta.url)) && "infra/ is not in the image build context" }, () => {
   assert.match(source("../../../infra/lib/cognito-foundation-stack.ts"), /accountRecovery:cognito\.AccountRecovery\.EMAIL_ONLY/);
 });
 

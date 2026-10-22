@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { COGNITO_PASSWORD_MIN_LENGTH, COGNITO_PASSWORD_REQUIREMENTS, isCognitoCompliantPassword } from "./password-policy.ts";
@@ -39,7 +39,8 @@ test("Administrator assignment and recovery submit through the shared validator"
   assert.match(directory, /async completePasswordReset\([^\n]+!isCognitoCompliantPassword\(password\)/);
 });
 
-test("The application minimum is the one the Cognito pools in infra declare", () => {
+// infra/ is not in the application image build context (.dockerignore): checked wherever the repository is complete.
+test("The application minimum is the one the Cognito pools in infra declare", { skip: !existsSync(new URL("../../../infra/lib/cognito-foundation-stack.ts", import.meta.url)) && "infra/ is not in the image build context" }, () => {
   const foundation = readFileSync(new URL("../../../infra/lib/cognito-foundation-stack.ts", import.meta.url), "utf8");
   const rehearsal = readFileSync(new URL("../../../infra/lib/phase3c-rehearsal-app-stack.ts", import.meta.url), "utf8");
   assert.deepEqual([...foundation.matchAll(/passwordPolicy:\{minLength:(\d+)/g)].map((match) => Number(match[1])), [COGNITO_PASSWORD_MIN_LENGTH]);

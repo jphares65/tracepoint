@@ -20,7 +20,8 @@ import {
 
 // TRN-26 / RNG-28. Route modules cannot be imported under node:test, so the
 // filters are tested here and the routes' use of them is guarded in source.
-const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
+// Normalised to LF: the staging image is built from a CRLF archive (core.autocrlf=true).
+const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("the permission mapping: own records for everyone, department records only within a responsibility", () => {
   const view = (permission: string) => ({

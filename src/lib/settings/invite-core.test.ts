@@ -5,7 +5,8 @@ import test, { mock } from "node:test";
 import { unexpectedErrorResponse } from "../tracepoint/api-errors.ts";
 import { cognitoInviteRefusal, EXISTING_MEMBER_INVITE, findAuthUserByEmail } from "./invite-core.ts";
 
-const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
+// Normalised to LF: the staging image is built from a CRLF archive (core.autocrlf=true).
+const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const users = (count: number, perPage: number) => (page: number) => Array.from(
   { length: Math.max(0, Math.min(perPage, count - (page - 1) * perPage)) },
   (_, index) => ({ id: `u${(page - 1) * perPage + index}`, email: `user${(page - 1) * perPage + index}@example.test` }),
