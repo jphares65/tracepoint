@@ -476,6 +476,93 @@ test("C-R1: Save Draft or a second Submit cannot pull a submitted count back fro
   assert.equal(db.tables.ammunition_reconciliations[0].status, "Certified");
 });
 
+test("C-R1: a withdrawal is never left without its audit record", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const admin = ["manage_firearms", "manage_inspections", "administer_department"];
+  const body = { action: "withdraw", reconciliationId: "rec-1", reason: "Recount requested" };
+  const failing = (db: ReturnType<typeof createDb>, fail: { audit?: boolean; restore?: boolean }) => {
+    const from = db.from;
+    let reconciliationUpdates = 0;
+    (db as any).from = (table: string) => {
+      const builder = from(table);
+      if (table === "audit_events" && fail.audit) {
+        return { insert: async () => ({ data: null, error: { message: "simulated audit failure" } }) };
+      }
+      if (table === "ammunition_reconciliations" && fail.restore) {
+        const update = builder.update;
+        builder.update = (value: Row) => {
+          reconciliationUpdates += 1;
+          if (reconciliationUpdates < 2) return update(value);
+          const refused: any = { eq: () => refused, select: () => refused, maybeSingle: () => refused,
+            then: (resolve: any) => resolve({ data: null, error: { message: "new row violates row-level security policy" } }) };
+          return refused;
+        };
+      }
+      return builder;
+    };
+  };
+
+  // Bridge client: the audit insert fails, the submission is put back.
+  let db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+  failing(db, { audit: true });
+  let response = await post(body);
+  assert.equal(response.status, 500);
+  assert.match(response.body.error, /stays submitted/);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER);
+
+  // Bridge client: putting it back also fails; the response does not claim it stayed submitted.
+  db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+  failing(db, { audit: true, restore: true });
+  const logged: unknown[] = [];
+  const error = console.error;
+  console.error = (...args: unknown[]) => { logged.push(args); };
+  try { response = await post(body); } finally { console.error = error; }
+  assert.equal(response.status, 500);
+  assert.doesNotMatch(response.body.error, /stays submitted/);
+  assert.match(response.body.error, /could not be restored/);
+  assert.equal(logged.length, 1, "the unaudited withdrawal is logged for follow-up");
+
+  // AWS-native client: one statement withdraws and audits, or neither.
+  const executed: { text: string; values: readonly unknown[] }[] = [];
+  const atomic = (result: Row | Error) => {
+    db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+    (db as any).execute = async (text: string, values: readonly unknown[]) => {
+      executed.push({ text, values });
+      if (result instanceof Error) throw result;
+      return { rows: [result] };
+    };
+    return db;
+  };
+  atomic({ withdrawn: 1, audited: 1 });
+  response = await post(body);
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const { RECONCILIATION_WITHDRAW_SQL } = await import("./reconciliation-withdraw.ts");
+  assert.equal(executed[0].text, RECONCILIATION_WITHDRAW_SQL);
+  assert.deepEqual([executed[0].values[0], executed[0].values[1], executed[0].values[3], executed[0].values[4]], ["rec-1", D, CHIEF, "Recount requested"]);
+  assert.equal(db.writes.length, 0, "the atomic path does not also write through the table client");
+
+  atomic(new Error("simulated audit failure"));
+  response = await post(body);
+  assert.equal(response.status, 500);
+  assert.match(response.body.error, /stays submitted/);
+
+  atomic({ withdrawn: 0, audited: 0 });
+  assert.equal((await post(body)).status, 409);
+
+  atomic({ withdrawn: 1, audited: 0 });
+  assert.equal((await post(body)).status, 500, "a mismatch is never reported as success");
+
+  atomic({ withdrawn: 1, audited: 1 });
+  assert.equal((await post({ ...body, reason: " " })).status, 400, "the reason is still required");
+  const before = executed.length;
+  atomic({ withdrawn: 1, audited: 1 });
+  (globalThis as any).__armoryAccess.context.permissions = ["manage_firearms", "manage_inspections"];
+  assert.equal((await post(body)).status, 403, "the permission is still required");
+  assert.equal(executed.length, before, "nothing is executed without the permission");
+});
+
 // B8a
 async function inMode<T>(mode: string | undefined, run: () => Promise<T>) {
   const previous = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE;

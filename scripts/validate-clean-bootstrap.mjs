@@ -1,6 +1,7 @@
 import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { catalogSql, manifestSql } from "./staging-management-manifest.mjs";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
+import { validateReconciliationWithdrawal } from "./validate-local-reconciliation-withdrawal.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import assert from "node:assert/strict";
@@ -573,6 +574,12 @@ try {
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw new Error(`AWS-native rollback JSON preservation failed: ${error.message}`, { cause: error });
+  }
+
+  try {
+    await validateReconciliationWithdrawal(client);
+  } catch (error) {
+    throw new Error(`AWS-native reconciliation withdrawal failed: ${error.message}`, { cause: error });
   }
 
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);

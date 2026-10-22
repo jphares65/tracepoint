@@ -1,6 +1,10 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
-import { RECONCILIATION_WITHDRAW_PERMISSIONS } from "@/lib/armory/reconciliation-withdraw";
+import {
+  atomicWithdrawalClient,
+  RECONCILIATION_WITHDRAW_PERMISSIONS,
+  withdrawReconciliationAtomically,
+} from "@/lib/armory/reconciliation-withdraw";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -389,6 +393,29 @@ export async function POST(request: NextRequest) {
           { status: 400 },
         );
       }
+      const atomic = atomicWithdrawalClient(admin);
+      if (atomic) {
+        // AWS-native: the withdrawal and its audit row commit or fail together.
+        let outcome: "withdrawn" | "not_submitted";
+        try {
+          outcome = reconciliationId
+            ? await withdrawReconciliationAtomically(atomic, { reconciliationId, departmentId, actorUserId: user.id, reason, now })
+            : "not_submitted";
+        } catch {
+          return NextResponse.json(
+            { error: "The withdrawal could not be recorded in the audit log, so the reconciliation stays submitted." },
+            { status: 500 },
+          );
+        }
+        if (outcome === "not_submitted") {
+          return NextResponse.json(
+            { error: "Only a submitted reconciliation can be withdrawn to draft. Reload to see its current status." },
+            { status: 409 },
+          );
+        }
+        return NextResponse.json({ ok: true, reconciliationId });
+      }
+
       const { data: submission, error: submissionError } = reconciliationId
         ? await admin
             .from("ammunition_reconciliations")
@@ -434,13 +461,23 @@ export async function POST(request: NextRequest) {
         new_value: { status: "Draft" },
       });
       if (auditError) {
-        // No unaudited withdrawal: put the submission back.
-        await admin
+        // Bridge client (no request transaction): put the submission back, and
+        // say so only when that worked.
+        const { data: restored, error: restoreError } = await admin
           .from("ammunition_reconciliations")
           .update({ status: "Submitted", submitted_at: submission?.submitted_at ?? null, submitted_by: submission?.submitted_by ?? null, updated_at: now })
           .eq("id", reconciliationId)
           .eq("department_id", departmentId)
-          .eq("status", "Draft");
+          .eq("status", "Draft")
+          .select("id")
+          .maybeSingle();
+        if (restoreError || !restored) {
+          console.error("ammunition reconciliation withdrawn without an audit record", { reconciliationId, departmentId });
+          return NextResponse.json(
+            { error: "The withdrawal could not be recorded in the audit log and the reconciliation could not be restored to submitted. Reload and contact an administrator." },
+            { status: 500 },
+          );
+        }
         return NextResponse.json(
           { error: "The withdrawal could not be recorded in the audit log, so the reconciliation stays submitted." },
           { status: 500 },
