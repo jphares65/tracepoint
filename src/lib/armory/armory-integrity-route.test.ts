@@ -360,6 +360,31 @@ test("ARM-21/ARM-22: the server stamps the actor on each new activity and count,
   assert.equal(matching.status, 200, "a count that matches needs no reason");
 });
 
+test("C-32: a save based on an older ledger is refused instead of overwriting the newer one", async () => {
+  const route = "../../app/api/pilot/ammunition/route.ts";
+  const put = (body: unknown) => call(route, "PUT", "/api/pilot/ammunition", body);
+  const loadedAt = "2026-10-20T10:00:00.000Z";
+  const db = world({ pilot_ammunition_workspaces: [{ department_id: D, workspace: storedWorkspace(), updated_at: loadedAt }], audit_events: [] });
+  const purchase = (id: string) => ({ ...storedWorkspace(), activity: [storedActivity, { ...storedActivity, id, quantityBefore: 1000, quantityAfter: 1500, quantityChange: 500, createdAt: "2026-10-20T11:00:00.000Z" }], ammoTypes: [{ ...ammoType, currentOnHand: 1500 }] });
+
+  // Two armorers load the ledger at loadedAt; the first one saves.
+  const first = await put({ workspace: purchase("act-a"), baseUpdatedAt: loadedAt });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.ok(first.body.updatedAt && first.body.updatedAt !== loadedAt, "the response carries the new revision");
+
+  // The second one saves from the same, now stale, ledger: refused, nothing lost.
+  const second = await put({ workspace: purchase("act-b"), baseUpdatedAt: loadedAt });
+  assert.equal(second.status, 409);
+  assert.equal(second.body.code, "stale_workspace");
+  assert.match(second.body.error, /changed since you loaded it/);
+  assert.deepEqual(db.tables.pilot_ammunition_workspaces[0].workspace.activity.map((entry: Row) => entry.id), ["act-1", "act-a"]);
+
+  // Reloaded, the second save succeeds on top of the first.
+  const retried = await put({ workspace: { ...purchase("act-b"), activity: [storedActivity, purchase("act-a").activity[1], purchase("act-b").activity[1]] }, baseUpdatedAt: first.body.updatedAt });
+  assert.equal(retried.status, 200, JSON.stringify(retried.body));
+  assert.equal(db.tables.pilot_ammunition_workspaces[0].workspace.activity.length, 3);
+});
+
 // ARM-23
 const reconciliationTables = (status = "Draft", submittedBy: string | null = null) => ({
   department_rules: [],

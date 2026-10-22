@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Boxes,
@@ -229,6 +229,8 @@ export default function ArmoryAmmunitionPage() {
     useState<CountDraft>(EMPTY_COUNT_DRAFT);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // C-32: the ledger revision this page last loaded or saved.
+  const baseUpdatedAt = useRef<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -272,7 +274,7 @@ export default function ArmoryAmmunitionPage() {
     };
   }, [activeTypes, workspace]);
 
-  async function loadWorkspace() {
+  async function loadWorkspace(): Promise<boolean> {
     setLoading(true);
     setError(null);
 
@@ -286,15 +288,21 @@ export default function ArmoryAmmunitionPage() {
         throw new Error(await readError(response));
       }
 
-      const payload = (await response.json()) as { workspace?: unknown };
+      const payload = (await response.json()) as {
+        workspace?: unknown;
+        updatedAt?: string | null;
+      };
       const normalized = normalizeAmmoWorkspace(payload.workspace);
       setWorkspace(normalized);
+      baseUpdatedAt.current = payload.updatedAt ?? null;
+      return true;
     } catch (loadError) {
       setError(
         loadError instanceof Error
           ? loadError.message
           : "Ammunition inventory could not be loaded.",
       );
+      return false;
     } finally {
       setLoading(false);
     }
@@ -313,13 +321,37 @@ export default function ArmoryAmmunitionPage() {
       const response = await fetch("/api/pilot/ammunition", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspace: projected }),
+        // C-32: the server refuses a save based on an older ledger.
+        body: JSON.stringify({
+          workspace: projected,
+          baseUpdatedAt: baseUpdatedAt.current,
+        }),
       });
+
+      if (response.status === 409) {
+        const conflict = (await response.clone().json().catch(() => ({}))) as {
+          code?: string;
+          error?: string;
+        };
+        if (conflict.code === "stale_workspace") {
+          const reloaded = await loadWorkspace();
+          setError(
+            (conflict.error ??
+              "The ammunition ledger changed since you loaded it, so this change was not saved.") +
+              (reloaded ? " The latest ledger is now shown." : ""),
+          );
+          return;
+        }
+      }
 
       if (!response.ok) {
         throw new Error(await readError(response));
       }
 
+      const saved = (await response.json().catch(() => ({}))) as {
+        updatedAt?: string | null;
+      };
+      baseUpdatedAt.current = saved.updatedAt ?? baseUpdatedAt.current;
       setWorkspace(projected);
       setMessage(successMessage);
     } catch (saveError) {
