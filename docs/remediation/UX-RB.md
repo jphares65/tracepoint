@@ -125,6 +125,35 @@ The same 17 test files ran against the untouched RC and against this batch:
   - `range-days/sync-contract.test.ts`.
 - **UX-RB-6:** `row-validation.test.ts` checks that the shared validator equals the server's decision, plus page contracts.
 
+### 3.4 Independent review of the range merge (owner item 5)
+
+An independent reviewer examined commit `65e1cd9` (UX-RB-5/6) for data loss, stale writes, repeated conflicts, deleted records and simultaneous instructors. The report and the eight executable proofs are in `ux-rb-evidence/review-65e1cd9/`. All eight proofs passed against `65e1cd9`, so each defect was real (`proofs-before.txt`). The fixes below are in this batch.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| H1. A recovered save that the server refused for a reason other than a newer version (another device finalized the day; two scorers added the same walk-up) blocked every later save, including after a reload. | High | Before saving a merged workspace, the page runs the server's own rule (`previewRangeWorkspaceMutation`, the same function the PUT route uses). Each replayed change the server would refuse is held back as a conflict that shows the refusal reason and this device's value, so the rest of the work saves. Any other refusal (400/403/409) triggers one reload and merge per server version. The route's second 409 ("changed during validation") now carries `code:"stale_workspace"` (web route only). |
+| H2. The local copy and its merge base were two storage keys shared by every tab and user. A mismatched pair silently reverted saved work, and another user or agency could see and save the copy. | High | One record (`tracepoint.rangeDays.device.v2`, `workspace-device-copy.ts`) holds the copy, its merge base, the conflicts, the user, the agency and the writing tab, written with one `setItem`. It is used only by the same user, and never for another agency. A failed write is shown ("could not keep a backup copy"). Another tab writing the record is shown ("also open in another tab"). The old `…workspace.v1` key is no longer read, because it names no user or agency. **Consequence:** unsynced work stored by the RC build under that key is not merged; it stays in storage untouched. |
+| H3. The same officer, drill and run scored fresh on two devices was stored twice with no conflict. | High | The merge matches results by range day, drill, run and officer (the server's `resultKey`) and roster entries by range day and officer, as well as by id, so they meet as one record. New result, roster and malfunction ids are random UUIDs. |
+| M1. A copy with an unknown base brought back records the other device had deleted. | Medium | With an unknown base, nothing is replayed. Every record that differs is listed as a conflict ("could not be matched to a saved version"). The exception is a server with no workspace yet. |
+| M2, M3. Conflicts accumulated, and an older entry could apply a superseded value. "Keep other device's value" only dismissed the conflict. | Medium | One conflict per record, showing the server's current value. A record edited again on this device supersedes its earlier conflict. Either choice writes that value, and the choice is stored together with the remaining conflicts. |
+| M4. A snapshot taken before recovery could be sent with the new version. | Medium (suspected) | Each snapshot records the reload epoch, and a snapshot from an earlier epoch is never sent. |
+| M5. RC-era unsynced copies are dropped on upgrade. | Medium (pre-existing) | Not merged. See H2: such a copy cannot be attributed to a user or agency. |
+| L1 (id collision), L2 (unkeyed records), L3 (second 409), L4 ("Saved" on a conflicted result) | Low | UUID ids; unkeyed server records kept as they are and numeric ids matched; L3 as in H1; a conflicted result shows **Conflict**. |
+| L5. A failed recovery fetch retries on each keystroke. | Low | Unchanged: bounded, and no data is lost. |
+
+**After the fixes** (`proofs-after.txt`): P1, P3 and P8 call the merge and route as the page now uses them, and they no longer reproduce. P2, P4, P5, P6 and P7 re-create the earlier page logic around the raw merge: no server pre-check, two storage keys, an explicit empty base, conflicts concatenated, and timestamp ids. The page no longer does any of that. So these five still "pass", as the earlier logic would. Their fixed counterparts are new tests in `simultaneous-instructors-route.test.ts`:
+- review H3 (P1);
+- H1 day finalized elsewhere (P2);
+- H1 walk-up (P3);
+- H1 unforeseen refusal.
+
+The other new tests are:
+- `workspace-device-copy.test.ts`: H2 one record across two tabs (P4), user and agency scoping, failed write, M1 (P5), and M2 superseded;
+- `workspace-merge.test.ts`: M2/M3 (P7) and P8;
+- `range-days/sync-contract.test.ts`: H1 pre-check, H2/M4/L1/L4 page wiring.
+
+Workflow semantics. A change the server would refuse is now shown as "Not saved: <reason>" with this device's value, instead of failing every save. No database or `/api/mobile` contract changes. The native range client's handling of `stale_workspace` (contract row C10) is unchanged.
+
 ## 4. Staging verification (add to `STAGING-VERIFICATION.md` §4)
 
 | Step | Action | Expected | Automated |
@@ -134,6 +163,8 @@ The same 17 test files ran against the untouched RC and against this batch:
 | S27 | Fleet rule "defect creates work order" off; officer submits a critical defect | Checks start Not inspected; message "Out of Service. Do not use it."; vehicle is Out of Service | `e2e/vehicle-inspection.spec.ts` |
 | S28 | Duty Only firearm: assignee transfers to secure storage, then back | Both succeed; history shows the reason and notes; the supervisor sees both events | `e2e/firearm-custody.spec.ts` |
 | S29 | Two instructor devices: different officers; then the same officer | Both scores kept; then a conflict shown and resolved with no loss | `e2e/range-concurrency.spec.ts` |
+| S29a | Two instructor devices: lead marks the day Completed while a line instructor enters a score on the same day | Line device shows the score as "Not saved: … cannot be changed" with its value; its other work keeps saving; nothing reverts | Manual (owner) |
+| S29b | Same browser, two tabs of Range Days | Notice "also open in another tab"; saving in one tab never reverts the other tab's saved scores after reload | Manual (owner) |
 | S30 | Enter 55 on a maximum-50 drill | Row marked invalid, officer named, nothing sent; 48 saves | `e2e/range-validation.spec.ts` |
 
 ## 5. Not in this batch (remaining plan items)

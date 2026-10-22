@@ -209,6 +209,8 @@ export async function PUT(request: NextRequest) {
         {
           error:
             "The workspace changed during validation. Reload before saving.",
+          // Review L3: the same "newer version" case as the version check.
+          code: "stale_workspace",
         },
         {
           status: 409,

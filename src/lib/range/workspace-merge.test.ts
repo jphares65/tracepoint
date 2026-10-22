@@ -73,3 +73,26 @@ test("UX-RB-6: a result is Saved only when the server holds exactly that version
   assert.deepEqual([...unsyncedIds(synced, [result("officer-a", 46)])], []);
   assert.deepEqual([...unsyncedIds(synced, [result("officer-a", 47), result("officer-b", 49)])], ["result-officer-a", "result-officer-b"]);
 });
+
+test("review M2/M3: one conflict per record, refreshed to the server's current value; a later edit wins", async () => {
+  const { reconcileConflicts } = await import("./workspace-merge.ts");
+  const W = (score: number) => ({ ...base(), results: [result("officer-a", score)] });
+  const first = mergeRangeWorkspace(W(40), W(44), W(46)).conflicts;
+  const second = mergeRangeWorkspace(W(46), W(48), W(47)).conflicts;
+  const conflicts = reconcileConflicts(first, second, W(47));
+  assert.deepEqual(conflicts.map((conflict) => [conflict.id, conflict.local?.score, conflict.server?.score]), [["result-officer-a", 48, 47]]);
+  assert.deepEqual(reconcileConflicts(conflicts, [], W(48)), [], "agreement drops the conflict");
+  assert.equal(applyConflictChoice(W(47), conflicts[0], "server").results[0].score, 47);
+});
+
+test("review P8: records without a string id are never collapsed or duplicated", () => {
+  const unkeyed = { note: "x" };
+  const server = { ...EMPTY_MERGEABLE_WORKSPACE, malfunctions: [unkeyed, { ...unkeyed }] };
+  assert.equal(mergeRangeWorkspace(server, server, server).merged.malfunctions.length, 2);
+  const numeric = mergeRangeWorkspace(
+    { ...EMPTY_MERGEABLE_WORKSPACE, results: [{ id: 7, score: 1 }] },
+    { ...EMPTY_MERGEABLE_WORKSPACE, results: [{ id: 7, score: 2 }] },
+    { ...EMPTY_MERGEABLE_WORKSPACE, results: [{ id: 7, score: 1 }] },
+  );
+  assert.deepEqual(numeric.merged.results, [{ id: 7, score: 2 }]);
+});

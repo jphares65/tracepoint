@@ -64,28 +64,48 @@ async function put(workspace: unknown, baseUpdatedAt: string | null) {
 }
 
 // A device as the page now behaves: base = what it last synced; on a stale
-// refusal it loads the server copy and replays its own changes (UX-RB-5).
+// refusal it loads the server copy and replays its own changes, holding back
+// any change the server would refuse (UX-RB-5, review H1). After any other
+// refusal it does the same once per server version.
+async function recover(device: { base: any; baseUpdatedAt: string | null; local: any; conflicts: any[] }) {
+  const { recoverWorkspace } = await import("./workspace-device-copy.ts");
+  const { previewRangeWorkspaceMutation } = await import("./workspace-mutation.ts");
+  const permissions: string[] = (globalThis as any).__rangeAccess.context.permissions;
+  const serverRaw = stored!.workspace;
+  const server = strip(serverRaw);
+  const recovered = recoverWorkspace({
+    base: device.base,
+    local: device.local,
+    server,
+    conflicts: device.conflicts,
+    accept: (workspace) => {
+      const decision = previewRangeWorkspaceMutation({ existingWorkspace: serverRaw, nextWorkspace: workspace, canManage: permissions.includes("manage_range_days"), canScore: true });
+      return decision.ok ? { ok: true as const } : { ok: false as const, error: decision.error };
+    },
+  });
+  device.conflicts = recovered.conflicts;
+  device.local = recovered.workspace;
+  device.base = server;
+  device.baseUpdatedAt = stored!.updated_at;
+}
+
 async function saveLikeDevice(device: { base: any; baseUpdatedAt: string | null; local: any; conflicts: any[] }) {
-  const { mergeRangeWorkspace } = await import("./workspace-merge.ts");
   let response = await put(device.local, device.baseUpdatedAt);
   if (response.status === 409 && response.body.code === "stale_workspace") {
-    const server = strip(stored!.workspace);
-    const merge = mergeRangeWorkspace(device.base, device.local, server);
-    device.conflicts.push(...merge.conflicts);
-    device.local = merge.merged;
-    device.base = server;
-    device.baseUpdatedAt = stored!.updated_at;
+    await recover(device);
     response = await put(device.local, device.baseUpdatedAt);
+  } else if ([400, 403, 409].includes(response.status)) {
+    await recover(device);
   }
   if (response.status === 200) { device.base = device.local; device.baseUpdatedAt = response.body.updatedAt; }
   return response;
 }
 
-async function startDay() {
+async function startDay(initial: any = plan()) {
   stored = null;
   const access = (globalThis as any).__rangeAccess.context;
   access.permissions = ["manage_range_days"];
-  const created = await put(plan(), null);
+  const created = await put(initial, null);
   access.permissions = ["score_range_days"];
   assert.equal(created.status, 200);
   const load = () => ({ base: strip(stored!.workspace), baseUpdatedAt: stored!.updated_at, local: strip(stored!.workspace), conflicts: [] as any[] });
@@ -130,4 +150,61 @@ test("UX-RB-5: the same officer scored on both devices is kept as a conflict, th
   assert.equal(stored!.workspace.results[0].score, 44);
   // The corrected score keeps its revision history on the server (B3).
   assert.ok(Array.isArray(stored!.workspace.resultRevisions));
+});
+
+// Review of 65e1cd9 (scratchpad proofs P1-P8): each case below failed before.
+const fresh = (officer: string, score: number) => ({ id: `result-${crypto.randomUUID()}`, rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: officer, score, completed: true, passed: score >= 40 });
+
+test("review H3: the same officer and run scored fresh on two devices is one result and a conflict, never two scores", async () => {
+  const [one, two] = await startDay();
+  one.local = { ...one.local, results: [fresh("officer-a", 46)] };
+  two.local = { ...two.local, results: [fresh("officer-a", 31)] };
+  assert.equal((await saveLikeDevice(one)).status, 200);
+  assert.equal((await saveLikeDevice(two)).status, 200);
+  assert.deepEqual(stored!.workspace.results.map((item: any) => [item.officerId, item.score]), [["officer-a", 46]]);
+  assert.deepEqual(two.conflicts.map((conflict) => [conflict.local.score, conflict.server.score]), [[31, 46]]);
+  assert.equal(two.conflicts[0].local.id, stored!.workspace.results[0].id, "this device's value is held under the saved result's id");
+});
+
+test("review H1: a score for a day another device finalized is held back with the reason; the device keeps saving", async () => {
+  const twoDays = { ...plan(), rangeDays: [...plan().rangeDays, { id: "day-2", departmentId: department, status: "In Progress" }], rangeRoster: [...plan().rangeRoster, { id: "roster-c", rangeDayId: "day-2", officerId: "officer-c" }] };
+  const [lead, line] = await startDay(twoDays);
+  const access = (globalThis as any).__rangeAccess.context;
+  access.permissions = ["manage_range_days"];
+  lead.local = { ...lead.local, rangeDays: lead.local.rangeDays.map((day: any) => (day.id === "day-1" ? { ...day, status: "Completed" } : day)) };
+  assert.equal((await saveLikeDevice(lead)).status, 200);
+  access.permissions = ["score_range_days"];
+  line.local = { ...line.local, results: [fresh("officer-a", 44)] };
+  assert.equal((await saveLikeDevice(line)).status, 200, "the recovered save no longer carries the refused score");
+  assert.deepEqual(stored!.workspace.results, []);
+  assert.equal(line.conflicts.length, 1);
+  assert.equal(line.conflicts[0].local.score, 44, "the typed score is kept for the instructor");
+  assert.match(line.conflicts[0].reason, /cannot be changed/);
+  line.local = { ...line.local, rangeRoster: line.local.rangeRoster.map((entry: any) => (entry.id === "roster-c" ? { ...entry, attended: true } : entry)) };
+  assert.equal((await saveLikeDevice(line)).status, 200, "unrelated work still saves");
+  assert.equal(stored!.workspace.rangeRoster.find((entry: any) => entry.id === "roster-c").attended, true);
+});
+
+test("review H1: the same walk-up added by two scorers is one roster entry, not a permanent 403", async () => {
+  const open = { ...plan(), rangeDays: [{ ...plan().rangeDays[0], attendanceMode: "Open / Rolling Attendance" }], rangeRoster: [] };
+  const [one, two] = await startDay(open);
+  const walkUp = () => ({ id: `roster-${crypto.randomUUID()}`, rangeDayId: "day-1", officerId: "officer-z", attended: true, attendanceTime: "08:05" });
+  one.local = { ...one.local, rangeRoster: [walkUp()] };
+  two.local = { ...two.local, rangeRoster: [walkUp()] };
+  assert.equal((await saveLikeDevice(one)).status, 200);
+  assert.equal((await saveLikeDevice(two)).status, 200);
+  assert.equal(stored!.workspace.rangeRoster.length, 1);
+  assert.deepEqual(two.conflicts, []);
+});
+
+test("review H1: a refusal the merge did not foresee is isolated after one reload; later saves go through", async () => {
+  const start = { ...plan(), results: [result("officer-a", 40)] };
+  const [device] = await startDay(start);
+  // This device removed a saved score (the server never allows that) and scored officer B.
+  device.local = { ...device.local, results: [result("officer-b", 45)] };
+  const refused = await saveLikeDevice(device);
+  assert.equal(refused.status, 409);
+  assert.deepEqual(device.conflicts.map((conflict) => [conflict.id, conflict.local]), [["result-officer-a", null]]);
+  assert.equal((await saveLikeDevice(device)).status, 200);
+  assert.deepEqual(stored!.workspace.results.map((item: any) => item.officerId), ["officer-a", "officer-b"]);
 });

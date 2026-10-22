@@ -104,7 +104,7 @@ function part(item: WorkspaceRecord, ...keys: string[]) {
 }
 
 // A saved result is identified for corrections by its range day, drill, run and officer.
-function resultKey(item: WorkspaceRecord) {
+export function resultKey(item: WorkspaceRecord) {
   const parts = [
     part(item, "rangeDayId", "range_day_id"),
     part(item, "drillId", "drill_id", "rangeDayDrillId", "range_day_drill_id"),
@@ -288,7 +288,6 @@ export function authorizeRangeWorkspaceMutation(input: {
   departmentId: string;
   permissions: readonly string[];
 }): RangeWorkspaceMutationDecision {
-  const existing = record(input.existingWorkspace);
   const next = record(input.nextWorkspace);
   const canManage = input.permissions.includes("administer_department") ||
     input.permissions.includes(MANAGE_PERMISSION);
@@ -300,6 +299,28 @@ export function authorizeRangeWorkspaceMutation(input: {
   if (!validateTenantReferences(next, input.departmentId)) {
     return { ok: false, status: 403, error: "The range workspace contains records outside your agency." };
   }
+  return changeDecision(record(input.existingWorkspace), next, canManage);
+}
+
+/**
+ * UX-RB-5: the same decision for a client that is about to save a merged
+ * workspace, so a change the server would refuse is shown to the instructor
+ * instead of being sent (and refused) with every later save. The agency check
+ * stays on the server; the caller's capabilities come from GET /range-workspace.
+ */
+export function previewRangeWorkspaceMutation(input: {
+  existingWorkspace: unknown;
+  nextWorkspace: unknown;
+  canManage: boolean;
+  canScore: boolean;
+}): RangeWorkspaceMutationDecision {
+  if (!input.canManage && !input.canScore) {
+    return { ok: false, status: 403, error: "You do not have permission to update range records." };
+  }
+  return changeDecision(record(input.existingWorkspace), record(input.nextWorkspace), input.canManage);
+}
+
+function changeDecision(existing: WorkspaceRecord, next: WorkspaceRecord, canManage: boolean): RangeWorkspaceMutationDecision {
   if (finalizedHistoryChanged(existing, next)) {
     return { ok: false, status: 409, error: "Completed, locked, archived, or finalized range records cannot be changed." };
   }

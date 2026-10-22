@@ -1,0 +1,162 @@
+/* eslint-disable */
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import test from "node:test";
+
+const REPO = "/home/user/tracepoint/src/lib/range/";
+const require = createRequire(REPO + "x.ts");
+const stub = (path: string, exports: Record<string, unknown>) => { require.cache[path] = { id: path, filename: path, loaded: true, exports } as any; };
+stub(require.resolve("server-only"), {});
+stub(require.resolve("../tracepoint/server-access.ts"), {
+  resolveServerAccess: async () => (globalThis as any).__rangeAccess,
+  accessFailureResponse: () => Response.json({ error: "denied" }, { status: 403 }),
+  featureDisabledResponse: () => Response.json({ error: "disabled" }, { status: 403 }),
+  hasAnyServerPermission: (c: any, p: string[]) => p.some((x) => c.permissions.includes(x)),
+  hasServerFeature: () => true,
+  requireServerFeature: () => null,
+});
+const department = "agency-a";
+let stored: any = null;
+const admin = { from() {
+  let op = "select"; let payload: any = null; const filters: any[] = [];
+  const b: any = { select: () => b, update: (v: any) => { op = "update"; payload = v; return b; }, insert: (v: any) => { op = "insert"; payload = v; return b; },
+    eq: (c: string, v: any) => { filters.push([c, v]); return b; },
+    maybeSingle: async () => { const m = stored && filters.every(([c, v]: any) => stored[c] === v);
+      if (op === "select") return { data: m ? stored : null, error: null };
+      if (op === "insert") { stored = { ...payload }; return { data: { department_id: department }, error: null }; }
+      if (!m) return { data: null, error: null }; stored = { ...stored, ...payload }; return { data: { department_id: department }, error: null }; } };
+  return b; } };
+const ctx: any = { admin, user: { id: "u" }, userId: "u", departmentId: department, permissions: ["manage_range_days"], enabledFeatures: ["range_training"] };
+(globalThis as any).__rangeAccess = { ok: true, context: ctx };
+
+async function put(workspace: unknown, baseUpdatedAt: string | null) {
+  const { PUT } = await import(REPO + "../../app/api/pilot/range-workspace/route.ts");
+  const r = await PUT(new Request("http://x", { method: "PUT", body: JSON.stringify({ workspace, baseUpdatedAt }) }) as any);
+  return { status: r.status, body: await r.json() as any };
+}
+const strip = (w: any) => ({ rangeDays: w.rangeDays, drillLibrary: w.drillLibrary, rangeDayDrills: w.rangeDayDrills, rangeRoster: w.rangeRoster, results: w.results, malfunctions: w.malfunctions });
+const clone = (x: any) => JSON.parse(JSON.stringify(x));
+const plan = (attendanceMode = "Scheduled Roster") => ({
+  rangeDays: [{ id: "day-1", departmentId: department, status: "In Progress", attendanceMode }],
+  drillLibrary: [], rangeDayDrills: [{ id: "drill-1", rangeDayId: "day-1", name: "Q", maxScore: 50 }],
+  rangeRoster: [{ id: "roster-a", rangeDayId: "day-1", officerId: "officer-a" }], results: [] as any[], malfunctions: [],
+});
+async function start(p = plan()) { stored = null; ctx.permissions = ["manage_range_days"]; assert.equal((await put(p, null)).status, 200);
+  const load = () => ({ base: clone(strip(stored.workspace)), v: stored.updated_at, local: clone(strip(stored.workspace)), conflicts: [] as any[] });
+  return [load(), load()]; }
+// Device recovery exactly as page.tsx recoverRangeWorkspace + next save
+async function save(d: any) {
+  const { mergeRangeWorkspace } = await import(REPO + "workspace-merge.ts");
+  let r = await put(d.local, d.v);
+  if (r.status === 409 && r.body.code === "stale_workspace") {
+    const server = clone(strip(stored.workspace));
+    const m = mergeRangeWorkspace(d.base, d.local, server);
+    d.conflicts.push(...m.conflicts); d.local = m.merged; d.base = server; d.v = stored.updated_at;
+    r = await put(d.local, d.v);
+  }
+  if (r.status === 200) { d.base = clone(d.local); d.v = r.body.updatedAt; }
+  return r;
+}
+// page's real id scheme: `result-${Date.now()}-${index}`
+const res = (id: string, officer: string, score: number) => ({ id, rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: officer, score, completed: true });
+
+test("P1 same officer/drill/run scored fresh on two devices -> two results stored, no conflict", async () => {
+  const [one, two] = await start();
+  one.local.results = [res("result-1000-0", "officer-a", 46)];
+  two.local.results = [res("result-1003-0", "officer-a", 31)];
+  assert.equal((await save(one)).status, 200);
+  assert.equal((await save(two)).status, 200);
+  assert.equal(two.conflicts.length, 0);
+  const forA = stored.workspace.results.filter((r: any) => r.officerId === "officer-a" && r.runNumber === 1);
+  assert.deepEqual(forA.map((r: any) => r.score), [46, 31]);
+});
+
+test("P2 other device finalizes the day; recovered save is refused (409 w/o stale code) and every later save fails", async () => {
+  const [lead, line] = await start();
+  lead.local.rangeDays = [{ ...lead.local.rangeDays[0], status: "Completed" }];
+  assert.equal((await save(lead)).status, 200);
+  ctx.permissions = ["score_range_days"];
+  line.local.results = [res("result-2000-0", "officer-a", 44)];
+  const r = await save(line);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, undefined); // client throws generic Error -> no recovery, no conflict
+  assert.equal(line.conflicts.length, 0);
+  // any later unrelated edit is still refused because the whole workspace carries the replayed score
+  line.local.rangeRoster = line.local.rangeRoster.map((e: any) => ({ ...e, attended: true }));
+  assert.equal((await save(line)).status, 409);
+});
+
+test("P3 open attendance: same walk-up added on two scorer devices -> recovered save 403 forever", async () => {
+  const [one, two] = await start({ ...plan("Open / Rolling Attendance"), rangeRoster: [] });
+  ctx.permissions = ["score_range_days"];
+  const walk = (id: string) => ({ id, rangeDayId: "day-1", officerId: "officer-z", attended: true, attendanceTime: "t" });
+  one.local.rangeRoster = [walk("roster-1000")];
+  two.local.rangeRoster = [walk("roster-1004")];
+  assert.equal((await save(one)).status, 200);
+  const r = await save(two);
+  assert.equal(r.status, 403);
+  assert.equal(two.conflicts.length, 0);
+});
+
+test("P4 base/local pair mismatch (2 tabs share localStorage) silently reverts a saved correction and deletes a roster entry", async () => {
+  const { mergeRangeWorkspace } = await import(REPO + "workspace-merge.ts");
+  const p = plan(); p.results = [res("result-1", "officer-a", 40)];
+  const [tab1, tab2] = await start(p);
+  // tab1 corrects the score and adds a roster entry; saved -> sync state {base: tab1 state, v2}
+  tab1.local.results = [res("result-1", "officer-a", 46)];
+  tab1.local.rangeRoster = [...tab1.local.rangeRoster, { id: "roster-new", rangeDayId: "day-1", officerId: "officer-b" }];
+  assert.equal((await save(tab1)).status, 200);
+  const syncStateFromTab1 = { base: clone(tab1.base), v: tab1.v };
+  // tab2 (still showing v1) edits a day title -> writes the shared local-copy key (no correction, no roster-new)
+  const localCopyFromTab2 = clone(tab2.local); localCopyFromTab2.rangeDays[0].title = "edited in tab 2";
+  // reload (either tab): loadWorkspace merges syncState.base with the local copy and the server
+  const server = clone(strip(stored.workspace));
+  const m = mergeRangeWorkspace(syncStateFromTab1.base, localCopyFromTab2, server);
+  assert.equal(m.conflicts.length, 0);
+  assert.equal(m.merged.results[0].score, 40);                                   // correction reverted
+  assert.ok(!m.merged.rangeRoster.some((e: any) => e.id === "roster-new"));       // entry deleted
+  assert.equal((await put(m.merged, stored.updated_at)).status, 200);             // and the server accepts it
+  assert.equal(stored.workspace.results[0].score, 40);
+});
+
+test("P5 copy with no known base (old format / first-load failed, no sync state) resurrects a record the other device deleted", async () => {
+  const { mergeRangeWorkspace, EMPTY_MERGEABLE_WORKSPACE } = await import(REPO + "workspace-merge.ts");
+  const p = plan(); p.rangeRoster.push({ id: "roster-x", rangeDayId: "day-1", officerId: "officer-x" });
+  const [dev, other] = await start(p);
+  other.local.rangeRoster = other.local.rangeRoster.filter((e: any) => e.id !== "roster-x");
+  assert.equal((await save(other)).status, 200);
+  const m = mergeRangeWorkspace(EMPTY_MERGEABLE_WORKSPACE, dev.local, clone(strip(stored.workspace)));
+  assert.equal(m.conflicts.length, 0);
+  assert.ok(m.merged.rangeRoster.some((e: any) => e.id === "roster-x"));
+});
+
+test("P6 id collision across devices (same ms, same index) -> different officers shown as one conflict; 'Keep other' drops a score", async () => {
+  const { mergeRangeWorkspace } = await import(REPO + "workspace-merge.ts");
+  const base = plan(); const local = { ...plan(), results: [res("result-5000-0", "officer-a", 46)] };
+  const server = { ...plan(), results: [res("result-5000-0", "officer-b", 30)] };
+  const m = mergeRangeWorkspace(base as any, local as any, server as any);
+  assert.equal(m.conflicts.length, 1);
+  assert.equal(m.merged.results.length, 1);
+  assert.equal(m.merged.results[0].officerId, "officer-b"); // officer-a's score only lives in the conflict entry
+});
+
+test("P7 repeated conflict on the same record is listed twice; resolving the older one applies a superseded value", async () => {
+  const { mergeRangeWorkspace, applyConflictChoice } = await import(REPO + "workspace-merge.ts");
+  const W = (s: number) => ({ ...plan(), results: [res("r", "officer-a", s)] }) as any;
+  let conflicts: any[] = [];
+  let m = mergeRangeWorkspace(W(40), W(44), W(46)); conflicts.push(...m.conflicts); // first 409
+  // user re-enters 48 for the same officer; other device saves 47; second 409
+  m = mergeRangeWorkspace(W(46), W(48), W(47)); conflicts.push(...m.conflicts);
+  assert.deepEqual(conflicts.map((c) => `${c.collection}:${c.id}`), ["results:r", "results:r"]); // duplicate React keys
+  const ws = applyConflictChoice(m.merged, conflicts[0]);
+  assert.equal(ws.results[0].score, 44); // the user's later 48 is not what gets applied
+});
+
+test("P8 records without string ids: identical unkeyed records collapse; an edited one is duplicated", async () => {
+  const { mergeRangeWorkspace, EMPTY_MERGEABLE_WORKSPACE: E } = await import(REPO + "workspace-merge.ts");
+  const a = { note: "x" };
+  const m1 = mergeRangeWorkspace(E, { ...E, malfunctions: [a, { ...a }] } as any, E);
+  assert.equal(m1.merged.malfunctions.length, 1);
+  const m2 = mergeRangeWorkspace({ ...E, results: [{ id: 7, score: 1 }] } as any, { ...E, results: [{ id: 7, score: 2 }] } as any, { ...E, results: [{ id: 7, score: 1 }] } as any);
+  assert.equal(m2.merged.results.length, 2);
+});
