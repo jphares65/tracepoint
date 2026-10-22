@@ -92,23 +92,23 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
-// The staging release of the Fleet/Inventory catalog rows (047) that production's Agency Documents unit also
-// applies. Staging's ledger records 001-046 (046 applied by 75499335 on 2026-10-20). Its apply must find
-// 001-046 recorded and exactly 047 pending; anything else stops before any SQL.
+// The staging release of the Fleet/Inventory catalog activation (048) that production's Agency Documents unit
+// also applies. Staging's ledger records 001-047 (047 applied by eb637823 on 2026-10-21). Its apply must find
+// 001-047 recorded and exactly 048 pending; anything else stops before any SQL.
 export const STAGING_RELEASE_PENDING = Object.freeze([
-  "047_fleet_inventory_feature_catalog.sql",
+  "048_activate_fleet_inventory_catalog.sql",
 ]);
-const STAGING_RELEASE_RECORDED = 46;
+const STAGING_RELEASE_RECORDED = 47;
 function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
-  if (report.ledger !== "present" || versions.length !== 47 || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-047.");
+  if (report.ledger !== "present" || versions.length !== 48 || versions.some((version, index) => version !== index + 1)) {
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-048.");
   }
   if (report.applied.length !== STAGING_RELEASE_RECORDED || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-046, including the Agency Documents lineage and module entitlements, must all be recorded before 047.");
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-047, including the Agency Documents lineage and module entitlements, must all be recorded before 048.");
   }
   if (report.pending.length !== STAGING_RELEASE_PENDING.length || report.pending.some((file, index) => file.filename !== STAGING_RELEASE_PENDING[index])) {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 047 pending.");
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 048 pending.");
   }
 }
 async function report(client, files) {
@@ -281,7 +281,7 @@ async function applyRangeWorkspaceHotfix(client, files) {
 let files;
 let client;
 try {
-  if (!["status", "inspect", "diagnose", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|diagnose|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039-040|agency-documents-038-047> <staging|production>");
+  if (!["status", "inspect", "diagnose", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|diagnose|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039-040|agency-documents-038-048> <staging|production>");
   if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
   if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
   if (action === "diagnose" && requestedEnvironment !== "staging") throw new Error("Migration diagnostics are staging-only.");
@@ -322,7 +322,7 @@ try {
     console.log(JSON.stringify(await withLock(client, () => applyInventoryUnit(client, files))));
   } else if (action === "password-scope-039-040") {
     console.log(JSON.stringify(await withLock(client, () => applyPasswordScopeResolutionUnit(client, files, passwordScopeResolutions))));
-  } else if (action === "agency-documents-038-047") {
+  } else if (action === "agency-documents-038-048") {
     console.log(JSON.stringify(await withLock(client, () => applyAgencyDocumentsUnit(client, files))));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);

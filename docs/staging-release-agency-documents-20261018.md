@@ -57,6 +57,17 @@ Progress (REL = `eb637823`):
     - High Bridge, Readington and Production Synthetic: no vehicles or items.
   - Other entitlements: 34 rows, digest `e02ec9f886b60dacc67f2cf25b23e14b`. The live build
     already gates those modules, so they need no change.
+- Blocker found 2026-10-22: Fleet and Inventory toggles on production `/super-admin` do nothing.
+  - Cause: production imported those catalog rows **inactive**. The 10-17 survey said "9 active
+    rows", and the precheck code list does not filter on `is_active`. The live route refuses
+    inactive features, and 047's `ON CONFLICT DO NOTHING` would have left them inactive, so the
+    unit would have failed its `fleet_inventory_catalog_rows` postcondition and rolled back.
+  - Fix: `048_activate_fleet_inventory_catalog.sql` activates the two rows. It enables nothing
+    and changes nothing on staging. The unit is now `agency-documents-038-048` (038–041 and
+    046–048), and the precheck reports `inactive_feature_catalog_codes`.
+  - Staging releases 048 (`APPLY 048`, pre-release pin `:190`). Production gets a new image and
+    precheck; Montville's `fleet` is enabled after the unit, since the toggle only works once
+    048 has run.
 
 Rollback: application to `:27` (`deploy-app.ps1 -Environment production
 -RollbackTaskDefinitionArn …:27`); `e49e73dc` runs on the additive schema. A failed unit rolls

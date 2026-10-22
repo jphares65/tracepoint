@@ -189,9 +189,9 @@ function Assert-MigrationLedgerReport {
     foreach ($version in $expectedVersions) {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
-    if ($filesByVersion.Count -ne 47 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql' -or $filesByVersion[47] -cne '047_fleet_inventory_feature_catalog.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 047, preserving the Agency Documents lineage at 038-041.' }
-    # Staging records 001-046 (046 applied by 75499335 on 2026-10-20); this release applies only 047.
-    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(47))) { throw 'Apply requires exactly migration 047 pending.' }
+    if ($filesByVersion.Count -ne 48 -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql' -or $filesByVersion[47] -cne '047_fleet_inventory_feature_catalog.sql' -or $filesByVersion[48] -cne '048_activate_fleet_inventory_catalog.sql') { throw 'Reviewed staging release requires the AWS migration set through migration 048, preserving the Agency Documents lineage at 038-041.' }
+    # Staging records 001-047 (047 applied by eb637823 on 2026-10-21); this release applies only 048.
+    if ($Expectation -eq 'before-apply' -and ($pendingByVersion.Count -ne 1 -or -not $pendingByVersion.ContainsKey(48))) { throw 'Apply requires exactly migration 048 pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -202,13 +202,13 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)]$Report,
         [Parameter(Mandatory)][string]$ApplicationCommit,
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-        # The migrations one release applied: 047 by default (this release); 046 by 75499335; 043-045 by e3b06e6a.
-        [ValidateSet(43, 44, 45, 46, 47)][int[]]$Versions = @(47)
+        # The migrations one release applied: 048 by default (this release); 047 by eb637823; 046 by 75499335; 043-045 by e3b06e6a.
+        [ValidateSet(43, 44, 45, 46, 47, 48)][int[]]$Versions = @(48)
     )
     # Every migration a release applies must be recorded by its commit, in this environment, as an apply.
     # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
     # 042 was recorded by an earlier staging release (its content is still verified by Assert-MigrationLedgerReport).
-    $known = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'), @(46, '046_agency_documents_module_toggle.sql'), @(47, '047_fleet_inventory_feature_catalog.sql'))
+    $known = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'), @(46, '046_agency_documents_module_toggle.sql'), @(47, '047_fleet_inventory_feature_catalog.sql'), @(48, '048_activate_fleet_inventory_catalog.sql'))
     # Built with a loop: piping the pairs would unroll a single selected pair into its two elements.
     $expected = [System.Collections.Generic.List[object]]::new()
     foreach ($pair in $known) { if ($Versions -contains [int]$pair[0]) { $expected.Add($pair) } }
