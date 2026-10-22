@@ -1,6 +1,6 @@
 {
     "description":  "Allocated AWS-native migration numbers. Entries with status applied/pending must match database/aws byte for byte (sha256Lf over LF text, sha256Crlf over the CRLF archive staging images are built from). Reserved numbers must not have a file until promoted here. Never renumber or edit an entry whose staging or production status is applied.",
-    "authoritativeLineage":  "claude/staging-rc-agency-documents-20261018 @ 22e543d8 (staging ledger 001-047 at the 2026-10-22 00:19Z read-only preflight; 048 is the lineage\u0027s own pending file)",
+    "authoritativeLineage":  "claude/integration-defects-rebased-20261021 @ ec027f5032a0b0f7b91c2c0d9f732491e10a085a (staging ledger 001-063 confirmed by staging-after-20261022T164959Z, 2026-10-22T16:55:37Z)",
     "nextFree":  66,
     "migrations":  [
                        {
@@ -476,8 +476,8 @@
                        {
                            "version":  48,
                            "filename":  "048_activate_fleet_inventory_catalog.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "staging: Fleet/Inventory catalog activation (22e543d8)",
                            "formerly":  null,
                            "sha256Lf":  "a62ff9e684fb9f5ce1ba79d1ca59e9b1cbc00c8989967dfd643df7c4fdcc20ea",
@@ -486,8 +486,8 @@
                        {
                            "version":  49,
                            "filename":  "049_equipment_out_of_service_lifecycle.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "038 at 5b9ec98d",
                            "sha256Lf":  "1bc4a53c2b2e76d289258cc013e8c3c05dfeea52108e306941731388b7325506",
@@ -496,8 +496,8 @@
                        {
                            "version":  50,
                            "filename":  "050_account_access_remediation.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "039 at 5b9ec98d",
                            "sha256Lf":  "041a0a0a2f1ee3113d5e2ee9fc0bdf972f5f6cc652db7df2531a685e4c3a8162",
@@ -506,8 +506,8 @@
                        {
                            "version":  51,
                            "filename":  "051_fleet_field_write_authorization.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "040 at 5b9ec98d",
                            "sha256Lf":  "6746a6b6e6b82b2953a3e8723965e3077a5a931099ba5f4d3afdf2d90685a9c0",
@@ -516,8 +516,8 @@
                        {
                            "version":  52,
                            "filename":  "052_equipment_self_custody.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "041 at 5b9ec98d",
                            "sha256Lf":  "7c1cc8aac0e83314c0e3ab553fcb412fd9576ec6999e5922fe1b6132f641a604",
@@ -526,8 +526,8 @@
                        {
                            "version":  53,
                            "filename":  "053_range_packet_ready_is_not_final.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "042 at 5b9ec98d",
                            "sha256Lf":  "3dee6dcb1ed3fadf7c4b9b35e0cd10065b7cd6b2b57065a4d8909b9dfce44707",
@@ -536,8 +536,8 @@
                        {
                            "version":  54,
                            "filename":  "054_fleet_inspection_audit_outbox.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "043 at 5b9ec98d",
                            "sha256Lf":  "e6916dbccc80a600ee39a2cffbe268674558b7a8ca72fa4825e3d545e6a690c1",
@@ -546,8 +546,8 @@
                        {
                            "version":  55,
                            "filename":  "055_personnel_import_preservation.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "044 at 5b9ec98d",
                            "sha256Lf":  "78895dd9f0fd5bf85f60a4a3cd2b4f5c6eeb172b6596cea4e034cba18d7c7655",
@@ -556,8 +556,8 @@
                        {
                            "version":  56,
                            "filename":  "056_fleet_inspection_eligibility.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "045 at 5b9ec98d",
                            "sha256Lf":  "8f55e6c366736fe73aeffd31e742582f4a57c81965bfc2d698afcc57bb617aad",
@@ -566,8 +566,8 @@
                        {
                            "version":  57,
                            "filename":  "057_fleet_safety_hold_clearance.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "046 at 5b9ec98d",
                            "sha256Lf":  "a74bf2a219ff63a468bd7b158b2de5af0a46a9dce0636239ebd9cd08881b8a6e",
@@ -576,8 +576,8 @@
                        {
                            "version":  58,
                            "filename":  "058_training_record_visibility.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "048 at 5b9ec98d",
                            "sha256Lf":  "04fc6a4629ce3090af17925971da513e55fd6a4a0bfa1ff16600f91b862e2322",
@@ -586,8 +586,8 @@
                        {
                            "version":  59,
                            "filename":  "059_equipment_separated_holder.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "049 at 5b9ec98d",
                            "sha256Lf":  "d3e6f807623a317f134a06861ac894e1a82ad3a42dfe35798b980bbb0e69b3fc",
@@ -596,8 +596,8 @@
                        {
                            "version":  60,
                            "filename":  "060_training_closeout_records.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "050 at 5b9ec98d",
                            "sha256Lf":  "7a58352487d58216f6e5dd7af704727d615d05feff6225dfa3408a654296ef9d",
@@ -606,8 +606,8 @@
                        {
                            "version":  61,
                            "filename":  "061_range_instructor_line_actions.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "051 at 5b9ec98d",
                            "sha256Lf":  "967a228e5098d2621e6f997861d96dced0f05c077b5819b490acc0b16d52986f",
@@ -616,8 +616,8 @@
                        {
                            "version":  62,
                            "filename":  "062_armory_separation_of_duties.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "052 at 5b9ec98d",
                            "sha256Lf":  "798422b938cde2998c92a137a357c6d9abc4b89b42983c69d1a8ef75b1ae76fd",
@@ -626,8 +626,8 @@
                        {
                            "version":  63,
                            "filename":  "063_armory_audit_and_access.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "053 at 5b9ec98d",
                            "sha256Lf":  "76f6af92b373f89051473064581bd9e71f0935209749045ce1a357324800067c",

@@ -35,9 +35,9 @@ test("manifest versions are contiguous, unique and never reuse a reserved number
   }
 });
 
-test("applied history is the staging lineage, recorded with the CRLF image checksums", () => {
+test("applied history matches the reconciled staging ledger and CRLF image checksums", () => {
   const applied = manifest.migrations.filter((entry) => entry.stagingLedger === "applied");
-  assert.deepEqual(applied.map((entry) => entry.version), Array.from({ length: 47 }, (_, index) => index + 1));
-  assert.equal(applied.at(-1).filename, "047_fleet_inventory_feature_catalog.sql");
-  assert.ok(manifest.migrations.filter((entry) => entry.stagingLedger !== "applied").every((entry) => entry.version > 47));
+  assert.deepEqual(applied.map((entry) => entry.version), Array.from({ length: 63 }, (_, index) => index + 1));
+  assert.equal(applied.at(-1).filename, "063_armory_audit_and_access.sql");
+  assert.ok(manifest.migrations.filter((entry) => entry.stagingLedger !== "applied").every((entry) => entry.version > 63));
 });
