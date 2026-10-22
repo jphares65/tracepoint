@@ -68,7 +68,9 @@ function Get-TracePointStagingImageArchiveIncludes {
         'database/rehearsal', 'supabase/migrations',
         # Imported by scripts/validate-production-live-readiness.mts; the migration tests the Docker build runs
         # check that every archived script's local imports are present. Matches the migration image archive.
-        'infra/lib/production-target.ts'
+        'infra/lib/production-target.ts',
+        # Imported by src/lib/testing/e2e-guard.test.ts, which the application suite in the Docker build runs.
+        'e2e/support/env.ts'
     )
 }
 

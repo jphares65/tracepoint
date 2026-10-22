@@ -27,7 +27,7 @@ test('native staging application images use exactly the suffixed immutable tag c
  const stagingModule=read('scripts/TracePoint.Staging.psm1');
  assert.match(publisher,/Get-TracePointStagingImageArchiveIncludes/);
  assert.match(publisher,/Assert-TracePointStagingImageArchive -EntryNames \$entryNames -TrackedPaths \$trackedPaths/);
- for(const include of ["'scripts'","'database/aws'","'database/rehearsal'","'supabase/migrations'","'lint-baseline.json'","'infra/lib/production-target.ts'"])assert.ok(stagingModule.includes(include),include);
+ for(const include of ["'scripts'","'database/aws'","'database/rehearsal'","'supabase/migrations'","'lint-baseline.json'","'infra/lib/production-target.ts'","'e2e/support/env.ts'"])assert.ok(stagingModule.includes(include),include);
  for(const required of ["'scripts/run-application-tests.mjs'","'scripts/lint-ratchet.mjs'","'lint-baseline.json'"])assert.ok(stagingModule.includes(required),required);
  // Schema fixtures are the only SQL allowed into the build source; they are test inputs, never executed by the release.
  assert.match(stagingModule,/\(\?:database\/aws\|database\/rehearsal\|supabase\/migrations\)/);

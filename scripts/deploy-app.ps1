@@ -243,7 +243,7 @@ function Publish-Image {
     # The Docker build runs validation and TypeScript over scripts. Archive the
     # complete scripts tree so a newly imported local validation dependency
     # cannot be present locally yet absent from the CodeBuild context.
-    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'lint-baseline.json', 'public', 'src', 'database/aws', 'database/rehearsal', 'supabase/migrations', 'scripts', 'infra/lib/production-target.ts')
+    $archivePaths = @('.dockerignore', 'package.json', 'package-lock.json', 'next.config.ts', 'tsconfig.json', 'eslint.config.mjs', 'postcss.config.mjs', 'lint-baseline.json', 'public', 'src', 'database/aws', 'database/rehearsal', 'supabase/migrations', 'scripts', 'infra/lib/production-target.ts', 'e2e/support/env.ts')
     if ($Environment -eq 'staging') { $archivePaths += @('Dockerfile', 'buildspec.staging-image.yml') }
     else { $archivePaths += @('Dockerfile.aws-native-production', 'buildspec.production-image.yml') }
     if ($Environment -eq 'staging') { $archivePaths += @('scripts/test-staging-image-mobile-routes.sh', 'scripts/validate-clean-bootstrap.mjs', 'scripts/validate-lineage-upgrades.mjs', 'scripts/verify-staging-schema.mjs') }
