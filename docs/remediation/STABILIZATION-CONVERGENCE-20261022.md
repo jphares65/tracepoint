@@ -28,10 +28,23 @@ The real migrations take 064/065 because the manifest test and the runner both r
 the two reservations have no file and no ledger row, so moving them changes nothing applied. Only the
 audit text inside 064 changed (`'055'` → `'064'`). No applied migration was edited.
 
-**Not done here:** the staging release tooling (`run-aws-native-migrations.mjs` staging guard,
-`migration-release-core.psm1`, `release-entitlements-staging.ps1`) still only knows the 048–063 release.
-Applying 064–065 needs that follow-up first. The new application code requires 065 (the inventory
-routes pass `p_idempotency_key`), so this branch's image must not be deployed before 064–065 apply.
+**Release tooling** (`89ce94b9`): the staging release unit is now 064–065 on top of a recorded 001–063
+(a stopped apply with 064 recorded resumes with 065). The new application code requires 065 (the
+inventory routes pass `p_idempotency_key`), so this image must not be deployed before 064–065 apply.
+The pre-release task-revision pin (`':191$'`) must be re-pinned to staging's revision at release time.
+
+**Rollback (G7).** 064 only grants a permission; 065 keeps the 035/036 signatures and the previous
+image's calls are proven on real PostgreSQL through the data client ("the previous image's signatures
+still record without a key"); `22e543d`'s data client builds RPC calls identically. The previous image
+therefore keeps working if this release rolls back after 064–065 apply.
+
+## Also fixed on this branch
+
+| Defect | Commit | Evidence |
+|---|---|---|
+| Production's sidebar commit (`5700011`, not on any branch) carried forward so a promotion does not revert it | `6221e338` | its own test, 3/3 |
+| D-3 `GET /api/inventory/checkouts` 500 on AWS-native: the data client did not know the `inventory_checkout_returns` relation | `b015d1d9` | `postgres-data-client-relations-native.test.ts`, real schema, fails before |
+| D-4 Agency Documents person search 500 on AWS-native: an OR alternative could not name the embedded `profiles` relation | `b015d1d9` | same test; another agency's members never listed |
 
 ## Conflict decisions
 
@@ -47,5 +60,11 @@ routes pass `p_idempotency_key`), so this branch's image must not be deployed be
 
 ## Gates run locally
 
-See the release report for results: `tsc --noEmit`, ESLint lint ratchet, `validate-clean-bootstrap`
-(embedded PostgreSQL), `run-application-tests.mjs`, `scripts/*.test.mjs`.
+On `b015d1d9`, from an LF checkout (as CI and the image build): `tsc --noEmit` clean; lint ratchet
+passes (no new findings); `run-application-tests.mjs` 1369 pass, 0 fail, 2 skipped; `scripts/*.test.mjs`
+426/426; `migration-release-core.tests.ps1` passes (pwsh and Windows PowerShell 5.1);
+`validate-clean-bootstrap` passes (80 + 65 migrations, every `validate-local-*` check). Not yet run on a
+GitHub runner (not pushed).
+
+The D-2 fix (migration 066, its release unit) is stacked on this branch as
+`claude/fix-d2-equipment-condition-report`, a separate release after this one.
