@@ -32,6 +32,7 @@ const relations: Record<string, Relation> = {
   "ammunition_reconciliation_items.ammunition_lots": { alias: "lot", table: "ammunition_lots", local: "lot_id", foreign: "id", cardinality: "one" },
   "firearm_inspections.firearms": { alias: "firearm", table: "firearms", local: "firearm_id", foreign: "id", cardinality: "one" },
   "firearm_inspections.firearm_inspection_items": { alias: "items", table: "firearm_inspection_items", local: "id", foreign: "inspection_id", cardinality: "many" },
+  "inventory_checkouts.inventory_checkout_returns": { alias: "inventory_checkout_returns", table: "inventory_checkout_returns", local: "id", foreign: "inventory_checkout_id", cardinality: "many" },
 };
 
 function quote(value: string) {
@@ -237,11 +238,16 @@ class PostgresQueryBuilder implements PromiseLike<Result> {
     const clauses = this.filters.filter(filter => !filter.column.includes(".")).map(filter => filterClause(`t.${quote(filter.column)}`, filter, values));
     for (const expression of this.orGroups) {
       const alternatives = expression.split(",").map(item => {
-        const match = item.trim().match(/^([a-z][a-z0-9_]*)\.(eq|neq|gt|gte|lt|lte|like|ilike|is)\.(.+)$/);
+        const match = item.trim().match(/^(?:([a-z][a-z0-9_]*)\.)?([a-z][a-z0-9_]*)\.(eq|neq|gt|gte|lt|lte|like|ilike|is)\.(.+)$/);
         if (!match) throw new Error("Unsupported PostgreSQL OR filter.");
-        const raw = match[3];
+        const raw = match[4];
         const value = raw === "true" ? true : raw === "false" ? false : raw === "null" ? null : raw;
-        return filterClause(`t.${quote(match[1])}`, { column: match[1], operator: match[2], value }, values);
+        if (!match[1]) return filterClause(`t.${quote(match[2])}`, { column: match[2], operator: match[3], value }, values);
+        // An alternative on an embedded relation (PostgREST "profiles.full_name.ilike..."): the row
+        // matches when a related row does. Only a relation this query selected may be named.
+        const relation = this.operation === "select" ? splitTopLevel(this.selection ?? "*").map(token => relationFor(this.table, token)).find(candidate => candidate && (candidate.alias === match[1] || candidate.table === match[1])) : null;
+        if (!relation) throw new Error("Related-table filters require a selected relation.");
+        return `exists(select 1 from public.${quote(relation.table)} r where r.${quote(relation.foreign)}=t.${quote(relation.local)} and ${filterClause(`r.${quote(match[2])}`, { column: match[2], operator: match[3], value }, values)})`;
       });
       clauses.push(`(${alternatives.join(" or ")})`);
     }
