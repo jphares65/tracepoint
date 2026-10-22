@@ -193,9 +193,64 @@ step. Autosaving work (range scoring, notes) shows inline status instead of toas
 |---|---|---|
 | AppShell | Top bar (global search, bell, user menu), sidebar with "Home · My work" first and the active group open, icon rail at 768–1279px, phone bottom bar (Home / Search / Inbox / Menu). Search and bell slots stay hidden until their APIs exist. | R1 (visual) / R2 |
 | Drawer | Sheet variant for row preview with a "Full record ›" link; overlay on tablet, bottom sheet on phone. Built on `Sheet`. | R1 |
-| Checklist | Field-grade inspection list: `SegmentedControl` per item, note and "Can it be driven?" only on a defect, progress, sticky summary stating the status effect, Submit disabled until required items are answered. | R2 |
+| Checklist | Inspection acknowledgments; exact API below. | R2 |
 | StatusChangeSheet | `Sheet` preset for status changes with reason, before → after and audit notice. | R2 |
 | InboxList | One attention list where every item says what happened, to whom, and opens the record. | R3 (needs inbox API) |
+
+### Checklist contract (R2)
+
+`Checklist` is a controlled, presentational component for existing inspection and other safety-critical
+forms. It owns unanswered state presentation, progress, required-item feedback and the sticky result
+summary. The caller owns the existing endpoint, payload mapping, validation, permission checks, audit
+writes and the status-effect calculation. The component never fills or submits an answer implicitly.
+
+```tsx
+type ChecklistItem = {
+  id: string;
+  label: string;
+  help?: ReactNode;
+  required: boolean;
+  safetyCritical: boolean;
+  showCanBeDrivenOnDefect?: boolean;
+};
+
+type ChecklistAnswer = {
+  value: string | null; // null or missing means unanswered
+  note?: string;
+  canBeDriven?: boolean;
+};
+
+<Checklist
+  items={items}
+  options={[
+    { value: "pass", label: "Pass", role: "success" },
+    { value: "defect", label: "Defect", role: "danger" },
+    { value: "na", label: "N/A" },
+  ]}
+  defectValue="defect"
+  answers={answers}
+  onAnswer={(itemId, answer) => setAnswer(itemId, answer)}
+  summary={resultSummary}
+  submitLabel="Submit inspection"
+  busy={saving}
+  onSubmit={submit}
+/>
+```
+
+`items` are rendered in their supplied order. Each has one `SegmentedControl`; absent answers render
+unanswered, including every safety-critical item. `required` answers are listed by label while missing,
+counted in progress and block Submit. No bulk-answer control is provided. The defect note appears only
+when that item's selected value equals `defectValue`; `Can it be driven?` appears only for a defect on
+items with `showCanBeDrivenOnDefect`. Those values are returned through `onAnswer`; requiredness and
+payload semantics remain with the caller. `summary` must state the computed result and its status effect
+before Submit. Submit remains disabled while required answers are missing or `busy` is true.
+
+At phone widths, progress and the result summary stay visible in a sticky footer above the shell's
+bottom navigation and safe area; the checklist itself scrolls. All answer options and defect fields meet
+the 44px touch target, use visible labels, support keyboard operation and announce missing required items.
+The component supports the shared 1280px desktop, 768px tablet and 375px phone acceptance viewports;
+the page must not gain horizontal scrolling. The inspection screen continues using the same route and
+request contract as its verified baseline.
 
 ## Accessibility expectations (all components and every modernized screen)
 
