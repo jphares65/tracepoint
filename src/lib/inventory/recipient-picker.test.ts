@@ -48,8 +48,9 @@ test("recipient picker presents loading, failure, and empty states without UUID 
     "src/app/inventory/InventoryCheckoutForm.tsx",
     "utf8",
   );
-  assert.match(component, /\/api\/pilot\/personnel/);
-  assert.match(component, /\/api\/fleet\/vehicles/);
+  // D-63: recipients come from Inventory, not from personnel or fleet access.
+  assert.match(component, /\/api\/inventory\/recipients/);
+  assert.doesNotMatch(component, /\/api\/pilot\/personnel|\/api\/fleet\/vehicles/);
   assert.match(component, /Loading \{label\.toLowerCase\(\)\}s/);
   assert.match(component, /No \{label\.toLowerCase\(\)\}s found/);
   assert.match(

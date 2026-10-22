@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   returnPayload,
   validateReturnQuantity,
 } from "@/lib/inventory/checkout-returns";
+import { recipientTypeLabel } from "@/lib/inventory/recipient-directory";
+import {
+  clearRequestKey,
+  LOST_CONNECTION_MESSAGE,
+  requestKeyFor,
+  type RequestKeyStore,
+} from "@/lib/inventory/request-key";
 
 type Checkout = {
   id: string;
@@ -14,6 +21,7 @@ type Checkout = {
   recipient_user_id: string | null;
   recipient_unit: string | null;
   recipient_vehicle_id: string | null;
+  recipient_label?: string;
   quantity: number;
   checked_out_at: string;
   due_at: string | null;
@@ -37,6 +45,8 @@ export default function OutstandingCheckouts({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const requestKey = useRef<RequestKeyStore>({ current: null });
 
   const load = useCallback(async () => {
     const [checkouts, inventoryItems, inventoryLocations] = await Promise.all([
@@ -80,7 +90,8 @@ export default function OutstandingCheckouts({
     returnAll = false,
   ) {
     event.preventDefault();
-    if (!activeCheckout || submitting) return;
+    // D-65: one tap is one return, even before the buttons re-render.
+    if (!activeCheckout || submittingRef.current) return;
     setError("");
     setSuccess("");
     const result = validateReturnQuantity(
@@ -91,21 +102,36 @@ export default function OutstandingCheckouts({
       setError(result.error ?? "Invalid return quantity.");
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
-      const response = await fetch(
-        `/api/inventory/checkouts/${activeCheckout.id}/returns`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(returnPayload(result.quantity, note)),
-        },
-      );
+      const request = {
+        checkoutId: activeCheckout.id,
+        ...returnPayload(result.quantity, note),
+      };
+      let response: Response;
+      try {
+        response = await fetch(
+          `/api/inventory/checkouts/${activeCheckout.id}/returns`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...returnPayload(result.quantity, note),
+              idempotencyKey: requestKeyFor(requestKey.current, request),
+            }),
+          },
+        );
+      } catch {
+        setError(LOST_CONNECTION_MESSAGE);
+        return;
+      }
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         setError(payload.error ?? "Return failed.");
         return;
       }
+      clearRequestKey(requestKey.current);
       setSuccess(returnAll ? "All stock returned." : "Return recorded.");
       setReturningId(null);
       setQuantity("");
@@ -130,6 +156,7 @@ export default function OutstandingCheckouts({
       await Promise.all([load(), onReturnSuccess?.()]);
       window.dispatchEvent(new Event("inventory-checkouts-changed"));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -150,11 +177,10 @@ export default function OutstandingCheckouts({
             (total, row) => total + Number(row.quantity),
             0,
           );
-          const recipient =
-            checkout.recipient_unit ||
-            checkout.recipient_user_id ||
-            checkout.recipient_vehicle_id ||
-            "Unknown";
+          // D-62: the server names the holder; an identifier is never shown.
+          const recipient = checkout.recipient_label || "Unknown recipient";
+          const recipientType =
+            recipientTypeLabel[checkout.recipient_type] ?? "Recipient";
           const isReturning = returningId === checkout.id;
           return (
             <article key={checkout.id} className="space-y-3 p-4 text-sm">
@@ -167,7 +193,7 @@ export default function OutstandingCheckouts({
                   <p className="text-slate-400">
                     {locationNames.get(checkout.inventory_location_id) ||
                       "Location"}{" "}
-                    · {checkout.recipient_type}: {recipient}
+                    · {recipientType}: {recipient}
                   </p>
                 </div>
                 <b
@@ -216,7 +242,7 @@ export default function OutstandingCheckouts({
                         "inventory item"}
                     </p>
                     <p>
-                      {checkout.recipient_type}: {recipient}
+                      {recipientType}: {recipient}
                     </p>
                     <p>
                       Checked out {checkout.quantity} · Returned {returned} ·

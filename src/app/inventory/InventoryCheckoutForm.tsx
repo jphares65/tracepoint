@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   checkoutRecipientPayload,
   filterRecipientOptions,
   type RecipientOption,
 } from "@/lib/inventory/recipient-picker";
+import {
+  clearRequestKey,
+  LOST_CONNECTION_MESSAGE,
+  requestKeyFor,
+  type RequestKeyStore,
+} from "@/lib/inventory/request-key";
 
 type Item = {
   id: string;
@@ -60,6 +66,9 @@ export default function InventoryCheckoutForm({
   const [recipientError, setRecipientError] = useState("");
   const [error, setError] = useState("");
   const [ok, setOk] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const requestKey = useRef<RequestKeyStore>({ current: null });
   const available = useMemo(
     () =>
       Number(
@@ -72,70 +81,22 @@ export default function InventoryCheckoutForm({
     [balances, form.itemId, form.locationId],
   );
 
+  // D-63: one Inventory-authorized list of members and vehicles.
   useEffect(() => {
-    if (form.recipientType === "unit") return;
-    const endpoint =
-      form.recipientType === "officer"
-        ? "/api/pilot/personnel"
-        : "/api/fleet/vehicles";
     let cancelled = false;
     async function loadRecipients() {
       setRecipientLoading(true);
       setRecipientError("");
       try {
-        const response = await fetch(endpoint, { cache: "no-store" });
+        const response = await fetch("/api/inventory/recipients", {
+          cache: "no-store",
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok)
           throw new Error(payload.error ?? "Recipients could not be loaded.");
         if (cancelled) return;
-        if (form.recipientType === "officer") {
-          setOfficers(
-            (payload.personnel ?? [])
-              .filter(
-                (person: { isActive?: boolean }) => person.isActive !== false,
-              )
-              .map(
-                (person: {
-                  id: string;
-                  displayName?: string;
-                  fullName?: string;
-                  badgeNumber?: string | null;
-                  unitName?: string | null;
-                }) => ({
-                  id: person.id,
-                  label:
-                    person.displayName || person.fullName || "Unnamed officer",
-                  detail:
-                    [person.badgeNumber, person.unitName]
-                      .filter(Boolean)
-                      .join(" · ") || undefined,
-                }),
-              ),
-          );
-        } else {
-          setVehicles(
-            (payload.items ?? [])
-              .filter(
-                (vehicle: { status?: string }) => vehicle.status !== "Retired",
-              )
-              .map(
-                (vehicle: {
-                  id: string;
-                  unit_number?: string;
-                  make?: string | null;
-                  model?: string | null;
-                  license_plate?: string | null;
-                }) => ({
-                  id: vehicle.id,
-                  label: vehicle.unit_number || "Unnamed vehicle",
-                  detail:
-                    [vehicle.make, vehicle.model, vehicle.license_plate]
-                      .filter(Boolean)
-                      .join(" · ") || undefined,
-                }),
-              ),
-          );
-        }
+        setOfficers(payload.officers ?? []);
+        setVehicles(payload.vehicles ?? []);
       } catch (cause) {
         if (!cancelled)
           setRecipientError(
@@ -151,10 +112,12 @@ export default function InventoryCheckoutForm({
     return () => {
       cancelled = true;
     };
-  }, [form.recipientType]);
+  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    // D-65: one tap is one checkout, even before the button re-renders.
+    if (submittingRef.current) return;
     setError("");
     setOk("");
     const quantity = Number(form.quantity);
@@ -172,36 +135,54 @@ export default function InventoryCheckoutForm({
       );
       return;
     }
-    const response = await fetch("/api/inventory/checkouts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        itemId: form.itemId,
-        locationId: form.locationId,
-        recipientType: form.recipientType,
-        ...checkoutRecipientPayload(form.recipientType, form.recipient),
-        quantity,
-        dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : null,
-        reason: form.reason,
-        reference: form.reference,
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(payload.error ?? "Checkout failed.");
-      return;
+    const request = {
+      itemId: form.itemId,
+      locationId: form.locationId,
+      recipientType: form.recipientType,
+      ...checkoutRecipientPayload(form.recipientType, form.recipient),
+      quantity,
+      dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : null,
+      reason: form.reason,
+      reference: form.reference,
+    };
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      let response: Response;
+      try {
+        response = await fetch("/api/inventory/checkouts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...request,
+            idempotencyKey: requestKeyFor(requestKey.current, request),
+          }),
+        });
+      } catch {
+        setError(LOST_CONNECTION_MESSAGE);
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.error ?? "Checkout failed.");
+        return;
+      }
+      clearRequestKey(requestKey.current);
+      setOk("Checkout recorded.");
+      setForm({
+        ...form,
+        recipient: "",
+        quantity: "",
+        dueAt: "",
+        reason: "",
+        reference: "",
+      });
+      window.dispatchEvent(new Event("inventory-checkouts-changed"));
+      await onSuccess();
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
-    setOk("Checkout recorded.");
-    setForm({
-      ...form,
-      recipient: "",
-      quantity: "",
-      dueAt: "",
-      reason: "",
-      reference: "",
-    });
-    window.dispatchEvent(new Event("inventory-checkouts-changed"));
-    await onSuccess();
   }
 
   const recipientOptions =
@@ -314,8 +295,11 @@ export default function InventoryCheckoutForm({
             setForm({ ...form, reference: event.target.value })
           }
         />
-        <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white sm:col-span-2">
-          Check out
+        <button
+          disabled={submitting}
+          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2"
+        >
+          {submitting ? "Recording…" : "Check out"}
         </button>
       </form>
       {error ? (

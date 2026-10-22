@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Boxes, Plus, RefreshCw } from "lucide-react";
 import TracePointShell from "@/app/components/TracePointShell";
 import OutstandingCheckouts from "./OutstandingCheckouts";
@@ -13,6 +13,12 @@ import {
   nextUnitValue,
   unitSelection,
 } from "@/lib/inventory/unit-of-measure";
+import {
+  clearRequestKey,
+  LOST_CONNECTION_MESSAGE,
+  requestKeyFor,
+  type RequestKeyStore,
+} from "@/lib/inventory/request-key";
 
 type Item = {
   id: string;
@@ -54,7 +60,17 @@ type LocationForm = {
   description: string;
   isActive: boolean;
 };
-type Action = "item" | "receive" | "transfer" | "more" | null;
+type Action = "item" | "receive" | "transfer" | "adjust" | "more" | null;
+// D-70: consumables are used up by issuing them; any item's count can be
+// corrected. Both are an `adjust` ledger row with a reason.
+type AdjustPurpose = "issue" | "remove" | "add";
+const adjustment = (purpose: AdjustPurpose = "issue") => ({
+  purpose,
+  itemId: "",
+  sourceLocationId: "",
+  quantity: "",
+  reason: "",
+});
 type LocationCreateTarget = "source" | "destination" | null;
 const field =
   "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white";
@@ -90,6 +106,10 @@ export default function InventoryPage() {
   const [itemForm, setItemForm] = useState<ItemForm>(blankItem);
   const [locationForm, setLocationForm] = useState<LocationForm>(blankLocation);
   const [stockMovement, setStockMovement] = useState(movement("receive"));
+  const [stockAdjustment, setStockAdjustment] = useState(adjustment());
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const requestKey = useRef<RequestKeyStore>({ current: null });
   const [action, setAction] = useState<Action>(null);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
@@ -153,27 +173,89 @@ export default function InventoryPage() {
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
+  // D-65: one tap is one record. A second submit while one is in flight is
+  // ignored, and stock changes carry a request key so a resubmission after a
+  // lost connection returns the first record instead of writing another.
   async function submit(
     url: string,
-    body: unknown,
+    body: Record<string, unknown>,
     done: () => void,
     method = "POST",
   ) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
     setError("");
     setMessage("");
-    const response = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(payload.error ?? "Request failed.");
+    try {
+      const keyed = url === "/api/inventory/transactions";
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            keyed
+              ? {
+                  ...body,
+                  idempotencyKey: requestKeyFor(requestKey.current, body),
+                }
+              : body,
+          ),
+        });
+      } catch {
+        setError(LOST_CONNECTION_MESSAGE);
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(payload.error ?? "Request failed.");
+        return;
+      }
+      if (keyed) clearRequestKey(requestKey.current);
+      done();
+      setMessage("Saved.");
+      await load();
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+  function submitAdjustment(event: React.FormEvent) {
+    event.preventDefault();
+    const amount = Number(stockAdjustment.quantity);
+    if (
+      !stockAdjustment.itemId ||
+      !stockAdjustment.sourceLocationId ||
+      !(amount > 0)
+    ) {
+      setMessage("");
+      setError(
+        "Choose an item and location, and enter a quantity greater than zero.",
+      );
       return;
     }
-    done();
-    setMessage("Saved.");
-    await load();
+    if (!stockAdjustment.reason.trim()) {
+      setMessage("");
+      setError("A reason is required to issue stock or correct a count.");
+      return;
+    }
+    void submit(
+      "/api/inventory/transactions",
+      {
+        transactionType: "adjust",
+        itemId: stockAdjustment.itemId,
+        sourceLocationId: stockAdjustment.sourceLocationId,
+        destinationLocationId: "",
+        quantity: stockAdjustment.purpose === "add" ? amount : -amount,
+        reason: stockAdjustment.reason.trim(),
+        reference: "",
+      },
+      () => {
+        setStockAdjustment(adjustment(stockAdjustment.purpose));
+        setAction(null);
+      },
+    );
   }
   const openMovement = (next: "receive" | "transfer") => {
     setStockMovement(movement(next));
@@ -260,6 +342,15 @@ export default function InventoryPage() {
                 onClick={() => openMovement("transfer")}
               >
                 Move Stock
+              </ActionButton>
+              <ActionButton
+                active={action === "adjust"}
+                onClick={() => {
+                  setStockAdjustment(adjustment());
+                  setAction(action === "adjust" ? null : "adjust");
+                }}
+              >
+                Issue / Adjust
               </ActionButton>
               <ActionButton
                 active={action === "more"}
@@ -471,7 +562,7 @@ export default function InventoryPage() {
                     />{" "}
                     Active
                   </label>
-                  <Submit label={itemForm.id ? "Save item" : "Add item"} />
+                  <Submit busy={busy} label={itemForm.id ? "Save item" : "Add item"} />
                 </form>
               </Panel>
             ) : null}
@@ -601,6 +692,7 @@ export default function InventoryPage() {
                     />
                   </Label>
                   <Submit
+                    busy={busy}
                     label={
                       action === "receive" ? "Receive stock" : "Move stock"
                     }
@@ -614,6 +706,127 @@ export default function InventoryPage() {
                     onSubmit={createLocationForPicker}
                   />
                 ) : null}
+              </Panel>
+            ) : null}
+            {action === "adjust" ? (
+              <Panel title="Issue or adjust stock">
+                <form className="grid gap-3" onSubmit={submitAdjustment}>
+                  <Label
+                    text="Purpose"
+                    helper="Issue consumables as they are used up. Correct a count when the stock on hand differs from the record."
+                  >
+                    <select
+                      className={field}
+                      value={stockAdjustment.purpose}
+                      onChange={(event) =>
+                        setStockAdjustment({
+                          ...stockAdjustment,
+                          purpose: event.target.value as AdjustPurpose,
+                          itemId: "",
+                        })
+                      }
+                    >
+                      <option value="issue">Issue / use consumables</option>
+                      <option value="remove">Count correction: remove</option>
+                      <option value="add">Count correction: add</option>
+                    </select>
+                  </Label>
+                  <Label text="Item">
+                    <select
+                      className={field}
+                      value={stockAdjustment.itemId}
+                      onChange={(event) =>
+                        setStockAdjustment({
+                          ...stockAdjustment,
+                          itemId: event.target.value,
+                        })
+                      }
+                    >
+                      <option value="">Choose an inventory item</option>
+                      {items
+                        .filter(
+                          (item) =>
+                            item.is_active &&
+                            (stockAdjustment.purpose !== "issue" ||
+                              item.tracking_mode === "consumable"),
+                        )
+                        .map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                    </select>
+                  </Label>
+                  <LocationField
+                    id="inventory-adjust-location"
+                    text="From"
+                    helper={
+                      stockAdjustment.purpose === "add"
+                        ? "Location whose count is too low"
+                        : "Location the stock is taken from"
+                    }
+                    value={stockAdjustment.sourceLocationId}
+                    locations={activeLocations}
+                    onChange={(value) =>
+                      setStockAdjustment({
+                        ...stockAdjustment,
+                        sourceLocationId: value,
+                      })
+                    }
+                    canCreate={false}
+                    loading={loading}
+                    error=""
+                    onCreate={() => undefined}
+                  />
+                  <Label
+                    text={
+                      stockAdjustment.purpose === "issue"
+                        ? "Quantity to issue"
+                        : stockAdjustment.purpose === "remove"
+                          ? "Quantity to remove"
+                          : "Quantity to add"
+                    }
+                  >
+                    <input
+                      className={field}
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      value={stockAdjustment.quantity}
+                      onChange={(event) =>
+                        setStockAdjustment({
+                          ...stockAdjustment,
+                          quantity: event.target.value,
+                        })
+                      }
+                    />
+                  </Label>
+                  <Label text="Reason (required)">
+                    <input
+                      className={field}
+                      placeholder={
+                        stockAdjustment.purpose === "issue"
+                          ? "Who or what it was issued for"
+                          : "Why the count was wrong"
+                      }
+                      value={stockAdjustment.reason}
+                      onChange={(event) =>
+                        setStockAdjustment({
+                          ...stockAdjustment,
+                          reason: event.target.value,
+                        })
+                      }
+                    />
+                  </Label>
+                  <Submit
+                    busy={busy}
+                    label={
+                      stockAdjustment.purpose === "issue"
+                        ? "Issue stock"
+                        : "Record correction"
+                    }
+                  />
+                </form>
               </Panel>
             ) : null}
             {action === "more" ? (
@@ -677,6 +890,7 @@ export default function InventoryPage() {
                       Active
                     </label>
                     <Submit
+                      busy={busy}
                       label={locationForm.id ? "Save location" : "Add location"}
                     />
                   </form>
@@ -930,11 +1144,14 @@ function InlineLocationCreate({
     </form>
   );
 }
-function Submit({ label }: { label: string }) {
+function Submit({ label, busy = false }: { label: string; busy?: boolean }) {
   return (
-    <button className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">
+    <button
+      disabled={busy}
+      className="mt-1 inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+    >
       <Plus size={15} />
-      {label}
+      {busy ? "Saving…" : label}
     </button>
   );
 }
