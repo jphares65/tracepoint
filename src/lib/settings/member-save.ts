@@ -11,7 +11,8 @@ export type DepartmentMemberSave = {
   p_employee_number: string | null;
   p_is_active: boolean;
   p_role_codes: string[];
-  p_group_ids: string[];
+  // null: the caller did not have the member's groups (E-02), so they stay as they are.
+  p_group_ids: string[] | null;
 };
 
 type QueryClient = { query(text: string, values?: readonly unknown[]): Promise<unknown> };
@@ -21,9 +22,11 @@ const strings = (value: unknown) =>
   Array.isArray(value) && value.every((item) => typeof item === "string") ? (value as string[]) : null;
 
 export function parseDepartmentMemberSave(args: Record<string, unknown>): DepartmentMemberSave | null {
-  const roleCodes = strings(args.p_role_codes), groupIds = strings(args.p_group_ids);
+  const roleCodes = strings(args.p_role_codes);
+  // An absent group list means "unchanged"; a present one must be valid.
+  const groupIds = args.p_group_ids === undefined ? null : strings(args.p_group_ids);
   if (typeof args.p_department_id !== "string" || typeof args.p_user_id !== "string" ||
-      typeof args.p_is_active !== "boolean" || !roleCodes || !groupIds) return null;
+      typeof args.p_is_active !== "boolean" || !roleCodes || (args.p_group_ids !== undefined && !groupIds)) return null;
   return {
     p_department_id: args.p_department_id,
     p_user_id: args.p_user_id,
@@ -46,6 +49,7 @@ export async function saveDepartmentMember(client: QueryClient, input: Departmen
     "select public.set_department_member_roles(p_department_id=>$1,p_user_id=>$2,p_role_codes=>$3::text[])",
     [input.p_department_id, input.p_user_id, input.p_role_codes],
   );
+  if (input.p_group_ids === null) return;
   await client.query(
     "select public.set_department_group_members(p_department_id=>$1,p_user_id=>$2,p_group_ids=>$3::uuid[])",
     [input.p_department_id, input.p_user_id, input.p_group_ids],
