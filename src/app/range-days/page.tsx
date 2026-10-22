@@ -13,7 +13,6 @@ import {
   EMPTY_MERGEABLE_WORKSPACE,
   UNKNOWN_BASE_REASON,
   applyConflictChoice,
-  liveConflicts,
   reconcileConflicts,
   unsyncedIds,
   type MergeableWorkspace,
@@ -2538,7 +2537,8 @@ export default function RangeDaysPage() {
           ...(unknownCopy ? unattributedCopyConflicts(toMergeableWorkspace(unknownCopy.copy.workspace, currentUserId), initial, UNKNOWN_BASE_REASON, remote.departmentId) : []),
           ...(legacy ? unattributedCopyConflicts(toMergeableWorkspace(legacy.workspace, currentUserId), initial, LEGACY_COPY_REASON, remote.departmentId) : []),
         ];
-        if (unattributed.length) conflicts = reconcileConflicts(conflicts, unattributed, initial);
+        // This user's own conflicts win over a leftover copy's (review 3177a83 L-c).
+        if (unattributed.length) conflicts = reconcileConflicts(unattributed, conflicts, initial);
         afterPersist = () => {
           unknownCopy?.discard();
           legacy?.markListed();
@@ -3249,12 +3249,6 @@ export default function RangeDaysPage() {
     workspace: StoredRangeDayWorkspace,
     delay: number,
   ) {
-    // Review R2-M1: an edit to a conflicted record decides it.
-    const live = liveConflicts(latestWorkspaceState.current, workspaceConflictsRef.current);
-    if (live.length !== workspaceConflictsRef.current.length) {
-      workspaceConflictsRef.current = live;
-      setWorkspaceConflicts(live);
-    }
     persistDeviceCopy(workspace);
     if (!canManageRangeDays && !canScoreRangeDays) return;
     workspaceSaveQueue.current?.schedule(
@@ -3716,6 +3710,9 @@ export default function RangeDaysPage() {
       const existingMalfunction = malfunctions.find(
         (malfunction) => malfunction.id === existingResult?.malfunctionIds?.[0],
       );
+      // Review 3177a83 P1: a saved result the instructor did not touch in this
+      // entry is left exactly as stored (not rebuilt or re-attributed).
+      if (existingResult && !unsavedBatchOfficerIds.current.has(entry.officerId)) return [];
       const resultId = existingResult?.id ?? `result-${crypto.randomUUID()}`;
       const automaticPass =
           getQualificationStandardPass({
@@ -4185,11 +4182,15 @@ export default function RangeDaysPage() {
         if (payload.workspace) setLoadedWorkspaceBaseline(payload.workspace);
         syncedWorkspace.current = { ...syncedWorkspace.current, rangeDayDrills: withoutDrill(syncedWorkspace.current.rangeDayDrills) as MergeableWorkspace["rangeDayDrills"] };
       }
-      const nextDrills = rangeDayDrills.filter((item) => item.id !== drill.id);
-      setRangeDayDrills(nextDrills);
-      if (selectedDrillId === drill.id) {
-        setSelectedDrillId(nextDrills.find((item) => item.rangeDayId === selectedRangeDay.id)?.id ?? "");
-      }
+      // Review 3177a83 P3: from the current list, so drill changes (or a merge)
+      // made while the removal was in flight are kept.
+      const rangeDayId = selectedRangeDay.id;
+      setRangeDayDrills((current) => current.filter((item) => item.id !== drill.id));
+      setSelectedDrillId((current) =>
+        current === drill.id
+          ? String(latestWorkspaceState.current.rangeDayDrills.find((item) => item.id !== drill.id && item.rangeDayId === rangeDayId)?.id ?? "")
+          : current,
+      );
       setSaveMessage(`${drill.name} removed.`);
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "The drill could not be removed.");

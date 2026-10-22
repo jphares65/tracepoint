@@ -64,5 +64,8 @@ test("review R2-H1/R2-M1: drill removal carries the version and never adopts the
   assert.match(removal, /if \(payload\.code === "stale_workspace"\) \{\n\s*setWorkspaceStale\(true\);\n\s*void recoverRangeWorkspace\(\);/);
   assert.match(removal, /rangeWorkspaceEpoch \+= 1;/);
   assert.doesNotMatch(removal, /payload\.workspace\?\.rangeDayDrills/);
-  assert.match(source, /const live = liveConflicts\(latestWorkspaceState\.current, workspaceConflictsRef\.current\);/);
+  assert.doesNotMatch(source, /liveConflicts/, "review 3177a83 P1: no edit elsewhere decides a conflict");
+  assert.match(removal, /setRangeDayDrills\(\(current\) => current\.filter\(\(item\) => item\.id !== drill\.id\)\);/, "review 3177a83 P3");
+  const batch = source.slice(source.indexOf("function handleSaveBatchResults()"), source.indexOf("function handleGeneratePacket()"));
+  assert.match(batch, /if \(existingResult && !unsavedBatchOfficerIds\.current\.has\(entry\.officerId\)\) return \[\];/, "review 3177a83 P1: untouched saved results are not rebuilt");
 });

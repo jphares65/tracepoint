@@ -32,6 +32,9 @@ export type WorkspaceConflict = {
   // Why this device's value cannot simply be used: the server's refusal, or an
   // unknown merge base. Absent for an ordinary both-devices-changed conflict.
   reason?: string;
+  // The version both devices started from, when known; with it, choosing this
+  // device's value applies only the fields this device changed.
+  base?: Keyed | null;
 };
 
 export type AppliedChange = { collection: WorkspaceCollection; id: string; local: Keyed | null };
@@ -109,7 +112,7 @@ export function mergeRangeWorkspace(
         if (s) result.set(id, s);
       } else {
         if (s) result.set(id, s);
-        conflicts.push({ collection, id, local: l ?? null, server: s ?? null });
+        conflicts.push({ collection, id, local: l ?? null, server: s ?? null, base: b ?? null });
       }
     }
 
@@ -158,25 +161,15 @@ function withResultIds(item: Keyed, renamed: Map<string, string>) {
   return fields.length ? { ...item, ...Object.fromEntries(fields.map((field) => [field, renamed.get(item[field] as string)])) } : item;
 }
 
-/**
- * Review R2-M1: a conflict stands only while the workspace still holds the
- * other device's value. Once the instructor edits that record again, the new
- * value is the decision and the conflict is dropped.
- */
-export function liveConflicts(workspace: MergeableWorkspace, conflicts: readonly WorkspaceConflict[]) {
-  return conflicts.filter((conflict) => same(byId(workspace[conflict.collection] ?? []).get(conflict.id), conflict.server));
+// The fields this device changed (against the shared base, when known) that
+// differ from the other device's version.
+function conflictingFields(local: Keyed, server: Keyed, base: Keyed | null | undefined) {
+  return [...new Set([...Object.keys(local), ...Object.keys(server)])].filter((field) =>
+    field !== "id" && !same(local[field], server[field]) && (!base || !same(local[field], base[field])));
 }
 
-/**
- * "Keep other device's value" for a score: the other device's score is kept,
- * and a malfunction this device recorded with it stays attached (review R2-M2).
- */
-export function serverChoiceFor(conflict: WorkspaceConflict): WorkspaceConflict {
-  if (conflict.collection !== "results" || !conflict.server || !conflict.local) return conflict;
-  const ids = (record: Keyed | null) => (Array.isArray(record?.malfunctionIds) ? (record!.malfunctionIds as unknown[]).filter((id): id is string => typeof id === "string") : []);
-  const extra = ids(conflict.local).filter((id) => !ids(conflict.server).includes(id));
-  return extra.length ? { ...conflict, server: { ...conflict.server, malfunctionIds: [...ids(conflict.server), ...extra] } } : conflict;
-}
+const malfunctionIdsOf = (record: Keyed | null | undefined) =>
+  Array.isArray(record?.malfunctionIds) ? (record!.malfunctionIds as unknown[]).filter((id): id is string => typeof id === "string") : [];
 
 function withRecord(workspace: MergeableWorkspace, collection: WorkspaceCollection, id: string, value: Keyed | null): MergeableWorkspace {
   const items = workspace[collection] ?? [];
@@ -238,9 +231,30 @@ export function unsyncedIds(synced: readonly Keyed[], current: readonly Keyed[])
   }).map((item) => idOf(item) as string));
 }
 
-/** Applies the instructor's choice for a conflicted record: this device's value, or the other device's. */
+/**
+ * The instructor's choice for a conflicted record. A conflict stands until this
+ * choice is made (review 3177a83 P1/P2: no edit elsewhere decides it).
+ * - "local": this device's value for the conflicting fields only, applied to the
+ *   record as it is now, so later edits to other fields are kept (or this
+ *   device's deletion / new record).
+ * - "server": nothing is written; the record keeps its current value. A
+ *   malfunction this device recorded with a score stays listed on it (R2-M2).
+ */
 export function applyConflictChoice(workspace: MergeableWorkspace, conflict: WorkspaceConflict, choice: "local" | "server" = "local"): MergeableWorkspace {
-  return withRecord(workspace, conflict.collection, conflict.id, choice === "local" ? conflict.local : serverChoiceFor(conflict).server);
+  const current = byId(workspace[conflict.collection] ?? []).get(conflict.id);
+  if (choice === "server") {
+    const extra = malfunctionIdsOf(conflict.local).filter((id) => !malfunctionIdsOf(current).includes(id));
+    if (conflict.collection !== "results" || !current || !extra.length) return workspace;
+    return withRecord(workspace, conflict.collection, conflict.id, { ...current, malfunctionIds: [...malfunctionIdsOf(current), ...extra] });
+  }
+  if (!conflict.local) return withRecord(workspace, conflict.collection, conflict.id, null);
+  if (!current || !conflict.server) return withRecord(workspace, conflict.collection, conflict.id, conflict.local);
+  const next: Keyed = { ...current };
+  for (const field of conflictingFields(conflict.local, conflict.server, conflict.base)) {
+    if (conflict.local[field] === undefined) delete next[field];
+    else next[field] = conflict.local[field];
+  }
+  return withRecord(workspace, conflict.collection, conflict.id, next);
 }
 
 export const EMPTY_MERGEABLE_WORKSPACE: MergeableWorkspace = {

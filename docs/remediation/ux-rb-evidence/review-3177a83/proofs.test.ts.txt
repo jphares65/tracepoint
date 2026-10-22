@@ -1,0 +1,68 @@
+// Review of 3177a83. Each test asserts the FAULTY behaviour: a pass means the defect exists.
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import { liveConflicts } from "/home/user/tracepoint/src/lib/range/workspace-merge.ts";
+import { recoverWorkspace } from "/home/user/tracepoint/src/lib/range/workspace-device-copy.ts";
+
+const empty = () => ({ rangeDays: [], drillLibrary: [], rangeDayDrills: [], rangeRoster: [], results: [], malfunctions: [] }) as any;
+const day = { id: "day-1", title: "Qual", status: "In Progress", departmentId: "agency-a" };
+const drill = { id: "drill-1", rangeDayId: "day-1", name: "Course" };
+const ok = () => ({ ok: true as const });
+const page = () => readFile("/home/user/tracepoint/src/app/range-days/page.tsx", "utf8");
+
+test("P1 (High): a batch save for OTHER officers rebuilds the conflicted officer's row and silently drops this device's score", async () => {
+  // Instructor A (this device) scored officer X = 47 offline; instructor B saved X = 45 first.
+  const base = { ...empty(), rangeDays: [day], rangeDayDrills: [drill] };
+  const local = { ...base, results: [{ id: "result-a", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "X", score: 47, instructorId: "A", notes: "" }] };
+  const serverX = { id: "result-b", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "X", score: 45, instructorId: "B", notes: "" };
+  const server = { ...base, results: [serverX] };
+  const recovered = recoverWorkspace({ base, local, server, conflicts: [], accept: ok });
+  assert.equal(recovered.conflicts.length, 1);
+  assert.equal(recovered.conflicts[0].local?.score, 47, "A's 47 now lives only in the conflict");
+  assert.ok(!recovered.workspace.results.some((r: any) => r.score === 47));
+
+  // A then scores officer Y on the same drill/run with "Save scores". handleSaveBatchResults
+  // rebuilds a result for EVERY attending officer whose row is prefilled (X's row shows B's 45),
+  // stamping instructorId: currentUserId. Model exactly that rewrite of X's record:
+  const rebuiltX = { ...serverX, instructorId: "A" };
+  const afterBatch = { ...recovered.workspace, results: [rebuiltX, { id: "result-y", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "Y", score: 40, instructorId: "A", notes: "" }] };
+  // queueRangeDayWorkspaceSave runs liveConflicts on the next autosave:
+  const live = liveConflicts(afterBatch, recovered.conflicts);
+  assert.equal(live.length, 0, "conflict dropped although A never touched X's row; 47 is gone from workspace, conflicts and the device copy");
+
+  // The page really does rebuild every prefilled officer and re-attributes it.
+  const source = await page();
+  const save = source.slice(source.indexOf("function handleSaveBatchResults()"), source.indexOf("function handleGeneratePacket()"));
+  assert.match(save, /const rosterToScore = attendingRoster;/);
+  assert.match(save, /const savedResults = rosterToScore\.flatMap/);
+  assert.match(save, /instructorId: currentUserId,/);
+  assert.match(source, /metricValue =\n\s*typeof existingResult\.score === "number"/, "rows are prefilled from the workspace (B's value)");
+  assert.match(source, /const live = liveConflicts\(latestWorkspaceState\.current, workspaceConflictsRef\.current\);/);
+});
+
+test("P2 (Medium): editing an unrelated field of a conflicted record discards this device's conflicting value of another field", () => {
+  // This device wrote the AAR; the other device changed the location. Record-level conflict.
+  const base = { ...empty(), rangeDays: [{ ...day, location: "North", aar: { objectivesAchieved: "" } }] };
+  const local = { ...empty(), rangeDays: [{ ...day, location: "North", aar: { objectivesAchieved: "Long AAR typed offline" } }] };
+  const server = { ...empty(), rangeDays: [{ ...day, location: "South", aar: { objectivesAchieved: "" } }] };
+  const recovered = recoverWorkspace({ base, local, server, conflicts: [], accept: ok });
+  assert.equal(recovered.conflicts.length, 1);
+  // Lead adds an instructor to the day (handleAddInstructor maps the selected day).
+  const edited = { ...recovered.workspace, rangeDays: recovered.workspace.rangeDays.map((d: any) => ({ ...d, instructorIds: ["A", "C"] })) };
+  assert.equal(liveConflicts(edited, recovered.conflicts).length, 0, "the AAR text existed only in the conflict and is gone");
+});
+
+test("P3 (Medium): drill removal overwrites drills added or edited while the DELETE was in flight", async () => {
+  const source = await page();
+  const fn = source.slice(source.indexOf("async function handleRemoveDrillFromSelectedRangeDay"), source.indexOf("const renderWorkspaceSaveStatus"));
+  const awaitAt = fn.indexOf("await fetch(\"/api/pilot/range-workspace/drills\"");
+  const overwriteAt = fn.indexOf("const nextDrills = rangeDayDrills.filter((item) => item.id !== drill.id);");
+  assert.ok(awaitAt > 0 && overwriteAt > awaitAt, "closure-captured drill list applied after the await");
+  assert.match(fn, /setRangeDayDrills\(nextDrills\);/, "not a functional update");
+  // Model: list at click time, a drill added during the request, then the response handler.
+  const atClick = [drill, { id: "drill-2", rangeDayId: "day-1" }];
+  let state = [...atClick, { id: "drill-new", rangeDayId: "day-1" }]; // added while DELETE was pending
+  state = atClick.filter((item) => item.id !== "drill-2"); // what the handler sets
+  assert.ok(!state.some((item) => item.id === "drill-new"), "the drill added meanwhile is silently removed");
+});

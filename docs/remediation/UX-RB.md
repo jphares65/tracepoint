@@ -180,6 +180,24 @@ A second reviewer examined the fixes in §3.4 (`ux-rb-evidence/review-f85ba7a/`)
 
 **Workflow semantics (flag).** After a refusal this device could not predict, all of its unsynced range changes are listed, not only the one that failed. The instructor re-applies the good ones with "Try this device's value again". This is safe (nothing is lost or sent blindly), but it takes more steps in that rare case.
 
+### 3.6 Third independent review (of `3177a83`)
+
+The third review is in `ux-rb-evidence/review-3177a83/`. All three proofs passed against `3177a83`.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| P1. The R2-M1 rule ("an edit to a conflicted record decides it") compared whole records. A batch save rebuilds and re-stamps every prefilled officer's result, so a conflict could be dropped and this device's score, held only in the conflict, lost. | High | The rule is removed: a conflict stands until the instructor chooses. "Keep other device's value" writes nothing; it keeps the record's current value and keeps a malfunction this device recorded with the score listed on it. "Use this device's value" applies only the fields this device changed (against the recorded merge base) to the record as it is now. A batch save no longer rebuilds or re-attributes saved results the instructor did not touch in that entry. |
+| P2. Editing another field of a conflicted record discarded this device's value. | Medium | Same fix as P1. Each conflict records its merge base, and only this device's changed fields are applied. |
+| P3. Drill removal set the drill list captured at click time, overwriting changes or a merge made during the request. | Medium | Functional update from the current list. |
+| L-c. A leftover copy's conflict could replace this user's own. | Low | This user's conflicts win. |
+| L-a (unsuffixed key from unreleased intermediate builds; no device ran them), L-b (end-of-recovery race; moot once the liveness rule was removed), L-d (harmless today) | Low | Not changed. |
+
+**After** (`proofs-after.txt`):
+- P3 fails on its assertion, so the defect is fixed.
+- P1 and P2 fail because the function they exercise (`liveConflicts`) no longer exists. The fixed behaviour is pinned by `workspace-merge.test.ts` ("review R2-M1 / 3177a83 P1", "3177a83 P2") and `range-days/sync-contract.test.ts`.
+
+**Workflow semantics (flag).** Range conflicts now stay listed until the instructor resolves each one, even if the record is edited again in the meantime. This is safer than dropping them automatically, but it leaves more items to clear.
+
 ## 4. Staging verification (add to `STAGING-VERIFICATION.md` §4)
 
 | Step | Action | Expected | Automated |
