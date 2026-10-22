@@ -40,6 +40,24 @@ Order (each step that writes to AWS needs explicit approval):
 10. Enable Agency Documents for the Demo PD only, then run the synthetic cycle (upload, set up,
     publish, generate, unpublish, revision 2).
 
+Progress (REL = `eb637823`):
+- Step 1: `APPLY 047` applied (001–047, 0 pending). The first run quit at the deploy prompt,
+  having read an empty line. A `-DeployOnly -RecordedMigrationCommit eb637823` rerun printed
+  `STAGING RELEASE VERIFIED` and deployed revision **190** (digest `sha256:2d9af674…`; rollback
+  target `:189`).
+- Step 3: production image `eb637823…-aws-native-production` was published, digest
+  `sha256:b9a04c6e…`. ECS is unchanged.
+- Step 4 precheck: `PASSED`, `readiness.agencyDocuments` ready with no blockers.
+  - Production already catalogues `fleet` and `inventory`, so 047 is a no-op there, and step 8
+    moves into step 5.
+  - Today Fleet and Inventory are gated only by permissions; this release also gates them by
+    entitlement. Usage now:
+    - Montville: 33 vehicles, no `fleet` entitlement. It needs `fleet` enabled before the deploy.
+    - Demo PD: 12 vehicles and 3 items, with both modules already enabled.
+    - High Bridge, Readington and Production Synthetic: no vehicles or items.
+  - Other entitlements: 34 rows, digest `e02ec9f886b60dacc67f2cf25b23e14b`. The live build
+    already gates those modules, so they need no change.
+
 Rollback: application to `:27` (`deploy-app.ps1 -Environment production
 -RollbackTaskDefinitionArn …:27`); `e49e73dc` runs on the additive schema. A failed unit rolls
 back on its own. A full database restore from the step 6 snapshot is the last resort.
