@@ -10,9 +10,12 @@ import {
   withStoredCopiesOfUnchangedRecords,
 } from "@/lib/range/workspace-client-state";
 import {
+  completionChoiceRequired,
   resolveRunCompletion,
+  resolveRunOutcome,
   standardFirearmType,
 } from "@/lib/range/scoring-rules";
+import CompletionChoiceControl from "@/app/range-days/components/CompletionChoiceControl";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
 import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
@@ -3344,6 +3347,28 @@ export default function RangeDaysPage() {
       return;
     }
 
+    // UX-RB-1: a Completion drill is never saved as complete or incomplete by default.
+    const officersNeedingCompletionChoice = rosterToScore.flatMap((entry) => {
+      const row = batchScoreRows[entry.officerId];
+      if (!row) return [];
+      const hasEntry =
+        row.metricValue.trim().length > 0 ||
+        typeof row.passed === "boolean" ||
+        typeof row.completed === "boolean" ||
+        Boolean(row.notes.trim()) ||
+        row.malfunctionOccurred;
+      return hasEntry && completionChoiceRequired(scoringFormat, row.completed)
+        ? [getUserName(entry.officerId)]
+        : [];
+    });
+
+    if (officersNeedingCompletionChoice.length > 0) {
+      setSaveMessage(
+        `Choose Complete or Incomplete before saving results for: ${officersNeedingCompletionChoice.join(", ")}.`,
+      );
+      return;
+    }
+
     const expectedFirearmType = normalizeFirearmType(
       selectedDrill.firearmType,
     );
@@ -3462,7 +3487,7 @@ export default function RangeDaysPage() {
         selectedRunNumber,
         firearmId,
       ) ?? getDepartmentStandardConfig(selectedDrill);
-      const departmentStandardPassed = !completed ? false :
+      const standardPassedWhenComplete =
       getQualificationStandardPass({
         standards: qualificationStandards,
         drill: selectedDrill,
@@ -3477,6 +3502,15 @@ export default function RangeDaysPage() {
         completed: row.completed,
         passed: finalPassed,
       });
+      const outcome = resolveRunOutcome({
+        scoringFormat,
+        completed,
+        finalPassed,
+        hasStandard: Boolean(departmentStandardSnapshot),
+        standardPassedWhenComplete,
+        remediationRequired: departmentStandardSnapshot?.departmentStandardRemediationRequired === true,
+      });
+      const departmentStandardPassed = outcome.departmentStandardPassed;
 
       const numericMetric = metricEntered ? Number(row.metricValue) : undefined;
 
@@ -3508,19 +3542,14 @@ export default function RangeDaysPage() {
             ? numericMetric
             : undefined,
         scoringFormatSnapshot: scoringFormat,
-        passed:
-          scoringFormat === "Notes Only" ? undefined : finalPassed,
-        finalPassed:
-          scoringFormat === "Notes Only" ? undefined : finalPassed,
+        passed: outcome.passed,
+        finalPassed: outcome.passed,
         departmentStandardSnapshot: departmentStandardSnapshot ?? undefined,
         departmentStandardPassed,
         instructorId: currentUserId,
         notes: row.notes.trim(),
-        deficiencyObserved: finalPassed === false || departmentStandardPassed === false,
-        remedialTrainingRecommended:
-          finalPassed === false ||
-          (departmentStandardPassed === false &&
-            departmentStandardSnapshot?.departmentStandardRemediationRequired === true),
+        deficiencyObserved: outcome.deficiencyObserved,
+        remedialTrainingRecommended: outcome.remedialTrainingRecommended,
         malfunctionIds: malfunctionId ? [malfunctionId, ...otherMalfunctionIds] : otherMalfunctionIds,
       };
 
@@ -6631,21 +6660,14 @@ export default function RangeDaysPage() {
                           </div>
 
                           <div className="mt-3 grid grid-cols-2 gap-3">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateBatchScoreRow(entry.officerId, {
-                                  completed: !(row.completed ?? true),
-                                })
+                            <CompletionChoiceControl
+                              scoringFormat={scoringFormat}
+                              completed={row.completed}
+                              officerName={getUserName(entry.officerId)}
+                              onChange={(completed) =>
+                                updateBatchScoreRow(entry.officerId, { completed })
                               }
-                              className={`rounded-xl border px-3 py-3 text-[12px] font-semibold ${
-                                row.completed ?? true
-                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                  : "border-slate-700 text-slate-400"
-                              }`}
-                            >
-                              {row.completed ?? true ? "Complete" : "Incomplete"}
-                            </button>
+                            />
 
                             <button
                               type="button"
@@ -7003,21 +7025,15 @@ export default function RangeDaysPage() {
                               <option value="fail">Fail</option>
                             </select>
 
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateBatchScoreRow(entry.officerId, {
-                                  completed: !(row.completed ?? true),
-                                })
+                            <CompletionChoiceControl
+                              compact
+                              scoringFormat={scoringFormat}
+                              completed={row.completed}
+                              officerName={getUserName(entry.officerId)}
+                              onChange={(completed) =>
+                                updateBatchScoreRow(entry.officerId, { completed })
                               }
-                              className={`rounded-xl border px-2 py-2 text-[11px] font-semibold ${
-                                row.completed ?? true
-                                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                  : "border-slate-700 text-slate-400"
-                              }`}
-                            >
-                              {row.completed ?? true ? "Complete" : "Incomplete"}
-                            </button>
+                            />
 
                             <div>
                               {selectedDrill.isDepartmentStandard || qualificationStandardMatch ? (
