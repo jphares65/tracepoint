@@ -70,6 +70,14 @@ These are not blockers for the staging run, but they should not reach production
 
 ## 3. Which environment each defect affects
 
+> **Correction (2026-10-22, read-only provenance check; details in `docs/remediation/UX-RB.md` §0 on `claude/fix-uxrb-release-safety`).**
+>
+> - **Production is not `564ff78`.** Production serves `/api/mobile/session`, `/api/mobile/qr/resolve` and `/api/mobile/inbox`. The inbox route was first added in `555f061` on Oct 9, so production is at least as new as the staging line.
+> - **Source commits.** The deployment ids the two environments serve, which are their source commits, are `5700011…` (production) and `22e543d…` (staging). **Neither exists in the GitHub repository.**
+> - **Treat as live in production:** C-63 / C-R2 / C-64 (firearm custody) and the Inventory defects D-62, D-63, D-65 and D-70.
+> - **Still needed:** read-only AWS access for image digests.
+
+
 **Caveat: the production commit is not recorded.** The operational reconciliation (`R1-provenance-and-architecture.md` §2) *infers* that production runs CU `564ff78` or a commit from Sep 29–30. Live checks today show that production and staging both serve the Cognito sign-in page, which is consistent with that inference.
 
 **Action G0 (owner, read-only):** record the production ECS task-definition image digest and its source commit before any further planning depends on it.
