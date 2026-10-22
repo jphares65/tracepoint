@@ -11,6 +11,14 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { formatDateTime } from "@/lib/format/date";
+import InspectionChoiceControl from "@/app/components/InspectionChoiceControl";
+import {
+  initialEquipmentCondition,
+  markRemainingPass,
+  notInspectedCount,
+  submittedVehicleChecklist,
+  vehicleSubmitBlockers,
+} from "@/lib/fleet/inspection-form";
 
 const DEFAULT_ITEMS = [
   ["body", "Body, windshield and mirrors"],
@@ -35,7 +43,7 @@ type Item = {
   id: string;
   label: string;
   category: string;
-  condition: Condition;
+  condition: Condition | null;
   note: string;
   required: boolean;
   critical: boolean;
@@ -110,7 +118,7 @@ export default function QuickInspectionPanel({
       required: item.required !== false,
       critical: item.critical === true,
       sort_order: Number(item.sort_order ?? index + 1),
-      condition: "Pass" as Condition,
+      condition: null,
       note: "",
     })),
 
@@ -123,14 +131,7 @@ export default function QuickInspectionPanel({
       required: true,
       critical: item.is_critical === true,
       sort_order: 1000 + index,
-      condition:
-        item.status === "Out of Service"
-          ? ("Critical" as Condition)
-          : ["Missing", "Attention"].includes(item.status)
-            ? item.is_critical === true
-              ? ("Critical" as Condition)
-              : ("Defect" as Condition)
-            : ("Pass" as Condition),
+      condition: initialEquipmentCondition(item.status, item.is_critical === true),
       note:
         item.status === "Current"
           ? ""
@@ -152,7 +153,7 @@ export default function QuickInspectionPanel({
   const allInspections = [...previewRecords, ...inspections];
 
   const exceptionCount = useMemo(
-    () => items.filter((item) => item.condition !== "Pass").length,
+    () => items.filter((item) => item.condition !== null && item.condition !== "Pass").length,
     [items],
   );
 
@@ -192,13 +193,13 @@ export default function QuickInspectionPanel({
     setError("");
   }
 
-  async function submit() {
-    const missingNote = items.find(
-      (item) => item.condition !== "Pass" && !item.note.trim(),
-    );
+  const remainingItems = notInspectedCount(items);
+  const submitBlockers = vehicleSubmitBlockers(items);
 
-    if (missingNote) {
-      setError(`Add a short note for ${missingNote.label}.`);
+  async function submit() {
+    if (saving) return;
+    if (submitBlockers.length > 0) {
+      setError(submitBlockers.join(" "));
       return;
     }
 
@@ -250,7 +251,7 @@ export default function QuickInspectionPanel({
             mileage,
             hours,
             notes,
-            checklist: items,
+            checklist: submittedVehicleChecklist(items),
           }),
         },
       );
@@ -286,8 +287,8 @@ export default function QuickInspectionPanel({
           <div>
             <h2 className="font-bold text-white">Quick Vehicle Inspection</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Agency checks and this vehicle&apos;s required equipment are
-              preloaded. Touch only exceptions.
+              Agency checks and this vehicle&apos;s required equipment. Answer
+              every item before submitting.
             </p>
           </div>
 
@@ -358,10 +359,20 @@ export default function QuickInspectionPanel({
               </label>
             </div>
 
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-200">
-              <CheckCircle2 size={15} className="mr-2 inline" />
-              All {items.length} items start as Pass unless a tracked equipment
-              record already needs attention. Mark only what changed.
+            <div className="flex flex-col gap-2 rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-xs text-slate-200 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Every item starts as Not inspected. Items an equipment record
+                already shows as needing attention are pre-marked.
+              </span>
+              {remainingItems > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setItems((current) => markRemainingPass(current))}
+                  className="min-h-10 rounded-xl border border-emerald-500/40 px-3 font-semibold text-emerald-200 hover:bg-emerald-500/10"
+                >
+                  Mark remaining {remainingItems} as Pass
+                </button>
+              ) : null}
             </div>
 
             <div className="space-y-4">
@@ -385,7 +396,7 @@ export default function QuickInspectionPanel({
                       <div
                         key={item.id}
                         className={`rounded-xl border p-3 ${
-                          item.condition === "Pass"
+                          item.condition === "Pass" || item.condition === null
                             ? "border-slate-800 bg-slate-950/40"
                             : item.condition === "Critical"
                               ? "border-red-700 bg-red-950/20"
@@ -423,28 +434,16 @@ export default function QuickInspectionPanel({
                             </div>
                           </div>
 
-                          <div className="flex gap-1">
-                            {(
-                              ["Pass", "Defect", "Critical"] as Condition[]
-                            ).map((condition) => (
-                              <button
-                                type="button"
-                                key={condition}
-                                onClick={() => setCondition(item.id, condition)}
-                                className={`rounded-lg border px-2 py-1 text-[9px] font-bold uppercase ${
-                                  item.condition === condition
-                                    ? condition === "Pass"
-                                      ? "border-emerald-500 bg-emerald-500/15 text-emerald-200"
-                                      : condition === "Critical"
-                                        ? "border-red-500 bg-red-500/15 text-red-200"
-                                        : "border-amber-500 bg-amber-500/15 text-amber-200"
-                                    : "border-slate-700 text-slate-500"
-                                }`}
-                              >
-                                {condition}
-                              </button>
-                            ))}
-                          </div>
+                          <InspectionChoiceControl<Condition>
+                            itemLabel={item.label}
+                            value={item.condition}
+                            options={[
+                              { value: "Pass", tone: "pass" },
+                              { value: "Defect", tone: "warn" },
+                              { value: "Critical", tone: "fail" },
+                            ]}
+                            onChange={(condition) => setCondition(item.id, condition)}
+                          />
                         </div>
 
                         {item.equipmentId ? (
@@ -461,7 +460,7 @@ export default function QuickInspectionPanel({
                           </p>
                         ) : null}
 
-                        {item.condition !== "Pass" ? (
+                        {item.condition !== null && item.condition !== "Pass" ? (
                           <input
                             autoFocus
                             placeholder="Brief defect note (required)"
@@ -498,14 +497,16 @@ export default function QuickInspectionPanel({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p
                 className={`text-xs font-semibold ${
-                  exceptionCount ? "text-amber-300" : "text-emerald-300"
+                  submitBlockers.length || exceptionCount ? "text-amber-300" : "text-emerald-300"
                 }`}
               >
-                {exceptionCount
-                  ? `${exceptionCount} exception${
-                      exceptionCount === 1 ? "" : "s"
-                    } will be routed automatically.`
-                  : "Ready for one-tap submission."}
+                {submitBlockers.length
+                  ? submitBlockers.join(" ")
+                  : exceptionCount
+                    ? `${exceptionCount} exception${
+                        exceptionCount === 1 ? "" : "s"
+                      } will be reported.`
+                    : "All items inspected."}
               </p>
 
               <div className="flex gap-2">
@@ -518,7 +519,7 @@ export default function QuickInspectionPanel({
                 </button>
 
                 <button
-                  disabled={saving}
+                  disabled={saving || submitBlockers.length > 0}
                   onClick={() => void submit()}
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
                 >
