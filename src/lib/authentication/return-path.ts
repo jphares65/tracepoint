@@ -107,8 +107,26 @@ export async function readFormReturnPath(request: Request, maxBytes = 4096): Pro
     if (type !== "application/x-www-form-urlencoded") return null;
     const declared = Number(request.headers.get("content-length") ?? "0");
     if (!Number.isFinite(declared) || declared > maxBytes) return null;
-    const body = await request.text();
-    if (body.length > maxBytes) return null;
+    // Read at most maxBytes even when no Content-Length is declared.
+    const reader = request.body?.getReader();
+    if (!reader) return null;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > maxBytes) return null;
+        chunks.push(chunk.value);
+      }
+    } finally {
+      await reader.cancel().catch(() => {});
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const body = new TextDecoder().decode(bytes);
     const values = new URLSearchParams(body).getAll("next");
     return values.length === 1 ? safeReturnPath(values[0]) : null;
   } catch {

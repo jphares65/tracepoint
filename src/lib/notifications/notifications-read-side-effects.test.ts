@@ -96,7 +96,6 @@ stub(require.resolve("../tracepoint/agency-training-notifications.ts"), { collec
 const fetched: string[] = [];
 globalThis.fetch = (async (input: any) => { fetched.push(String(input)); return Response.json({ error: "source unavailable in test" }, { status: 503 }); }) as typeof fetch;
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const route = require("../../app/api/notifications/route.ts");
 
 const get = async () => {

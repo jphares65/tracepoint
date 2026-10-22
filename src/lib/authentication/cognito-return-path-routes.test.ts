@@ -41,11 +41,8 @@ stub(require.resolve("./cognito-runtime-transport.ts"), {
   cognitoProviderDisabledResponse: () => Response.json({ code: "provider_disabled" }, { status: 503 }),
 });
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const loginRoute = require("../../app/api/auth/cognito/login/route.ts");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const callbackRoute = require("../../app/api/auth/cognito/callback/route.ts");
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const signoutRoute = require("../../app/auth/signout/route.ts");
 
 function loginForm(next?: string, extraHeaders: Record<string, string> = {}) {
