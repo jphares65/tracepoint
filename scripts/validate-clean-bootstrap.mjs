@@ -501,7 +501,16 @@ try {
         where tgname = 'fleet_vehicles_safety_hold_clearance_guard'
           and tgrelid = 'public.fleet_vehicles'::regclass and tgenabled <> 'D'
       )
-        and pg_get_functiondef('public.guard_fleet_safety_hold_clearance()'::regprocedure) like '%critical work order is open%' as fleet_safety_hold_clearance_refused_with_open_critical_work
+        and pg_get_functiondef('public.guard_fleet_safety_hold_clearance()'::regprocedure) like '%critical work order is open%' as fleet_safety_hold_clearance_refused_with_open_critical_work,
+      exists (select 1 from public.role_permissions where role_code = 'armorer' and permission_code = 'firearm_custody.manage_storage_locations')
+        and not exists (
+          select 1 from public.departments department
+          where not exists (
+            select 1 from public.department_role_permissions grant_row
+            where grant_row.department_id = department.id and grant_row.role_code = 'armorer'
+              and grant_row.permission_code = 'firearm_custody.manage_storage_locations'
+          )
+        ) as armorer_manages_storage_locations
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
@@ -510,6 +519,12 @@ try {
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw new Error(`AWS-native field-write authorization failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-storage-location-roles.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native storage-location role authorization failed: ${error.message}`, { cause: error });
   }
   try {
     await client.query(await readFile("scripts/validate-local-fleet-inspection-eligibility.sql", "utf8"));
