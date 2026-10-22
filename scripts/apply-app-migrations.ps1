@@ -253,16 +253,21 @@ function Publish-MigrationImage {
       [Text.Encoding]::UTF8.GetBytes(($changedLintFiles | ConvertTo-Json -Compress))
     )
 
-    $build = (Invoke-Aws @(
-      'codebuild','start-build',
-      '--project-name',$settings.Build,
-      '--source-version',$version,
-      '--environment-variables-override',
-      "name=IMAGE_TAG,value=$tag,type=PLAINTEXT",
-      "name=SOURCE_COMMIT,value=$Commit,type=PLAINTEXT",
-      "name=TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64,value=$lintRatchetManifest,type=PLAINTEXT",
-      'name=TRACEPOINT_ARTIFACT_TYPE,value=migration,type=PLAINTEXT'
-    )).build
+    # The request travels in a file: the changed-file manifest alone can exceed
+    # the Windows command-line limit (32,767 characters) and aws.exe then never starts.
+    $buildRequest = Join-Path $dir 'start-build.json'
+    $buildRequestJson = [ordered]@{
+      projectName = $settings.Build
+      sourceVersion = $version
+      environmentVariablesOverride = @(
+        [ordered]@{ name='IMAGE_TAG'; value=$tag; type='PLAINTEXT' },
+        [ordered]@{ name='SOURCE_COMMIT'; value=$Commit; type='PLAINTEXT' },
+        [ordered]@{ name='TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64'; value=$lintRatchetManifest; type='PLAINTEXT' },
+        [ordered]@{ name='TRACEPOINT_ARTIFACT_TYPE'; value='migration'; type='PLAINTEXT' }
+      )
+    } | ConvertTo-Json -Depth 5 -Compress
+    [IO.File]::WriteAllText($buildRequest, $buildRequestJson, [Text.UTF8Encoding]::new($false))
+    $build = (Invoke-Aws @('codebuild','start-build','--cli-input-json',"file://$buildRequest")).build
     $deadline = [DateTimeOffset]::UtcNow.AddMinutes(45)
     do { Start-Sleep -Seconds 15; $state = (Invoke-Aws @('codebuild','batch-get-builds','--ids',$build.id)).builds[0].buildStatus; if ($state -ne 'IN_PROGRESS') { break } } while ([DateTimeOffset]::UtcNow -lt $deadline)
     if ($state -ne 'SUCCEEDED') { throw "Migration image build ended with $state." }

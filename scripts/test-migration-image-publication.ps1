@@ -95,6 +95,8 @@ function Invoke-Aws {
     if ($Arguments[0] -eq 'codebuild' -and $Arguments[1] -eq 'start-build') {
         $global:MigrationBuildCount++
         $global:MigrationBuildStarted=$true
+        if ($Arguments.Count -ne 4 -or $Arguments[2] -cne '--cli-input-json' -or $Arguments[3] -notmatch '^file://') { throw "start-build must take its request from a file: $($Arguments -join ' ')" }
+        $global:MigrationBuildRequest = Get-Content -LiteralPath $Arguments[3].Substring('file://'.Length) -Raw | ConvertFrom-Json
         return @{build=@{id='synthetic-build-id'}}
     }
     if ($Arguments[0] -eq 'codebuild' -and $Arguments[1] -eq 'batch-get-builds') { return @{builds=@(@{buildStatus='SUCCEEDED'})} }
@@ -127,8 +129,9 @@ function Invoke-Aws {
 function git.exe {
     $global:LASTEXITCODE = 0
     $joined = $args -join ' '
-    if ($joined -match 'diff --name-only') { return 'scripts/run-aws-native-migrations.mjs' }
+    if ($joined -match 'diff --name-only') { return $global:MigrationChangedLintFiles }
 }
+$global:MigrationChangedLintFiles = @('scripts/run-aws-native-migrations.mjs')
 function aws.exe { $global:LASTEXITCODE = 0 }
 function Start-Sleep { param([int]$Seconds) }
 
@@ -194,6 +197,23 @@ foreach ($mode in @('reuse','build')) {
     if (@($global:MigrationRequestedImageIds | Where-Object { $_ -ne "imageTag=migration-$('a' * 40)-aws-native-staging" }).Count -ne 0) { throw "The apply action stopped using its dedicated migration image tag: $($global:MigrationRequestedImageIds -join ', ')" }
     if ($global:MigrationRegisteredCommand -ne 'scripts/run-aws-native-migrations.mjs apply staging') { throw 'The apply action did not keep its migration command.' }
 }
+
+# The migration image build request is a file carrying exactly the four overrides, even when the
+# changed-file manifest alone is longer than the Windows command-line limit.
+$global:MigrationChangedLintFiles = @(1..600 | ForEach-Object { "src/lib/synthetic/long-module-name-for-command-line-limit-$_.ts" })
+$expectedManifest = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($global:MigrationChangedLintFiles | ConvertTo-Json -Compress)))
+if ($expectedManifest.Length -le 32767) { throw "The synthetic manifest ($($expectedManifest.Length) characters) does not exceed the command-line limit." }
+Reset-MigrationScenario -Mode 'build' -Scan 'clean'
+$global:MigrationBuildRequest = $null
+Invoke-MigrationTask -Commit ('a' * 40) -ScanNow $scanClock -ScanSleep $scanSleep
+$request = $global:MigrationBuildRequest
+if ($null -eq $request) { throw 'The migration image build request was not captured.' }
+if ((@($request.PSObject.Properties.Name) -join ',') -cne 'projectName,sourceVersion,environmentVariablesOverride') { throw "The build request carries unexpected fields: $(@($request.PSObject.Properties.Name) -join ',')" }
+if ($request.projectName -cne 'synthetic-build' -or $request.sourceVersion -cne 'synthetic-version') { throw 'The build request changed its project or source version.' }
+$overrides = @($request.environmentVariablesOverride | ForEach-Object { "$($_.name)=$($_.value)/$($_.type)" })
+$expectedOverrides = @("IMAGE_TAG=migration-$('a' * 40)-aws-native-staging/PLAINTEXT", "SOURCE_COMMIT=$('a' * 40)/PLAINTEXT", "TRACEPOINT_LINT_RATCHET_CHANGED_FILES_B64=$expectedManifest/PLAINTEXT", 'TRACEPOINT_ARTIFACT_TYPE=migration/PLAINTEXT')
+if (($overrides -join '|') -cne ($expectedOverrides -join '|')) { throw 'The build request environment overrides changed.' }
+$global:MigrationChangedLintFiles = @('scripts/run-aws-native-migrations.mjs')
 
 # Read-only actions reuse the immutable application image and never build.
 $readOnlyAllowedCalls = @('ecs describe-services','ecs describe-task-definition','ecr describe-images','ecr describe-image-scan-findings','ecs register-task-definition','ecs run-task','ecs describe-tasks')
