@@ -7,6 +7,7 @@ import {
 } from "@/lib/tracepoint/permissions";
 import { effectiveDepartmentPermissions } from "@/lib/tracepoint/permission-authority";
 import { readBearerToken } from "@/lib/authentication/request-bearer";
+import { returnPathOrHome } from "@/lib/authentication/return-path";
 
 import type { Database } from "./database.types";
 
@@ -187,16 +188,9 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (pathname.toLowerCase() === "/login") {
-    const requestedNext =
-      request.nextUrl.searchParams.get("next") || "/";
-
-    const safeNext =
-      requestedNext.startsWith("/") &&
-      !requestedNext.startsWith("//") &&
-      !requestedNext.startsWith("/login") &&
-      !requestedNext.startsWith("/auth/setup")
-        ? requestedNext
-        : "/";
+    // Same validator as the AWS-native path: rejects "/\host", encoded
+    // slashes and authentication routes, not only "//".
+    const safeNext = returnPathOrHome(request.nextUrl.searchParams.get("next"));
 
     return redirectWithCookies(
       request,

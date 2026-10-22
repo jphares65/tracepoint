@@ -3,6 +3,7 @@
 import { configuredSiteOrigin } from "@/lib/authentication/redirects";
 import { createRuntimeCognitoTransport, isCognitoRuntimeEnabled } from "@/lib/authentication/cognito-runtime-transport";
 import { postOnlySignOutResponse } from "@/lib/authentication/signout-method-core";
+import { readFormReturnPath } from "@/lib/authentication/return-path";
 
 function clearTracePointCookies(response: NextResponse) {
   for (const name of [
@@ -24,7 +25,10 @@ function clearTracePointCookies(response: NextResponse) {
 export async function POST(request: Request) {
   if (isCognitoRuntimeEnabled()) {
     const url = new URL(request.url); url.pathname = "/api/auth/cognito/logout"; url.search = "";
-    return createRuntimeCognitoTransport().logout(new Request(url, {method:"POST",headers:request.headers}));
+    // Idle expiry posts the page the user was on (A-47); explicit sign-out posts
+    // nothing. The transport validates it and applies its CSRF guard first.
+    const returnTo = await readFormReturnPath(request);
+    return createRuntimeCognitoTransport().logout(new Request(url, {method:"POST",headers:request.headers}), { returnTo });
   }
   const loginUrl = new URL('/login', configuredSiteOrigin(process.env.NEXT_PUBLIC_SITE_URL));
   const supabase = await (await import("@/lib/supabase/server")).createClient();

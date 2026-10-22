@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveAuthenticatedPrincipal } from "./request-session";
 import { resolveLoginSession } from "./login-session-core";
-import { isAwsNativePublicPath, loginRedirectTarget, sessionExpiryRedirectTarget } from "./request-proxy-core";
+import { API_NAVIGATION_SIGN_IN_TARGET, isAwsNativePublicPath, isDocumentNavigation, loginRedirectTarget, sessionExpiryRedirectTarget } from "./request-proxy-core";
 import { InvalidApplicationSessionCookieError } from "./request-session-core";
 import { clearLocalSessionState, withoutLocalSessionCookies } from "./session-cleanup";
 import { shouldRouteToPlatformConsole } from "./post-auth-routing-core";
@@ -15,7 +15,9 @@ function signInRequiredResponse(request: NextRequest, clearLocalState = false) {
  const pathname=request.nextUrl.pathname;
  const target = sessionExpiryRedirectTarget(pathname,request.nextUrl.search);
  const response = isApi(pathname)
-  ? NextResponse.json({error:"Authentication is required."},{status:401,headers:noStore})
+  ? isDocumentNavigation(request.headers)
+   ? NextResponse.redirect(new URL(API_NAVIGATION_SIGN_IN_TARGET,request.url),{headers:noStore})
+   : NextResponse.json({error:"Authentication is required."},{status:401,headers:noStore})
   : target===null
    ? NextResponse.next({request})
    : NextResponse.redirect(new URL(target,request.url));
