@@ -141,6 +141,10 @@ export async function POST(request: NextRequest) {
     if (updatedNotes.length > 15000) {
       return errorResponse("The equipment record has reached its notes limit. Ask an equipment manager to review it.", 409);
     }
+    // D-2: members have no direct asset update right under the AWS runtime.
+    if (!context.canManage && process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native") {
+      return nativeConditionReport(context, id, condition, notes, asset.notes);
+    }
 
     let query = context.admin.from("equipment_assets")
       .update({ lifecycle_status: "out_of_service", notes: updatedNotes, updated_by: context.user.id })
@@ -297,6 +301,30 @@ async function nativeCustody(
     context.user.id,
     action === "check-out" ? "checked-out" : "checked-in",
   );
+}
+
+// The bounded database function stores the report and its audit event in one
+// transaction (database/aws/066), for the custodian or for available equipment.
+async function nativeConditionReport(
+  context: { admin: any; departmentId: string; user: { id: string } },
+  id: string,
+  condition: string,
+  notes: string,
+  expectedNotes: string | null,
+) {
+  const { data, error } = await context.admin.rpc("report_equipment_condition", {
+    p_department_id: context.departmentId,
+    p_asset_id: id,
+    p_condition: condition,
+    p_note: notes,
+    p_expected_notes: expectedNotes,
+  });
+  if (error?.code === "42501") {
+    return errorResponse("Only the current custodian or an equipment manager can report this assigned asset.", 403);
+  }
+  if (error) return custodyWriteFailure("report_condition_asset_update", error);
+  if (!data) return errorResponse("Equipment was changed before this report could be saved. Refresh and try again.", 409);
+  return custodyResponse(context.admin, context.departmentId, data as EquipmentAsset, context.user.id, "condition-reported");
 }
 
 function normalizeIdentifier(value: unknown) {

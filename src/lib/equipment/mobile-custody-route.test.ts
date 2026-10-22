@@ -66,3 +66,23 @@ test("aws-native custody transfers use the bounded database function after the r
   assert.match(native, /checked out by someone else/);
   assert.match(native, /custody changed before check-in completed/);
 });
+
+test("D-2: an aws-native condition report by a non-manager uses the bounded database function", async () => {
+  const route = await readFile(routePath, "utf8");
+  const post = route.slice(route.indexOf("export async function POST"), route.indexOf("async function nativeCustody"));
+  const report = post.slice(post.indexOf('if (action === "report-condition")'));
+  const nativeBranch = /if \(!context\.canManage && process\.env\.TRACEPOINT_RUNTIME_PROVIDER_MODE === "aws-native"\) \{\s*return nativeConditionReport\(context, id, condition, notes, asset\.notes\);/;
+
+  // After the policy and notes-limit checks, before the direct update the AWS subject is not permitted.
+  assert.ok(report.indexOf("validateConditionReport(") < report.search(nativeBranch));
+  assert.ok(report.indexOf("notes limit") < report.search(nativeBranch));
+  assert.ok(report.search(nativeBranch) < report.indexOf('.from("equipment_assets")'));
+  const native = route.slice(route.indexOf("async function nativeConditionReport"));
+  assert.match(native, /rpc\("report_equipment_condition"/);
+  assert.match(native, /p_department_id: context\.departmentId/);
+  assert.match(native, /p_expected_notes: expectedNotes/);
+  // A refusal is a 403, a changed asset a 409; nothing is reported as success unless the function returned the asset.
+  assert.match(native, /error\?\.code === "42501"[\s\S]*?403/);
+  assert.match(native, /if \(!data\) return errorResponse\("Equipment was changed before this report could be saved\. Refresh and try again\.", 409\);/);
+  assert.match(native, /custodyResponse\(context\.admin, context\.departmentId, data as EquipmentAsset, context\.user\.id, "condition-reported"\)/);
+});

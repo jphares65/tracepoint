@@ -21,8 +21,9 @@ This branch carries the integration lineage's fixes onto the deployable lineage.
 |---|---|---|---|
 | 064 | `064_armorer_storage_location_permission.sql` | 055 on `c844398c` | pending, never applied anywhere |
 | 065 | `065_inventory_idempotency_and_recipients.sql` | 056 on `c844398c` | pending, never applied anywhere |
-| 066 | reserved: B8a armory history contract | was reserved 064 | no file |
-| 067 | reserved: B6 notification job recipients | was reserved 065 | no file |
+| 066 | `066_equipment_condition_report.sql` | new (D-2) | pending, never applied anywhere |
+| 067 | reserved: B8a armory history contract | was reserved 064, then 066 | no file |
+| 068 | reserved: B6 notification job recipients | was reserved 065, then 067 | no file |
 
 The real migrations take 064/065 because the manifest test and the runner both require contiguous files;
 the two reservations have no file and no ledger row, so moving them changes nothing applied. Only the
