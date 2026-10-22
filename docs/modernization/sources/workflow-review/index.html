@@ -1,0 +1,342 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>TracePoint Intuitive Workflow &amp; Usability Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: field-test report — contents rail, workflow step tables as the spine, module matrix, evidence figures */
+:root{
+  --bg:#f5f6f8; --surface:#fff; --ink:#141922; --muted:#586272; --line:#dce1e8;
+  --accent:#2350d8; --accent-soft:#e8eefc;
+  --good:#1c7a46; --good-soft:#e4f4ea; --warn:#9a5a00; --warn-soft:#fff3df; --bad:#b42318; --bad-soft:#fdeceb; --shot:#0b111b;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1016; --surface:#151a22; --ink:#e6eaf0; --muted:#98a3b3; --line:#29303b; --accent:#86a6ff; --accent-soft:#1a2340;
+  --good:#6fd29b; --good-soft:#11291c; --warn:#f0b65c; --warn-soft:#33240d; --bad:#ff8c82; --bad-soft:#3a1715; --shot:#05080d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1016; --surface:#151a22; --ink:#e6eaf0; --muted:#98a3b3; --line:#29303b; --accent:#86a6ff; --accent-soft:#1a2340;
+  --good:#6fd29b; --good-soft:#11291c; --warn:#f0b65c; --warn-soft:#33240d; --bad:#ff8c82; --bad-soft:#3a1715; --shot:#05080d; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15.5px;line-height:1.6}
+.wrap{max-width:1220px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:30px 80px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:40px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;font-size:13.5px}
+nav.toc .lbl{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:4px 0 4px 10px;border-left:2px solid var(--line)}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--accent);border-left-color:var(--accent);outline:none}
+main{min-width:0}
+header.top{border-bottom:1px solid var(--line);padding-bottom:20px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:var(--f-display);font-size:clamp(28px,4vw,40px);line-height:1.1;margin:6px 0 10px;text-wrap:balance}
+h2{font-family:var(--f-display);font-size:25px;line-height:1.2;margin:50px 0 12px;text-wrap:balance;scroll-margin-top:16px}
+h3{font-size:17px;margin:24px 0 6px;line-height:1.35}
+p{margin:0 0 12px;max-width:76ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted)}
+.meta b{color:var(--ink);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--muted);margin-top:12px}
+.tag{display:inline-block;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:3px;vertical-align:2px;white-space:nowrap}
+.t-v{background:var(--good-soft);color:var(--good)}
+.t-c{background:var(--accent-soft);color:var(--accent)}
+.t-n{background:var(--warn-soft);color:var(--warn)}
+.big{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin:14px 0}
+.big div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.big .v{font-family:var(--f-mono);font-size:26px;font-weight:500;font-variant-numeric:tabular-nums}
+.big .k{font-size:13.5px;color:var(--muted);line-height:1.4}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-top:1px solid var(--line)}
+th{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--bg);border-top:0;white-space:nowrap}
+td.n{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:center;white-space:nowrap}
+table.wf{min-width:860px}
+table.matrix{min-width:980px}
+table.matrix td.m{text-align:center;font-weight:600;width:2.6em}
+.y{color:var(--good)} .p{color:var(--warn)} .x{color:var(--bad)}
+.save{font-family:var(--f-mono);color:var(--good);white-space:nowrap}
+.mod{padding:18px 0;border-top:1px solid var(--line)}
+.mod h3{margin-top:0;font-family:var(--f-display);font-size:20px}
+.mod .who{font-size:13px;color:var(--muted);margin:-2px 0 8px}
+.mod ul{margin:4px 0 0;padding-left:18px}
+.mod li{margin:4px 0;font-size:14.5px}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:20px;align-items:start}
+figure{margin:0;background:var(--shot);border:1px solid var(--line);border-radius:8px;padding:6px}
+figure img{display:block;width:100%;height:auto;border-radius:4px}
+figcaption{font-size:12px;color:var(--muted);background:var(--surface);margin:6px -6px -6px;padding:6px 10px;border-radius:0 0 7px 7px}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:14px 0}
+.figs.phone{grid-template-columns:repeat(auto-fit,minmax(160px,220px))}
+ol.pri{list-style:none;counter-reset:p;padding:0;margin:10px 0}
+ol.pri li{counter-increment:p;display:grid;grid-template-columns:2.4em minmax(0,1fr) auto;gap:0 12px;padding:12px 0;border-top:1px solid var(--line)}
+ol.pri li::before{content:counter(p,decimal-leading-zero);font-family:var(--f-mono);color:var(--accent)}
+ol.pri b{display:block}
+ol.pri span.d{color:var(--muted);font-size:14px}
+ol.pri .e{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+.callout{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:6px;padding:14px 16px;margin:14px 0}
+.callout p:last-child{margin-bottom:0}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--accent-soft);padding:1px 5px;border-radius:3px}
+a{color:var(--accent)}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)} nav.toc{display:none} .split{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sections">
+  <div class="lbl">Contents</div>
+  <a href="#summary">Summary</a>
+  <a href="#nav">Navigation</a>
+  <a href="#workflows">Workflow measurements</a>
+  <a href="#matrix">Module scorecard</a>
+  <a href="#modules">Module findings</a>
+  <a href="#mobile">Phone &amp; tablet</a>
+  <a href="#terms">Terminology</a>
+  <a href="#priorities">Prioritized fixes</a>
+  <a href="#untested">Needs more testing</a>
+</nav>
+
+<main>
+<header class="top">
+  <div class="eyebrow">Phase 2 · Part 2</div>
+  <h1>TracePoint Intuitive Workflow &amp; Usability Review</h1>
+  <div class="meta"><span>Date <b>22 Oct 2026</b></span><span>Build <b>22e543d</b> (unchanged for every observation)</span><span>Tenant <b>Demo Township PD</b></span><span>Account <b>John Doe · Administrator + Chief</b></span><span>Viewports <b>1280 · 768 · 375 (browser emulation)</b></span></div>
+  <div class="legend">
+    <span><span class="tag t-v">Verified</span> seen in the browser</span>
+    <span><span class="tag t-c">Code-checked</span> read in the deployed source, not exercised</span>
+    <span><span class="tag t-n">Needs testing</span> needs another role, device or approval</span>
+  </div>
+  <p style="margin-top:14px;font-size:14px;color:var(--muted)">This was read-only. Forms were opened and closed without saving, and no settings or records changed in this pass. Phone results come from browser emulation at 375px, not native iOS or Android. Everything was done as an administrator, so what an officer, instructor or armorer can see still needs checking with those roles. Visual issues are in the <a href="https://claude.ai/artifact/TQw1XvNi2ErmUHEGA14GT6">Visual Review</a>, and functional defects are in the <a href="https://claude.ai/artifact/Q1hQC4tcAefShHUgA7kynf">Validation Handoff</a>. Neither is repeated here.</p>
+</header>
+
+<section id="summary">
+<h2>Summary</h2>
+<p>TracePoint's individual forms are usually understandable: labels are in plain law-enforcement language, and several flows are thoughtfully designed (Create Training Event, Pre-Range Readiness, the Off-Duty request, the record-page custody explanation). Where it struggles is <b>getting people to the right place and back</b>. Navigation is organized around modules, not jobs. Nothing is personal ("my gear", "my quals", "my approvals"). Records rarely have their own URL. Dashboards point to module home pages instead of the record that needs attention, and several tasks are split across two or three screens.</p>
+<div class="big">
+  <div><div class="v">0</div><div class="k">screens built around "me": no My Gear, My Qualifications or My Approvals view</div></div>
+  <div><div class="v">3</div><div class="k">places that list "what needs attention": Home inbox, Command Pulse, Training Alerts</div></div>
+  <div><div class="v">3</div><div class="k">entry points to Import, with contradictory capability messages</div></div>
+  <div><div class="v">4</div><div class="k">pairs of duplicate configuration screens (rules stored in both a module and Settings)</div></div>
+  <div><div class="v">~30</div><div class="k">clicks to set up and score one 3-officer, 1-drill range day (estimated ~15 after fixes)</div></div>
+  <div><div class="v">41×23</div><div class="k">px Pass/Defect buttons in the phone vehicle inspection (44×44 is the minimum)</div></div>
+</div>
+</section>
+
+<section id="nav">
+<h2>Primary navigation</h2>
+<div class="split"><div>
+<ul>
+<li><span class="tag t-v">Verified</span> <b>Grouped by system, not by job.</b> An instructor's day spans Training (Range Days), Readiness (Qualifications) and Settings (qualification rules). An armorer's spans Armory, Assets &amp; Fleet (Equipment, Inventory) and Settings (secure storage).</li>
+<li><span class="tag t-v">Verified</span> <b>No personal entry point.</b> "My Home" is an inbox, not a view of the officer's own gear, vehicle, qualifications or requests.</li>
+<li><span class="tag t-c">Code-checked</span> <b>A <code>/notifications</code> page exists but isn't in the menu.</b> Users can't find it except by URL.</li>
+<li><span class="tag t-v">Verified</span> <b>There's no global search</b> for an officer, serial, unit number or plate. Every lookup starts by picking the right module.</li>
+<li><span class="tag t-v">Verified</span> <b>Menu labels and page titles disagree:</b> "Range Days" opens "Range &amp; Training", "Qualifications" opens "Qualification History", "Requests &amp; Approvals" opens "Off-Duty Firearms".</li>
+<li><span class="tag t-v">Verified</span> <b>Every group is collapsed by default.</b> Reaching any second-level page takes two clicks, or three on a phone including the hamburger.</li>
+</ul>
+<p><b>Simplify:</b> keep the modules, but add <b>"Home / My work"</b> at the top (my gear, my vehicle, my qualifications, my requests, my approvals) and a global search box in a top bar. Expand the active group by default and remember the last state. This doesn't remove any capability.</p>
+</div><figure><img src="img/dashboard.jpg" alt="Sidebar navigation beside Command Pulse" loading="lazy"><figcaption>Module-first sidebar. Nothing is personal, and there's no search.</figcaption></figure></div>
+</section>
+
+<section id="workflows">
+<h2>Workflow measurements</h2>
+<p>Each task was walked from a realistic starting point as a first-time user. Clicks count deliberate taps and selections; typing a value counts as one. "Screens" counts page changes plus panels that replace the view. Counts are as observed on build <code>22e543d</code>. Proposed counts are estimates.</p>
+<div class="tbl"><table class="wf">
+<thead><tr><th>Role · task</th><th>Start</th><th>Path today</th><th>Clicks</th><th>Screens</th><th>Friction</th><th>Proposed path</th><th>Est. saved</th></tr></thead>
+<tbody>
+<tr><td><b>Officer</b> · find my firearms and equipment <span class="tag t-n">Role</span></td><td>Home</td><td>Armory ▸ Department Firearms ▸ search own name · Assets &amp; Fleet ▸ Equipment ▸ Officer Readiness tab ▸ find self</td><td class="n">7</td><td class="n">2</td><td>Two modules, department-wide lists, no "mine" filter. Officers may not be allowed to see either list.</td><td>"My gear" card on Home lists assigned firearms, equipment and vehicle</td><td class="save">−7</td></tr>
+<tr><td><b>Officer</b> · inspect assigned vehicle (phone)</td><td>Home</td><td>☰ ▸ Assets &amp; Fleet ▸ Fleet Management ▸ scroll (row at y=861) ▸ row ▸ Quick Inspect ▸ Start Inspection ▸ scroll 2 screens ▸ Submit</td><td class="n">8</td><td class="n">3</td><td>"Quick Inspect" then a second "Start Inspection". OPEN is three screens to the right. Close is the main button.</td><td>QR label or "My vehicle" card ▸ checklist opens directly ▸ sticky Submit</td><td class="save">−5</td></tr>
+<tr><td><b>Officer</b> · report a vehicle issue</td><td>Home</td><td>Path to vehicle (4) ▸ Report Issue ▸ category, priority, what's wrong, details, mileage, hours, safe-to-operate ▸ Submit to Mechanic</td><td class="n">12</td><td class="n">3</td><td>"Priority" and "Safe to operate" ask the same question. Mileage is re-typed.</td><td>From My vehicle: what's wrong, can it be driven?, optional photo. Priority comes from the drivability answer, mileage from the last inspection.</td><td class="save">−6</td></tr>
+<tr><td><b>Officer</b> · report an equipment issue <span class="tag t-n">Role</span></td><td>Home</td><td>No "report issue" action was found on Equipment or Inventory for an individual item</td><td class="n">—</td><td class="n">—</td><td>No visible path. Officers would have to tell someone.</td><td>"Report a problem" on each item in My gear</td><td class="save">new path</td></tr>
+<tr><td><b>Officer</b> · check my qualifications and training</td><td>Home</td><td>Readiness ▸ Qualifications ▸ find self in list · Readiness ▸ Certifications (agency view)</td><td class="n">5</td><td class="n">2</td><td>Department views only. Training requirements aren't shown per person.</td><td>"My readiness" card: status, due dates, next range day</td><td class="save">−5</td></tr>
+<tr><td><b>Officer</b> · act on a notification</td><td>Home</td><td>Home inbox (failed to load, see handoff SV-05) · <code>/notifications</code> not in the menu · Training Alerts is a separate inbox</td><td class="n">—</td><td class="n">—</td><td>No reliable single place. Even when the inbox works, items open module roots.</td><td>One inbox (bell plus Home) where each item opens its record</td><td class="save">−2 per item</td></tr>
+<tr><td><b>Instructor</b> · create a range day, roster 3 officers, score 1 drill (Day and Night runs)</td><td>Range Days</td><td>New Range Day (record saved immediately) ▸ details ▸ Roster: 3 × (select, Add, firearm, Present) ▸ Drills ▸ Add Drill ▸ Add to day ▸ Scoring ▸ drill ▸ run ▸ 3 scores ▸ Save ▸ run ▸ 3 scores ▸ Save</td><td class="n">≈30</td><td class="n">5 tabs</td><td>Roster is one officer at a time. Each officer's duty firearm is picked by hand. Drills are re-added every time.</td><td>Multi-select roster, duty firearms filled in, "Mark all present", day templates that bring their standard drills</td><td class="save">−12 to −15</td></tr>
+<tr><td><b>Instructor</b> · correct a saved score</td><td>Scoring</td><td>Edit the score ▸ Save. The save is refused silently (handoff SV-01). Results tab is read-only.</td><td class="n">2</td><td class="n">1</td><td>No "edit result" affordance or reason field, so correction feels like overwriting.</td><td>"Correct result" on the Results row with a reason and history</td><td class="save">clarity</td></tr>
+<tr><td><b>Instructor</b> · close out a range day</td><td>Range day</td><td>Overview ▸ Status dropdown ▸ Completed (or Locked) ▸ Save Range Day</td><td class="n">3</td><td class="n">1</td><td>No finalize step showing unscored officers or open drills. "Locked" isn't explained.</td><td>"Close range day" button opens a summary (unscored, failures, remediation), then Confirm</td><td class="save">±0, safer</td></tr>
+<tr><td><b>Armorer</b> · find a firearm and move it to secure storage</td><td>Firearms</td><td>Search ▸ select row ▸ scroll to the detail panel below the table. Custody transfer lives only on the record page, which the list doesn't link to for ordinary firearms.</td><td class="n">3 + URL</td><td class="n">2</td><td>The record page can be found only from the inspection queue or by URL.</td><td>The row opens the record page (or a drawer with a "Full record" link)</td><td class="save">unblocks</td></tr>
+<tr><td><b>Armorer</b> · set up secure storage before the first transfer</td><td>Custody form</td><td>Read "ask an armory administrator" ▸ Administration ▸ Settings ▸ Rules Engine ▸ Armory ▸ scroll to Secure Storage ▸ add</td><td class="n">6</td><td class="n">3</td><td>Setup is buried in policy rules, with no link from the custody screen.</td><td>"Manage locations" link in the custody form, or inline add</td><td class="save">−5</td></tr>
+<tr><td><b>Armorer</b> · inspect a firearm</td><td>Armory</td><td>Maintenance &amp; Inspections ▸ New Inspection ▸ choose the firearm from all firearms ▸ 19 items ▸ Save</td><td class="n">22+</td><td class="n">2</td><td>Starting from the firearm record pre-selects it, but that record is hard to reach. Inspection history isn't shown afterwards.</td><td>"Inspect" on the firearm row. Checklist marks failures only. History is visible on the record.</td><td class="save">−2</td></tr>
+<tr><td><b>Armorer</b> · reconcile ammunition</td><td>Armory</td><td>Reconciliation (blank page) <i>or</i> Ammunition ▸ Physical Count tab</td><td class="n">2</td><td class="n">1–2</td><td>Two homes for counting. The one named "Reconciliation" is empty.</td><td>One "Count &amp; reconcile" view inside Ammunition</td><td class="save">−1, clarity</td></tr>
+<tr><td><b>Supervisor</b> · find what needs attention</td><td>Home</td><td>Home inbox · Command Pulse attention list · Training Alerts. Each counts differently (handoff SV-04 to SV-08).</td><td class="n">3–5</td><td class="n">3</td><td>No single source of truth.</td><td>One attention list on Home and Command Pulse, opening records</td><td class="save">−3</td></tr>
+<tr><td><b>Supervisor</b> · go from a dashboard item to the record</td><td>Command Pulse</td><td>Item ▸ module home ▸ search the officer ▸ select ▸ read</td><td class="n">4</td><td class="n">2</td><td>The link drops the context.</td><td>Item ▸ record</td><td class="save">−3</td></tr>
+<tr><td><b>Chief</b> · find pending approvals</td><td>Home</td><td>Off-Duty Firearms ▸ Requests &amp; Approvals ▸ Department Review tab · Armory ▸ Personally Owned Rifles ▸ Review Queue · Home "Approvals" tile</td><td class="n">6</td><td class="n">3</td><td>Approvals live in two module groups. The Home tile relies on the broken inbox.</td><td>One "Approvals" queue (off-duty, rifle program, return-to-service, remediation sign-off)</td><td class="save">−4</td></tr>
+<tr><td><b>Admin</b> · change a module rule</td><td>Settings</td><td>Settings ▸ Rules Engine ▸ module tab ▸ edit ▸ <i>panel</i> Save (the header Save loses the change, handoff SV-29)</td><td class="n">4</td><td class="n">1</td><td>Two Save buttons. Some rules also live inside modules (Ammunition defaults, rifle program settings).</td><td>One location per rule, one Save, a link from the module to its rules</td><td class="save">clarity</td></tr>
+<tr><td><b>Admin</b> · import personnel</td><td>Admin</td><td>Import / Export (menu) ▸ wizard ▸ pick 1 of 3 importers · or Settings ▸ Import / Export tab ▸ "Open Import Wizard ?"</td><td class="n">3</td><td class="n">2</td><td>Three entry points. Contradictory "personnel import is live" versus "preview only" messages.</td><td>One Import page that states clearly what each importer can commit</td><td class="save">−1, trust</td></tr>
+<tr><td><b>Admin</b> · manage a user's access</td><td>Settings</td><td>Settings ▸ Users &amp; Roles ▸ Edit Access (ranks and units in a separate Organization tab)</td><td class="n">3</td><td class="n">1</td><td>Reasonable. Rank and unit assignment are separated from the person.</td><td>Person page: roles, rank, unit, assigned gear</td><td class="save">−1</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="matrix">
+<h2>Module scorecard: the twelve questions</h2>
+<p>Each column is one of the brief's questions: <b>✓</b> yes, <b>~</b> partly, <b>✗</b> no. For "buried actions", "extra steps" and "redundant controls", ✓ means the problem is <i>absent</i>.</p>
+<div class="tbl"><table class="matrix">
+<thead><tr><th>Module</th><th title="Purpose apparent">1 Purpose</th><th title="Primary action obvious">2 Primary</th><th title="First-time understandable">3 First use</th><th title="Logically organized">4 Organized</th><th title="No buried actions">5 Not buried</th><th title="No unnecessary steps">6 Lean</th><th title="Form order natural">7 Form order</th><th title="Terminology clear">8 Terms</th><th title="No redundant controls">9 No dupes</th><th title="Role-appropriate">10 Role fit</th><th title="Works on all widths">11 Responsive</th><th>12 Simplify by</th></tr></thead>
+<tbody>
+<tr><td>My Home</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m">—</td><td class="m y">✓</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td>Personal cards (gear, vehicle, readiness, requests) above the inbox</td></tr>
+<tr><td>Command Pulse</td><td class="m y">✓</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m y">✓</td><td class="m x">✗</td><td class="m">—</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td>Action list first, and items open records</td></tr>
+<tr><td>Analytics</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m">—</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td>Merge "How signals are interpreted" into tooltips</td></tr>
+<tr><td>Dept Firearms</td><td class="m y">✓</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td>Row opens the record. Explain or drop Standard/Focus. Surface Edit and Status.</td></tr>
+<tr><td>Maint. &amp; Inspections</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m p">~</td><td>Checklist marks failures only. Show history.</td></tr>
+<tr><td>Ammunition</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m x">✗</td><td class="m y">✓</td><td class="m p">~</td><td>Merge Reconciliation into Physical Count. Move defaults to Settings.</td></tr>
+<tr><td>Personal Rifles</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m">—</td><td class="m y">✓</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td>One Program Settings location. Hide actions while disabled.</td></tr>
+<tr><td>Range Days</td><td class="m y">✓</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td>Templates, bulk roster, "Close range day", URLs</td></tr>
+<tr><td>Qualifications</td><td class="m y">✓</td><td class="m">—</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m">—</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td>"My qualifications" view for officers</td></tr>
+<tr><td>Certifications</td><td class="m y">✓</td><td class="m x">✗</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td>"Add Certification" opens a setup prompt when no types exist</td></tr>
+<tr><td>Agency Training</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td>Clarify how it differs from Training-type range days</td></tr>
+<tr><td>Training Alerts</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m">—</td><td class="m p">~</td><td class="m x">✗</td><td class="m y">✓</td><td class="m p">~</td><td>Fold into the single inbox. One "Review" action.</td></tr>
+<tr><td>Fleet Management</td><td class="m y">✓</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td>Card list on phone. The row is the link.</td></tr>
+<tr><td>Vehicle record</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m y">✓</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m x">✗</td><td>One "Inspect" primary. Merge Priority and Safety. Status change through a sheet.</td></tr>
+<tr><td>Equipment</td><td class="m y">✓</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td>Guided setup: type, then requirement, then item</td></tr>
+<tr><td>Inventory</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m x">✗</td><td class="m x">✗</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td>Locations out of the More menu. Actions open sheets.</td></tr>
+<tr><td>Agency Documents</td><td class="m p">~</td><td class="m x">✗</td><td class="m x">✗</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m">—</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td>"Use template" on each published row</td></tr>
+<tr><td>Off-Duty Firearms</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td>Remove the system-explanation paragraph</td></tr>
+<tr><td>Settings &amp; Rules</td><td class="m y">✓</td><td class="m x">✗</td><td class="m p">~</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m x">✗</td><td class="m p">~</td><td class="m x">✗</td><td>Left rail. One Save per panel. Personal settings out.</td></tr>
+<tr><td>Import / Export</td><td class="m y">✓</td><td class="m p">~</td><td class="m p">~</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m y">✓</td><td class="m p">~</td><td class="m x">✗</td><td class="m y">✓</td><td class="m p">~</td><td>One entry point, honest capability labels</td></tr>
+<tr><td>Help Center</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m">—</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td class="m y">✓</td><td>Link guides from the screens they describe</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="modules">
+<h2>Module findings</h2>
+
+<div class="mod"><h3>My Home &amp; notifications</h3><div class="who">Every role</div><ul>
+<li><span class="tag t-v">Verified</span> Five summary tiles (Open actions, Critical/High, Approvals, Upcoming range, Due/Expiring), each with "Filter Inbox", then a "Priority Action Queue". That's a good idea, but it's the same inbox five times, and none of it is about the officer's own equipment or status.</li>
+<li><span class="tag t-v">Verified</span> A "Command Dashboard" button sits on Home for command users, so Home and Command Pulse compete as the place to start.</li>
+<li><span class="tag t-c">Code-checked</span> The full <code>/notifications</code> page exists but has no menu link or bell.</li>
+<li><span class="tag t-n">Needs testing</span> What an officer's Home shows. I didn't reload Home in this pass because each load writes notification records (handoff SV-05).</li>
+</ul></div>
+
+<div class="mod"><h3>Command Pulse &amp; Analytics</h3><div class="who">Supervisor · Command · Chief</div><ul>
+<li><span class="tag t-v">Verified</span> <b>Customize Dashboard</b> is a good in-place builder (live preview, card sizes, add or remove, cancel or save). It changes the <i>agency's</i> dashboard, though, and nothing says so on the button.</li>
+<li><span class="tag t-v">Verified</span> Settings ▸ Dashboard Views only links back to Customize Dashboard and Customize Analytics. It's an extra hop with no settings of its own.</li>
+<li><span class="tag t-v">Verified</span> Attention items and tiles open module home pages, so every follow-up starts with a search.</li>
+</ul></div>
+
+<div class="mod"><h3>Armory: Firearms, Inspections, Ammunition, Personally Owned Rifles</h3><div class="who">Armorer · Instructor</div>
+<div class="figs"><figure><img src="img/firearms-focus.jpg" alt="Firearms focus mode with full-width table" loading="lazy"><figcaption>Focus mode: a dense table where clicking a row does nothing visible</figcaption></figure></div><ul>
+<li><span class="tag t-v">Verified</span> <b>The firearm record page can't be reached from the list.</b> In Standard mode the detail panel opens below the table with no "Full record" link for an ordinary firearm. In Focus mode, clicking a row does nothing visible. Custody transfer, inspection history and New Inspection for one firearm all live on that page.</li>
+<li><span class="tag t-v">Verified</span> The <b>Standard / Focus</b> toggle is unexplained, and the two modes have different toolbars ("Group: None" vs "Group by: None", sort select vs header sort).</li>
+<li><span class="tag t-v">Verified</span> The record page explains <b>assignment versus physical custody</b> well ("Who the firearm is assigned to. Physical custody is tracked separately." / "Where the firearm is right now. Changing custody never changes assignment."). Show that wording wherever custody appears.</li>
+<li><span class="tag t-v">Verified</span> Ammunition has five tabs with no URLs. Receiving a lot means 13 fields, with the ammunition type a prerequisite on another tab. "Agency Defaults" (verification schedules) live inside the module, not in Settings.</li>
+<li><span class="tag t-v">Verified</span> <b>Reconciliation</b> is a blank page (a title and one sentence, no empty state or action), while the actual counting lives on Ammunition ▸ Physical Count.</li>
+<li><span class="tag t-v">Verified</span> Personally Owned Rifles has <b>Program Settings</b> that duplicate Settings ▸ Rules Engine ▸ Armory ▸ "Personally Owned Rifle Program".</li>
+</ul></div>
+
+<div class="mod"><h3>Range Days &amp; Qualifications</h3><div class="who">Firearms Instructor · Range Master</div>
+<div class="figs"><figure><img src="img/range-days.jpg" alt="Range Days list" loading="lazy"><figcaption>Range Days: to start, you either click a whole card or "New Range Day", which saves immediately</figcaption></figure><figure><img src="img/qualifications.jpg" alt="Qualification History split view" loading="lazy"><figcaption>Qualifications: the split view works well for supervisors</figcaption></figure></div><ul>
+<li><span class="tag t-v">Verified</span> <b>Attendance and scoring are clear once you find them.</b> Roster ("Officers and firearms") and Scoring ("Live entry board") tabs are labelled with purpose lines, and Quick Actions on Overview jump to them. Pre-Range Readiness is excellent.</li>
+<li><span class="tag t-v">Verified</span> <b>Roster building is one officer at a time</b> (select, Add Officer, choose firearm, Mark Present). Duty firearms already assigned in Armory aren't filled in.</li>
+<li><span class="tag t-v">Verified</span> <b>Qualification requirements aren't visible where scoring happens.</b> Cycles and validity live in Settings ▸ Rules Engine ▸ Range &amp; Qualifications, and the scoring board shows no pass threshold.</li>
+<li><span class="tag t-v">Verified</span> <b>No completion step.</b> Finishing a day means changing a Status dropdown and pressing Save. Nothing summarizes unscored officers or what "Locked" means.</li>
+<li><span class="tag t-v">Verified</span> "Range &amp; Training" range days of type "Training" overlap with Agency Training events, and the screens don't explain when to use which.</li>
+</ul></div>
+
+<div class="mod"><h3>Training, Certifications &amp; Training Alerts</h3><div class="who">Training Supervisor · Instructor · Officer</div>
+<div class="figs"><figure><img src="img/training-event-dialog.jpg" alt="Create Training Event dialog with course library matches" loading="lazy"><figcaption>Create Training Event: the title field searches the course library, a model for other create flows</figcaption></figure></div><ul>
+<li><span class="tag t-v">Verified</span> <b>Agency Training's create flow is the best in the product:</b> a dialog, smart defaults (today, 2-hour block, Draft), course-library matching, and nothing saved until confirmed. Range Days and Equipment should copy it.</li>
+<li><span class="tag t-v">Verified</span> <b>Certifications:</b> "Add Certification" silently does nothing when no certification types exist. The only clue is a sentence elsewhere on the page.</li>
+<li><span class="tag t-v">Verified</span> <b>Training Alerts</b> is a second inbox with its own Acknowledge / Create Remediation / Resolve. Suggested review roles are shown, but alerts aren't routed (the page says so).</li>
+</ul></div>
+
+<div class="mod"><h3>Fleet Management</h3><div class="who">Fleet Manager · Mechanic · Patrol Officer</div>
+<div class="figs"><figure><img src="img/vehicle.jpg" alt="Vehicle record with action buttons and status list" loading="lazy"><figcaption>Vehicle record: three actions compete, and status changes with one click in a side list</figcaption></figure><figure><img src="img/phone-vehicle-inspect.jpg" alt="Phone vehicle inspection with Close Inspection as the main button" loading="lazy"><figcaption>Phone: "Close Inspection" is the most prominent control</figcaption></figure></div><ul>
+<li><span class="tag t-v">Verified</span> To start an inspection: "Quick Inspect" (or the Inspections tab), then "Start Inspection". That's two buttons for one intent, and the second one turns into "Close Inspection" as the panel's main button.</li>
+<li><span class="tag t-v">Verified</span> Report Issue asks for <b>Priority</b> (Normal/High/Critical) and separately <b>Safe to operate</b> (Safe/Limited/Unsafe), and ends with "Submit to Mechanic" in an agency with no mechanic role assigned.</li>
+<li><span class="tag t-v">Verified</span> The "Manage Status" panel changes status with one tap on colored pills. Out of Service and Retired sit beside Available with no confirmation step visible before the reason prompt.</li>
+<li><span class="tag t-v">Verified</span> On a phone, the vehicle list is a desktop table. Tapping the row works, but nothing shows it can be tapped. The visible "OPEN" is three screens to the right.</li>
+</ul></div>
+
+<div class="mod"><h3>Equipment &amp; Inventory</h3><div class="who">Quartermaster · Supervisor · Officer</div><ul>
+<li><span class="tag t-v">Verified</span> <b>Equipment depends on an unexplained order.</b> Both main actions ("Requirement", "Assign/Add to Inventory") need an equipment type, created through a small "Add" in a separate Types bar. With no types the selectors are just empty.</li>
+<li><span class="tag t-v">Verified</span> The Assign form has 16 fields with no grouping by what you know at issue time (who, what, serial) versus maintenance data (lot, inspections).</li>
+<li><span class="tag t-v">Verified</span> Inventory's first-run path is broken for a new user. Receiving stock needs a location, and "Add location" is inside "More". The permanent Checkout form shows even with no stock.</li>
+<li><span class="tag t-v">Verified</span> Three stock systems (Equipment, Inventory, Ammunition) in two menu groups. The page subtitles explain the differences, but the menu doesn't.</li>
+</ul></div>
+
+<div class="mod"><h3>Agency Documents</h3><div class="who">Administrator · Instructor · Supervisor</div><ul>
+<li><span class="tag t-v">Verified</span> "Generate Document" ▸ "Choose template" just scrolls to the template list, which offers Edit, Publish/Unpublish, Duplicate and Archive but no "Use" action. The primary purpose of the screen can't be found.</li>
+<li><span class="tag t-v">Verified</span> The Template Builder's numbered steps ("Set up automatically → Decide fields → Check placement → Publish") are clear and should stay.</li>
+</ul></div>
+
+<div class="mod"><h3>Off-Duty Firearms</h3><div class="who">Officer (submit) · Chief (approve)</div>
+<div class="figs"><figure><img src="img/offduty-request.jpg" alt="Submit Off-Duty Firearm Request panel" loading="lazy"><figcaption>A clear warning and a clear primary action ("Submit to Chief")</figcaption></figure></div><ul>
+<li><span class="tag t-v">Verified</span> The best end-to-end officer form. "Not authorized until approved" sets expectations, fields follow how people think (firearm, accessories, acknowledgements), and the action says who receives it.</li>
+<li><span class="tag t-v">Verified</span> Placeholder-only fields ("Make *") lose their label once typed in. The panel title says "Current Officer" instead of the user's name.</li>
+<li><span class="tag t-n">Needs testing</span> The officer and Chief views under real role accounts.</li>
+</ul></div>
+
+<div class="mod"><h3>Settings, Rules Engine &amp; Import</h3><div class="who">Department Administrator</div>
+<div class="figs"><figure><img src="img/settings-import.jpg" alt="Settings Import / Export tab with broken arrow glyphs and contradictory support notes" loading="lazy"><figcaption>"Open Import Wizard ?" glyph, and a support note that contradicts the wizard</figcaption></figure></div><ul>
+<li><span class="tag t-v">Verified</span> <b>Duplicate configuration screens:</b>
+<ul>
+<li>rifle program (module and Settings)</li>
+<li>ammunition defaults (module only, not in Settings)</li>
+<li>Import / Export (menu item and Settings tab)</li>
+<li>dashboards (Settings tab that only links to the builders)</li>
+<li>secure storage (inside policy rules)</li>
+</ul></li>
+<li><span class="tag t-v">Verified</span> <b>Audit &amp; Security</b> offers "MFA required by department policy" and says "Authentication enforcement will be connected as the security layer is completed." An administrator could reasonably believe MFA is enforced.</li>
+<li><span class="tag t-v">Verified</span> <b>Import messaging contradicts itself.</b> The wizard says personnel and qualification history "import directly into normalized TracePoint records". The Settings tab says they "currently support preview and validation". The links show a broken "?" glyph.</li>
+<li><span class="tag t-v">Verified</span> <b>Organization</b> explains clearly how ranks and units differ from security roles, which is a good model for other explanatory copy.</li>
+</ul></div>
+</section>
+
+<section id="mobile">
+<h2>Phone &amp; tablet workflows</h2>
+<div class="figs phone"><figure><img src="img/phone-range.jpg" alt="Range day card on phone" loading="lazy"><figcaption>One range day fills most of the screen</figcaption></figure><figure><img src="img/phone-vehicle-inspect.jpg" alt="Vehicle inspection on phone" loading="lazy"><figcaption>Five header actions, then the checklist</figcaption></figure></div>
+<ul>
+<li><span class="tag t-v">Verified</span> <b>Field workflows at 375px:</b> inspection Pass/Defect/Critical buttons are 41×23px. Submit is at y≈1,750. The vehicle list row starts below the fold (y=861).</li>
+<li><span class="tag t-v">Verified</span> <b>Scoring at 375px works best of all.</b> Large score inputs, a decimal keypad and a sticky Save bar. Use it as the pattern for inspections.</li>
+<li><span class="tag t-v">Verified</span> <b>Tablet at 768px:</b> navigation collapses into the hamburger. Range and armory tablets lose one-tap module switching.</li>
+<li><span class="tag t-n">Needs testing</span> Native iOS and Android behavior (keyboard covering sticky bars, camera upload for Target Evidence, QR scan to vehicle) wasn't tested. This was browser emulation only.</li>
+</ul>
+</section>
+
+<section id="terms">
+<h2>Terminology</h2>
+<p>Most labels are plain and police-appropriate. These ones confuse:</p>
+<div class="tbl"><table>
+<thead><tr><th>Today</th><th>Where</th><th>Problem</th><th>Suggest</th></tr></thead>
+<tbody>
+<tr><td>Command Pulse / Command Dashboard</td><td>Title vs menu</td><td>Two names for one screen</td><td>Command Dashboard</td></tr>
+<tr><td>Range &amp; Training / Range Days</td><td>Title vs menu</td><td>The title implies Agency Training lives here too</td><td>Range Days</td></tr>
+<tr><td>Standard / Focus</td><td>Firearms</td><td>Doesn't say what changes</td><td>"Show menu" / "Full-width table", or remove</td></tr>
+<tr><td>Packet status</td><td>Range day</td><td>Means "printed range packet ready". Easy to read as an evidence packet.</td><td>Range packet ready</td></tr>
+<tr><td>Hybrid readiness · "Current status is authoritative until automated inspection rules are enabled"</td><td>Fleet</td><td>System jargon</td><td>"Status updates automatically from inspections and repairs."</td></tr>
+<tr><td>Pooled stock · Standing total</td><td>Inventory, Ammunition</td><td>Quartermaster terms that aren't explained</td><td>Shared supplies · On hand</td></tr>
+<tr><td>Restricted (custody tab)</td><td>Firearms</td><td>Could mean restricted duty, a restricted weapon or restricted access</td><td>Duty restrictions</td></tr>
+<tr><td>Requirement / Assign/Add to Inventory</td><td>Equipment</td><td>The slash label hides two different actions</td><td>Add item · Issue to officer · Set required gear</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="priorities">
+<h2>Prioritized usability fixes</h2>
+<p>Ordered by effort saved for the most people. None of them removes a capability.</p>
+<ol class="pri">
+<li><div><b>Every list row and dashboard item opens its record, and records have URLs</b><span class="d">Firearms, Range Days, Fleet, Command Pulse, Training Alerts. Unblocks custody and inspection for armorers. Saves 3–4 clicks per follow-up.</span></div><span class="e">High · M</span></li>
+<li><div><b>"My work" on Home</b><span class="d">My gear, my vehicle (Inspect / Report), my readiness, my requests, my approvals. Officers' core tasks drop from 5–8 clicks to 1–2.</span></div><span class="e">High · M</span></li>
+<li><div><b>One attention inbox</b><span class="d">Merge the Home inbox, Command Pulse attention and Training Alerts into one list. Add a bell in the shell and a menu link to <code>/notifications</code>.</span></div><span class="e">High · M</span></li>
+<li><div><b>One approvals queue for command</b><span class="d">Off-duty, rifle program and remediation sign-off in one place.</span></div><span class="e">High · M</span></li>
+<li><div><b>Field-grade inspection flow</b><span class="d">One "Inspect" action. The checklist opens directly. 44px Pass/Defect targets. Only defects need input. Sticky Submit.</span></div><span class="e">High · S–M</span></li>
+<li><div><b>Range day setup accelerators</b><span class="d">Multi-select roster, duty firearms filled in, "Mark all present", day templates with standard drills, and a "Close range day" summary. About 12–15 fewer clicks per day.</span></div><span class="e">High · M</span></li>
+<li><div><b>Create flows don't save until confirmed</b><span class="d">Range Days uses the Agency Training dialog pattern. No more junk "New Range Day" records.</span></div><span class="e">Med · S</span></li>
+<li><div><b>One home per configuration</b><span class="d">Move rifle program, ammunition defaults and secure storage into Settings ▸ module, with "Manage" links from the module. Remove the Dashboard Views tab.</span></div><span class="e">Med · S</span></li>
+<li><div><b>Guided first-run setup</b><span class="d">Equipment (types → requirements → items), Inventory (location → item → receive), Certifications (type → requirement). Empty states that show the next step.</span></div><span class="e">Med · S</span></li>
+<li><div><b>Global search</b><span class="d">Officer, serial, asset tag, unit number, plate, all from the top bar.</span></div><span class="e">Med · M</span></li>
+<li><div><b>Honest status copy</b><span class="d">MFA "recorded, not yet enforced". Import capability stated once. Remove developer and system notes from the screens.</span></div><span class="e">High · S</span></li>
+<li><div><b>Agency Documents: "Use template" on each published row</b><span class="d">Restores the screen's primary purpose.</span></div><span class="e">High · S</span></li>
+<li><div><b>Merge Reconciliation into Ammunition ▸ Count</b><span class="d">One place to count and reconcile.</span></div><span class="e">Low · S</span></li>
+<li><div><b>Shorter issue reporting</b><span class="d">One severity question, mileage carried over, "Submit" routes to whoever owns fleet repairs.</span></div><span class="e">Med · S</span></li>
+<li><div><b>Align menu labels, page titles and terms</b><span class="d">See the terminology table.</span></div><span class="e">Low · S</span></li>
+</ol>
+</section>
+
+<section id="untested">
+<h2>Needs more testing</h2>
+<ul>
+<li><span class="tag t-n">Role</span> Officer, Instructor, Armorer, Fleet Manager and Supervisor accounts: menu visibility, Home contents, whether officers can see Department Firearms and Equipment, Off-Duty submit and approve end to end.</li>
+<li><span class="tag t-n">Device</span> Native iOS and Android: keyboard and sticky bars, camera evidence, QR label scan to the vehicle record.</li>
+<li><span class="tag t-n">Data</span> Large agencies (200+ firearms, 60 vehicles, 100 officers): filter performance, roster building, list density.</li>
+<li><span class="tag t-n">Approval</span> Notification inbox behavior after the development fix for SV-05, which this review couldn't exercise safely.</li>
+<li><span class="tag t-n">Usability</span> Five-task moderated sessions with one officer, one instructor and one armorer from a pilot agency, to confirm the step-count estimates.</li>
+</ul>
+</section>
+</main>
+</div>
+
+</body></html>
