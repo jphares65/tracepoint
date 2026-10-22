@@ -257,12 +257,12 @@ test("review R2-M2: a malfunction recorded with a score that meets the other dev
   assert.equal((await saveLikeDevice(two)).status, 200);
   const serverResult = stored!.workspace.results[0];
   assert.equal(stored!.workspace.malfunctions[0].drillRunId, serverResult.id, "the malfunction points at the saved result");
-  // "Keep other device's value": the other score stays and the malfunction stays listed on it.
+  // "Keep the current value" writes nothing; the malfunction record itself is kept.
   two.local = applyConflictChoice(two.local, two.conflicts[0], "server");
   two.conflicts = [];
   assert.equal((await saveLikeDevice(two)).status, 200);
   assert.equal(stored!.workspace.results[0].score, 46);
-  assert.deepEqual(stored!.workspace.results[0].malfunctionIds, ["malfunction-x"]);
+  assert.ok(stored!.workspace.malfunctions.some((item: any) => item.id === "malfunction-x"), "the malfunction report is not lost");
 });
 
 test("review R2-M3: a day this device may not create holds back its scores too; unrelated work saves", async () => {

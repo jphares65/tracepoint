@@ -1,0 +1,62 @@
+TAP version 13
+# Subtest: Keep the current value on a finalized day's score writes a change the server refuses, and the conflict can never be cleared
+not ok 1 - Keep the current value on a finalized day's score writes a change the server refuses, and the conflict can never be cleared
+  ---
+  duration_ms: 5.99373
+  type: 'test'
+  location: '/home/user/tracepoint/src/lib/range/zz-r5.test.ts:2:1983'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected "actual" not to be strictly deep-equal to:
+    
+    {
+      completed: true,
+      drillId: 'drill-1',
+      id: 'result-1',
+      malfunctionIds: [],
+      officerId: 'officer-a',
+      passed: true,
+      rangeDayId: 'day-1',
+      runNumber: 1,
+      score: 45
+    }
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    id: 'result-1'
+    rangeDayId: 'day-1'
+    drillId: 'drill-1'
+    runNumber: 1
+    officerId: 'officer-a'
+    score: 45
+    completed: true
+    passed: true
+    malfunctionIds:
+  actual:
+    id: 'result-1'
+    rangeDayId: 'day-1'
+    drillId: 'drill-1'
+    runNumber: 1
+    officerId: 'officer-a'
+    score: 45
+    completed: true
+    passed: true
+    malfunctionIds:
+  operator: 'notDeepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint/src/lib/range/zz-r5.test.ts:37:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 349.78463

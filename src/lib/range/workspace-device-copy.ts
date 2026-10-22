@@ -136,7 +136,8 @@ export function usableDeviceCopy(copy: RangeDayDeviceCopy | null, owner: { userI
 /**
  * Brings this device's work onto the server copy: replays its own changes when
  * the sync point is known, lists everything that differs when it is not, holds
- * back any change the server would refuse, and keeps one conflict per record.
+ * back any change the server would refuse, and keeps every distinct value this
+ * device held for an entry until it is chosen or in use.
  */
 export function recoverWorkspace(input: {
   base: MergeableWorkspace | null;

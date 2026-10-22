@@ -216,6 +216,14 @@ Each round of finer-grained merging had added edge cases, so the conflict model 
 
 **Workflow semantics (flag).** "Use this device's value" now replaces the entry's other fields too, for example an instructor added to a range day after the conflict. This is an explicit, labelled choice, never automatic.
 
+### 3.8 Fifth independent review (of `2c073ae`)
+
+`ux-rb-evidence/review-2c073ae/`:
+- **H1.** "Keep the current value" still merged this device's malfunction ids into the kept score. On a day another device had completed, that change was refused, and it then blocked every later save.
+- **Fix.** "Keep the current value" writes nothing. "Use this device's value" is checked with the server's rule before it is applied; if it would be refused, the entry stays listed with the reason instead of blocking saves. The malfunction record itself is never removed.
+- **After.** The proof fails on its assertion, so the defect is fixed.
+- **Lows.** A re-refused retry needs a reload; non-score conflicts show no values. Both recorded for WP-4.
+
 ## 4. Staging verification (add to `STAGING-VERIFICATION.md` §4)
 
 | Step | Action | Expected | Automated |

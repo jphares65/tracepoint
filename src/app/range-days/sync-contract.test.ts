@@ -70,3 +70,10 @@ test("review R2-H1/R2-M1: drill removal carries the version and never adopts the
   const batch = source.slice(source.indexOf("function handleSaveBatchResults()"), source.indexOf("function handleGeneratePacket()"));
   assert.match(batch, /if \(existingResult && !unsavedBatchOfficerIds\.current\.has\(entry\.officerId\)\) return \[\];/, "review 3177a83 P1: untouched saved results are not rebuilt");
 });
+
+test("review 2c073ae H1: a conflict choice the server would refuse is not applied; the entry stays listed with the reason", async () => {
+  const source = await page();
+  const resolve = source.slice(source.indexOf("function resolveWorkspaceConflict("), source.indexOf("function describeWorkspaceConflict("));
+  assert.match(resolve, /const decision = serverAcceptance\(serverWorkspace\.current, deviceDepartmentId\.current\)\(workspace\);/);
+  assert.ok(resolve.indexOf("if (!decision.ok)") < resolve.indexOf("applyMergeableWorkspace(workspace)"));
+});

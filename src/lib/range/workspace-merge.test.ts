@@ -106,9 +106,9 @@ test("review R2-M1 / 3177a83 P1 / ba6bccf R4-H2: neither choice writes a stale v
   assert.deepEqual([chosen.score, chosen.passed, chosen.deficiencyObserved], [43, true, false], "score and outcome come from the same entry");
 });
 
-test("review ba6bccf: a malfunction recorded on either entry stays listed whichever entry is kept", () => {
+test("review 2c073ae H1: Keep the current value writes nothing, even when this device's entry listed a malfunction", () => {
   const conflict = { collection: "results" as const, id: "result-officer-a", local: { ...result("officer-a", 31), malfunctionIds: ["m-local"] }, server: result("officer-a", 46) };
-  const now = { ...base(), results: [{ ...result("officer-a", 46), malfunctionIds: ["m-other"] }] };
-  assert.deepEqual(applyConflictChoice(now, conflict, "server").results[0].malfunctionIds, ["m-other", "m-local"]);
-  assert.deepEqual(applyConflictChoice(now, conflict, "local").results[0].malfunctionIds, ["m-local", "m-other"]);
+  const now = { ...base(), results: [result("officer-a", 46)] };
+  assert.equal(applyConflictChoice(now, conflict, "server"), now);
+  assert.deepEqual(applyConflictChoice(now, conflict, "local").results[0], conflict.local, "this device's whole entry");
 });

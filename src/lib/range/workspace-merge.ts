@@ -1,9 +1,9 @@
 // UX-RB-5: conflict recovery for the whole-workspace range save. When another
 // device saved first, this device's own changes since its last sync are replayed
 // onto the server copy record by record. Nothing typed on this device is
-// discarded: where both devices changed the same record, the server's value
-// stays in the workspace and this device's value is kept as a visible conflict
-// the instructor resolves. A replayed change the server would refuse (for
+// discarded: where both devices changed the same record, the current value
+// stays in the workspace and this device's whole entry is kept as a visible
+// conflict until the instructor chooses. A replayed change the server would refuse (for
 // example a score for a day another device finalized) is held back the same
 // way, so it cannot block every later save.
 import { stable } from "./workspace-client-state.ts";
@@ -158,9 +158,6 @@ function withResultIds(item: Keyed, renamed: Map<string, string>) {
   return fields.length ? { ...item, ...Object.fromEntries(fields.map((field) => [field, renamed.get(item[field] as string)])) } : item;
 }
 
-const malfunctionIdsOf = (record: Keyed | null | undefined) =>
-  Array.isArray(record?.malfunctionIds) ? (record!.malfunctionIds as unknown[]).filter((id): id is string => typeof id === "string") : [];
-
 function withRecord(workspace: MergeableWorkspace, collection: WorkspaceCollection, id: string, value: Keyed | null): MergeableWorkspace {
   const items = workspace[collection] ?? [];
   const index = items.findIndex((item) => idOf(item) === id);
@@ -235,21 +232,13 @@ export function currentRecord(workspace: MergeableWorkspace, conflict: Pick<Work
 /**
  * The instructor's choice for a conflicted record. A conflict stands until this
  * choice is made, or until the record's current value equals this device's.
- * - "local": this device's whole record replaces the current one (or this
+ * - "local": this device's whole entry replaces the current one (or this
  *   device's deletion), so a score and its pass/fail outcome always come from
  *   the same entry (review ba6bccf R4-H2).
- * - "server": nothing is written; the record keeps its current value.
- * Either way a malfunction this device recorded with a score stays listed on it
- * (review R2-M2).
+ * - "server": nothing is written (review 2c073ae H1).
  */
 export function applyConflictChoice(workspace: MergeableWorkspace, conflict: WorkspaceConflict, choice: "local" | "server" = "local"): MergeableWorkspace {
-  const current = currentRecord(workspace, conflict);
-  const chosen = choice === "local" ? conflict.local : current;
-  if (!chosen) return choice === "local" ? withRecord(workspace, conflict.collection, conflict.id, null) : workspace;
-  if (conflict.collection !== "results") return choice === "local" ? withRecord(workspace, conflict.collection, conflict.id, chosen) : workspace;
-  const ids = [...malfunctionIdsOf(chosen), ...[...malfunctionIdsOf(conflict.local), ...malfunctionIdsOf(current)].filter((id, index, all) => !malfunctionIdsOf(chosen).includes(id) && all.indexOf(id) === index)];
-  const next = ids.length === malfunctionIdsOf(chosen).length ? chosen : { ...chosen, malfunctionIds: ids };
-  return choice === "server" && next === current ? workspace : withRecord(workspace, conflict.collection, conflict.id, next);
+  return choice === "local" ? withRecord(workspace, conflict.collection, conflict.id, conflict.local) : workspace;
 }
 
 export const EMPTY_MERGEABLE_WORKSPACE: MergeableWorkspace = {

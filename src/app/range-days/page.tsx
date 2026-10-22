@@ -2032,6 +2032,8 @@ export default function RangeDaysPage() {
   // Whether syncedWorkspace is a real sync point (false for a copy whose sync point is unknown).
   const baseKnown = useRef(false);
   const deviceDepartmentId = useRef<string | null>(null);
+  // The server's copy as last loaded or saved, for checking a conflict choice.
+  const serverWorkspace = useRef<Partial<StoredRangeDayWorkspace>>({});
   const localCopy = useRef<unknown>(null);
   const refusalRecoveredFor = useRef<string | null | undefined>(undefined);
   const [deviceCopyFailed, setDeviceCopyFailed] = useState(false);
@@ -3076,6 +3078,7 @@ export default function RangeDaysPage() {
 
   function setLoadedWorkspaceBaseline(remoteWorkspace: Partial<StoredRangeDayWorkspace>) {
     loadedWorkspaceBaseline.current = workspaceBaselineFor(remoteWorkspace, currentUserId);
+    serverWorkspace.current = remoteWorkspace;
   }
 
   // Review H1: the server's own decision for a merged workspace, so a replayed
@@ -3138,6 +3141,7 @@ export default function RangeDaysPage() {
     }
     try {
       await saveRemoteRangeDayWorkspace(workspace);
+      serverWorkspace.current = workspace;
       const clientForm = snapshotClientForms.current.get(workspace);
       if (clientForm) {
         syncedWorkspace.current = clientForm;
@@ -3219,6 +3223,18 @@ export default function RangeDaysPage() {
   // conflicts are kept together so a reload cannot lose it.
   function resolveWorkspaceConflict(conflict: WorkspaceConflict, keepThisDevice: boolean) {
     const workspace = applyConflictChoice(latestWorkspaceState.current, conflict, keepThisDevice ? "local" : "server");
+    // Review 2c073ae: a choice the server would refuse is not applied (it would
+    // block every later save); the entry stays listed with the reason.
+    if (keepThisDevice) {
+      const decision = serverAcceptance(serverWorkspace.current, deviceDepartmentId.current)(workspace);
+      if (!decision.ok) {
+        const conflicts = workspaceConflictsRef.current.map((item) => (conflictKey(item) === conflictKey(conflict) ? { ...item, reason: decision.error } : item));
+        workspaceConflictsRef.current = conflicts;
+        setWorkspaceConflicts(conflicts);
+        persistDeviceCopy(undefined, conflicts);
+        return;
+      }
+    }
     const conflicts = workspaceConflictsRef.current.filter((item) => conflictKey(item) !== conflictKey(conflict));
     workspaceConflictsRef.current = conflicts;
     setWorkspaceConflicts(conflicts);
