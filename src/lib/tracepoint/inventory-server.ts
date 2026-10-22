@@ -27,7 +27,7 @@ export function nullableText(value: unknown, maximum = 500) { return text(value,
 export function quantity(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? Math.round(parsed * 1000) / 1000 : NaN; }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-// One request, one record (055). An absent key is accepted from pages loaded
+// One request, one record (056). An absent key is accepted from pages loaded
 // before this release; a malformed one is refused rather than ignored.
 export function idempotencyKey(value: unknown): { ok: true; key: string | null } | { ok: false } {
   if (value === undefined || value === null || value === "") return { ok: true, key: null };
@@ -36,7 +36,7 @@ export function idempotencyKey(value: unknown): { ok: true; key: string | null }
 export function invalidIdempotencyKey() {
   return NextResponse.json({ error: "The request key is invalid. Reload the page and try again." }, { status: 400 });
 }
-// 23505 from the 055 functions: the key already recorded a different request,
+// 23505 from the 056 functions: the key already recorded a different request,
 // and nothing was written by this one.
 export function inventoryRpcFailure(error: { code?: string; message?: string }, conflictText: string) {
   if (error.code === "23505")

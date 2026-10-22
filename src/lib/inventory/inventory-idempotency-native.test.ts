@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import { localPostgresPort } from "../../test-support/local-postgres-port.mjs";
 import { PostgresDataClient } from "../database/postgres-data-client.ts";
 
-// 055: one request, one record (D-65, C-07), and the recipient directory
+// 056: one request, one record (D-65, C-07), and the recipient directory
 // (D-62, D-63), on real PostgreSQL with the 035-037 schema underneath.
 const require = createRequire(import.meta.url);
 const { default: EmbeddedPostgres } = require("embedded-postgres") as {
@@ -75,7 +75,7 @@ before(async () => {
     create table public.firearm_inspections(id uuid primary key default gen_random_uuid(),department_id uuid not null,firearm_id uuid);
     create function public.is_department_member(p_department_id uuid) returns boolean language sql stable as $$select exists(select 1 from public.department_memberships where department_id=p_department_id and user_id=tracepoint_auth.subject_id() and is_active)$$;
     create function public.has_department_permission(p_department_id uuid,p_permission_code text) returns boolean language sql stable as $$select public.is_department_member(p_department_id)$$;`);
-  for (const file of ["035_inventory_phase1.sql", "036_inventory_checkout_phase2a.sql", "037_inventory_management_runtime_grants.sql", "055_inventory_idempotency_and_recipients.sql"]) {
+  for (const file of ["035_inventory_phase1.sql", "036_inventory_checkout_phase2a.sql", "037_inventory_management_runtime_grants.sql", "056_inventory_idempotency_and_recipients.sql"]) {
     const sql = await readFile(`database/aws/${file}`, "utf8");
     await client.query(sql);
     await client.query(sql);

@@ -1,6 +1,6 @@
 import type { RecipientOption } from "./recipient-picker";
 
-// Rows of public.inventory_recipient_directory() (055): every member and fleet
+// Rows of public.inventory_recipient_directory() (056): every member and fleet
 // vehicle of the caller's agency, with inactive members and retired vehicles
 // flagged so an existing checkout keeps its holder's name (D-62, D-63).
 export type RecipientDirectoryRow = {

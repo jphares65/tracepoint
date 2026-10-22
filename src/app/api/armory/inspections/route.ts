@@ -143,7 +143,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // C-07: a request key (055) makes a resubmitted inspection, for example a
+    // C-07: a request key (056) makes a resubmitted inspection, for example a
     // retry after a lost connection, return the first one instead of
     // recording a duplicate inspection and a second status change.
     const rawKey = body.idempotencyKey;
