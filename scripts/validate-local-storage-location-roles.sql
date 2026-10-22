@@ -63,6 +63,8 @@ begin
  exception when others then refused := true;
  end;
  if not refused then raise exception 'cross-agency storage-location update allowed'; end if;
+ -- Read back as agency A (row-level security hides A's rows from B).
+ perform set_config('tracepoint.subject_id','05500000-0000-4000-8000-0000000000a1',true), set_config('tracepoint.department_id','05500000-0000-4000-8000-00000000000a',true);
  if (select name from public.firearm_storage_locations where id = admin_location) is distinct from 'Sergeant locker' then
   raise exception 'cross-agency update changed the location';
  end if;
