@@ -26,6 +26,7 @@ import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate } from "@/lib/format/date";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import { equipmentCustodyLabel, equipmentHolderName, groupCurrentOfficerAssignments } from "@/lib/equipment/officer-assignments";
+import { otherAssignedAssets, readinessGroupSummary } from "@/lib/equipment/readiness-group";
 
 type ReadinessStatus =
   | "current"
@@ -1538,18 +1539,8 @@ const filteredReadiness = useMemo(() => {
           ) : (
             <div className="space-y-3 p-4">
               {officerReadinessGroups.map((group) => {
-                const readinessPercent =
-                  group.affectsReadinessCount > 0
-                    ? Math.round(
-                        (group.readinessReadyCount /
-                          group.affectsReadinessCount) *
-                          100,
-                      )
-                    : 100;
-
-                const ready =
-                  group.criticalCount === 0 &&
-                  group.missingQuantity === 0;
+                // D-22: the badge and the % come from the same readiness set.
+                const { readinessPercent, ready } = readinessGroupSummary(group.rows);
 
                 return (
                   <article
@@ -1665,7 +1656,7 @@ const filteredReadiness = useMemo(() => {
                     </div>
 
                     <div className="divide-y divide-slate-800">
-                      {group.assignedAssets.map((asset) => {
+                      {otherAssignedAssets(group.assignedAssets, group.rows).map((asset) => {
                         const type = typeMap.get(asset.equipment_type_id);
                         return (
                           <div key={`assigned-${asset.id}`} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.3fr)_120px_160px_minmax(260px,2fr)] lg:items-center">

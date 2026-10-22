@@ -25,7 +25,8 @@ test("equipment type management stays compact and supports archived review and r
 test("officer view joins current assigned inventory independently of readiness requirements", async () => {
   const page = await readFile("src/app/equipment/page.tsx", "utf8");
   assert.match(page, /groupCurrentOfficerAssignments\(holders, assets\)/);
-  assert.match(page, /group\.assignedAssets\.map/);
+  // D-22: kit a requirement row already shows is listed once, by that row.
+  assert.match(page, /otherAssignedAssets\(group\.assignedAssets, group\.rows\)\.map/);
   assert.match(page, /Current inventory assignment/);
   assert.match(page, /officerReadinessGroups\.length === 0/);
 });
