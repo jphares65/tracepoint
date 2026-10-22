@@ -123,6 +123,41 @@ function Get-ZipMigrationHashes([string]$ZipPath) {
     } finally { $sha.Dispose(); $zip.Dispose() }
 }
 
+function Get-ZipSensitiveFindings([string]$ZipPath) {
+    # Paths and rule names only; matched values are never written out.
+    $nameRules = [ordered]@{
+        'dotenv file' = '(^|/)\.env(\.[^/]*)?$'; 'private key or keystore file' = '\.(pem|key|p12|pfx|jks|keystore)$'
+        'SSH key file' = '(^|/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$'; 'npm credentials file' = '(^|/)\.npmrc$'
+        'credentials file' = '(^|/)(credentials|\.aws/config|\.git-credentials)$'; 'secrets file' = '(^|/)[^/]*secrets?[^/]*\.(json|ya?ml|env|txt)$'
+        'terraform variables' = '\.tfvars(\.json)?$'
+    }
+    $contentRules = [ordered]@{
+        'AWS access key id' = '\b(AKIA|ASIA)[0-9A-Z]{16}\b'; 'private key block' = '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+        'aws_secret_access_key assignment' = '(?i)aws_secret_access_key\s*[=:]'; 'JSON web token' = '\beyJ[A-Za-z0-9_-]{15,}\.eyJ[A-Za-z0-9_-]{15,}\.'
+        'GitHub token' = '\bgh[pousr]_[A-Za-z0-9]{36,}\b'; 'Slack token' = '\bxox[abprs]-[0-9A-Za-z-]{10,}'
+        'Stripe live key' = '\b(sk|rk)_live_[0-9A-Za-z]{16,}'; 'connection string with password' = '(?i)\b(postgres(ql)?|mysql|mongodb(\+srv)?)://[^:/\s]+:[^@/\s]+@'
+        'quoted secret-like assignment' = '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token|client[_-]?secret)["'']?\s*[:=]\s*["''][^"''\s]{12,}["'']'
+    }
+    $zip = [IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        $findings = @()
+        foreach ($entry in $zip.Entries) {
+            if ($entry.FullName.EndsWith('/')) { continue }
+            foreach ($rule in $nameRules.Keys) { if ($entry.FullName -match $nameRules[$rule]) { $findings += [pscustomobject]@{ path = $entry.FullName; line = $null; rule = $rule } } }
+            if ($entry.Length -gt 2MB -or $entry.FullName -match '\.(png|jpe?g|gif|ico|webp|woff2?|ttf|otf|pdf|zip|gz)$') { continue }
+            $reader = New-Object IO.StreamReader($entry.Open())
+            try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            $lines = $text -split "`n"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                foreach ($rule in $contentRules.Keys) {
+                    if ($lines[$i] -match $contentRules[$rule]) { $findings += [pscustomobject]@{ path = $entry.FullName; line = $i + 1; rule = $rule } }
+                }
+            }
+        }
+        return @($findings)
+    } finally { $zip.Dispose() }
+}
+
 New-Item -ItemType Directory -Force -Path $OutputRoot | Out-Null
 $autocrlf = (& git.exe config --get core.autocrlf 2>$null)
 $summary = [ordered]@{
@@ -159,14 +194,42 @@ foreach ($name in $environments.Keys) {
             registeredAt = $taskDefinition.registeredAt; image = $container.image
             deploymentVersion = $deploymentVersion; logGroup = (Get-LogGroup $taskDefinition)
         }
-        $digest = if ($container.image -match '@(sha256:[0-9a-f]{64})$') { $Matches[1] } else { $null }
+        $runtimeMode = @($container.environment | Where-Object { $_.name -eq 'TRACEPOINT_RUNTIME_PROVIDER_MODE' } | ForEach-Object { $_.value }) | Select-Object -First 1
+        $record.taskDefinition.runtimeProviderMode = $runtimeMode
         $taskArns = (Invoke-AwsJson $e @('ecs', 'list-tasks', '--cluster', $e.Cluster, '--service-name', $e.Service, '--desired-status', 'RUNNING')).taskArns
         $running = @()
         if (@($taskArns).Count -gt 0) {
             $tasks = (Invoke-AwsJson $e (@('ecs', 'describe-tasks', '--cluster', $e.Cluster, '--tasks') + @($taskArns))).tasks
-            $running = @($tasks | ForEach-Object { [ordered]@{ task = $_.taskArn; taskDefinition = $_.taskDefinitionArn; lastStatus = $_.lastStatus; health = $_.healthStatus; imageDigest = ($_.containers | Select-Object -First 1).imageDigest; startedAt = $_.startedAt } })
+            $running = @($tasks | ForEach-Object { [ordered]@{ task = $_.taskArn; taskDefinition = $_.taskDefinitionArn; lastStatus = $_.lastStatus; health = $_.healthStatus; image = ($_.containers | Select-Object -First 1).image; imageDigest = ($_.containers | Select-Object -First 1).imageDigest; startedAt = $_.startedAt } })
         }
         $record.runningTasks = $running
+
+        # The image actually running. A task definition may pin a digest
+        # (repo@sha256:...) or name a tag (repo:tag); a tag can move after the
+        # tasks started, so the running tasks' reported digest is authoritative.
+        $definitionDigest = if ($container.image -match '@(sha256:[0-9a-f]{64})$') { $Matches[1] } else { $null }
+        $definitionTag = if (-not $definitionDigest -and $container.image -match ':([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})$') { $Matches[1] } else { $null }
+        $currentRevisionDigests = @($running | Where-Object { $_.taskDefinition -eq $service.taskDefinition -and $_.imageDigest } | ForEach-Object { $_.imageDigest } | Select-Object -Unique)
+        $allRunningDigests = @($running | Where-Object { $_.imageDigest } | ForEach-Object { $_.imageDigest } | Select-Object -Unique)
+        $digest = $null; $digestSource = $null
+        if ($currentRevisionDigests.Count -eq 1) { $digest = $currentRevisionDigests[0]; $digestSource = 'running tasks (current revision)' }
+        elseif ($definitionDigest) { $digest = $definitionDigest; $digestSource = 'task definition (pinned)' }
+        $tagDigest = $null
+        if ($definitionTag) {
+            try { $tagDigest = ((Invoke-AwsJson $e @('ecr', 'describe-images', '--repository-name', $e.Repository, '--image-ids', "imageTag=$definitionTag")).imageDetails | Select-Object -First 1).imageDigest } catch { $tagDigest = $null }
+            if (-not $digest -and $tagDigest) { $digest = $tagDigest; $digestSource = 'ECR tag lookup (no running task reported a digest)' }
+        }
+        $problems = @()
+        if ($currentRevisionDigests.Count -gt 1) { $problems += 'Running tasks of the current revision report different digests.' }
+        if ($allRunningDigests.Count -gt $currentRevisionDigests.Count) { $problems += 'Tasks of another revision are still running (deployment in progress?).' }
+        if ($definitionDigest -and $digest -and $definitionDigest -ne $digest) { $problems += 'The pinned task-definition digest differs from the running digest.' }
+        if ($tagDigest -and $digest -and $tagDigest -ne $digest) { $problems += "Tag '$definitionTag' now points to a different digest than the running tasks (the tag moved)." }
+        if (-not $digest) { $problems += 'No image digest could be resolved.' }
+        $record.imageResolution = [ordered]@{
+            taskDefinitionImage = $container.image; taskDefinitionDigest = $definitionDigest; taskDefinitionTag = $definitionTag
+            tagCurrentlyPointsTo = $tagDigest; currentRevisionRunningDigests = $currentRevisionDigests; allRunningDigests = $allRunningDigests
+            resolvedDigest = $digest; source = $digestSource; consistent = ($problems.Count -eq 0); problems = $problems
+        }
         $imageTags = @()
         if ($digest) {
             $image = (Invoke-AwsJson $e @('ecr', 'describe-images', '--repository-name', $e.Repository, '--image-ids', "imageDigest=$digest")).imageDetails | Select-Object -First 1
@@ -208,6 +271,13 @@ foreach ($name in $environments.Keys) {
                 file = (Split-Path -Leaf $zipPath); sha256 = (Get-FileHash -Algorithm SHA256 $zipPath).Hash.ToLowerInvariant()
                 migrations = (Get-ZipMigrationHashes $zipPath)
             }
+            # Review every finding before the archive is published anywhere (README section 2).
+            $findings = @(Get-ZipSensitiveFindings $zipPath)
+            $record.sensitiveFileReview = [ordered]@{
+                required = $true; findingCount = $findings.Count
+                findings = @($findings | Select-Object -First 200)
+                note = 'Paths, line numbers and rule names only. A clean result is not proof of no secrets; review the archive before publishing it.'
+            }
             $local = & git.exe cat-file -t $build.sourceCommit 2>$null
             $record.deployedCommitAvailableLocally = ($local -eq 'commit')
         }
@@ -226,6 +296,7 @@ foreach ($name in $environments.Keys) {
         $ledgerEvents = @($ledgerEvents | Sort-Object at)
         $record.ledgerRuns = @($ledgerEvents | ForEach-Object { [ordered]@{ at = $_.at; logStream = $_.logStream; latestAppliedVersion = $_.latestAppliedVersion; appliedCount = @($_.applied).Count; pendingCount = @($_.pending).Count } })
         $record.latestLedger = $(if ($ledgerEvents.Count) { $ledgerEvents[-1] } else { $null })
+        $record.ledgerEvidenceStatus = 'HISTORICAL: the ledger as the migration runner reported it at latestLedger.at. It is not the current database state until verified through the approved pre-deployment procedure (migrate-db.ps1 status).'
         if (-not $ledgerEvents.Count) { $record.ledgerNote = 'No runner report found in the searched log groups since ' + $LedgerSince.ToString('yyyy-MM-dd') + '.' }
     } catch {
         $record.error = $_.Exception.Message
