@@ -90,7 +90,6 @@ type VehicleForm = {
   nextServiceDate: string;
   nextServiceMileage: string;
   nextServiceHours: string;
-  openIssueCount: string;
   comments: string;
   notes: string;
   reason: string;
@@ -120,7 +119,6 @@ const EMPTY_FORM: VehicleForm = {
   nextServiceDate: "",
   nextServiceMileage: "",
   nextServiceHours: "",
-  openIssueCount: "0",
   comments: "",
   notes: "",
   reason: "",
@@ -179,7 +177,6 @@ function formForVehicle(vehicle: FleetVehicle): VehicleForm {
     nextServiceDate: vehicle.next_service_date ?? "",
     nextServiceMileage: vehicle.next_service_mileage?.toString() ?? "",
     nextServiceHours: vehicle.next_service_hours?.toString() ?? "",
-    openIssueCount: vehicle.open_issue_count?.toString() ?? "0",
     comments: vehicle.comments ?? "",
     notes: vehicle.notes ?? "",
     reason: "",
@@ -1065,7 +1062,6 @@ function FleetManagementContent() {
                 <Field label="Current Mileage"><input type="number" min="0" value={form.currentMileage} onChange={(event) => setForm({ ...form, currentMileage: event.target.value })} className={inputClass} /></Field>
                 <Field label="Current Hours"><input type="number" min="0" step="0.1" value={form.currentHours} onChange={(event) => setForm({ ...form, currentHours: event.target.value })} className={inputClass} /></Field>
                 <Field label="Status"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as FleetStatus })} className={inputClass}>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select></Field>
-                <Field label="Open Issues"><input type="number" min="0" value={form.openIssueCount} onChange={(event) => setForm({ ...form, openIssueCount: event.target.value })} className={inputClass} /></Field>
                 <Field label="Inspection Due"><input type="date" value={form.inspectionDueDate} onChange={(event) => setForm({ ...form, inspectionDueDate: event.target.value })} className={inputClass} /></Field>
                 <Field label="Registration Expires"><input type="date" value={form.registrationExpirationDate} onChange={(event) => setForm({ ...form, registrationExpirationDate: event.target.value })} className={inputClass} /></Field>
                 <Field label="Insurance Expires"><input type="date" value={form.insuranceExpirationDate} onChange={(event) => setForm({ ...form, insuranceExpirationDate: event.target.value })} className={inputClass} /></Field>

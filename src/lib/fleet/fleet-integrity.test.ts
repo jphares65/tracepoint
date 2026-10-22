@@ -159,6 +159,22 @@ test("FLT-01 a manual Available through the fleet list does not mask an open cri
   assert.equal(db.tables.fleet_vehicles[0].status_override_active, true, "an edit that keeps the status leaves the override flag alone");
 });
 
+test("D-14 a typed open-issue count is never stored: a new vehicle starts at 0 and an edit keeps the computed count", async () => {
+  const { json, listRoute } = await load();
+  const db = createDb(fleet([vehicle()], [criticalOrder]));
+  signIn(db, MANAGER);
+  const created = await listRoute.POST(json("/api/fleet/vehicles", "POST", { unitNumber: "3102", status: "Available", currentMileage: 10, openIssueCount: 5 }));
+  assert.equal(created.status, 201, JSON.stringify(await created.clone().json()));
+  assert.equal(db.tables.fleet_vehicles.find((row: Row) => row.unit_number === "3102")!.open_issue_count, 0);
+  db.tables.fleet_vehicles[0].open_issue_count = 1;
+  const update: Row[] = [];
+  const original = db.from.bind(db);
+  (db as any).from = (table: string) => { const builder = original(table); const write = builder.update; builder.update = (value: Row) => { if (table === "fleet_vehicles") update.push(value); return write(value); }; return builder; };
+  assert.equal((await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, comments: "keys", reason: "note", openIssueCount: 9 }))).status, 200);
+  assert.equal("open_issue_count" in update[0], false, "the form value is not written");
+  assert.equal(db.tables.fleet_vehicles[0].open_issue_count, 1);
+});
+
 test("FLT-02 work-order edits never roll the odometer or hour meter back; the work order keeps its own reading", async () => {
   const { json, workOrders } = await load();
   const db = createDb(fleet([vehicle()], [{ id: "wo1", department_id: "dept-1", vehicle_id: V, record_type: "Repair", title: "Service", priority: "Normal", status: "Open", mileage: 18000, hours: 90 }]));

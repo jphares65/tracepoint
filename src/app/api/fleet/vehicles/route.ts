@@ -185,7 +185,8 @@ export async function POST(request: NextRequest) {
     next_service_mileage: optionalInteger(body.nextServiceMileage, 0, 10_000_000),
     next_service_hours: body.nextServiceHours === null || body.nextServiceHours === undefined || body.nextServiceHours === ""
       ? null : Math.max(0, Number(body.nextServiceHours) || 0),
-    open_issue_count: requiredInteger(body.openIssueCount, 0, 10_000),
+    // D-14: a new vehicle has no open issues; the count is derived from its work orders, never typed.
+    open_issue_count: 0,
     comments: nullableText(body.comments, 5000),
     notes: nullableText(body.notes, 5000),
     created_by_user_id: resolved.user.id,
@@ -348,7 +349,6 @@ export async function PATCH(request: NextRequest) {
     next_service_date: nullableDate(value("nextServiceDate", "next_service_date")),
     next_service_mileage: optionalInteger(value("nextServiceMileage", "next_service_mileage"), 0, 10_000_000),
     next_service_hours: nullableHours("nextServiceHours", "next_service_hours"),
-    open_issue_count: requiredInteger(value("openIssueCount", "open_issue_count"), 0, 10_000),
     comments: nullableText(value("comments", "comments"), 5000),
     notes: nullableText(value("notes", "notes"), 5000),
     retired_at: nextStatus === "Retired" ? existing.retired_at ?? updatedAt : null,
