@@ -12,7 +12,8 @@
     "db:validate-bootstrap": "node scripts/validate-clean-bootstrap.mjs",
     "db:validate-upgrades": "node scripts/validate-lineage-upgrades.mjs",
     "db:verify-staging": "node scripts/verify-staging-schema.mjs",
-    "benchmark:document-analysis": "tsx scripts/benchmark-document-analysis.ts"
+    "benchmark:document-analysis": "tsx scripts/benchmark-document-analysis.ts",
+    "test:e2e:staging": "playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "3.1127.0",
@@ -40,6 +41,9 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^20",
     "@types/pg": "8.23.1",
     "@types/qrcode": "^1.5.6",
@@ -48,6 +52,8 @@
     "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "global-jsdom": "^26.0.0",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"

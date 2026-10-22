@@ -1,0 +1,59 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { recoverWorkspace } from "/home/user/tracepoint/src/lib/range/workspace-device-copy.ts";
+import { applyConflictChoice, conflictKey, currentRecord, EMPTY_MERGEABLE_WORKSPACE, type MergeableWorkspace, type WorkspaceConflict } from "/home/user/tracepoint/src/lib/range/workspace-merge.ts";
+import { previewRangeWorkspaceMutation } from "/home/user/tracepoint/src/lib/range/workspace-mutation.ts";
+
+const ws = (over: Partial<MergeableWorkspace>): MergeableWorkspace => ({ ...EMPTY_MERGEABLE_WORKSPACE, ...over });
+const drill = { id: "drill-1", rangeDayId: "day-1", name: "Qual", maxScore: 50 };
+const result = (score: number, malfunctionIds: string[] = []) => ({ id: "result-1", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "officer-a", score, completed: true, passed: score >= 40, malfunctionIds });
+const m1 = { id: "m1", rangeDayId: "day-1", drillRunId: "result-1", officerId: "officer-a", type: "Failure to feed" };
+
+// Scorer-only device. The server rule as the page's serverAcceptance applies it.
+const acceptFor = (server: MergeableWorkspace) => (next: MergeableWorkspace) => {
+  const d = previewRangeWorkspaceMutation({ existingWorkspace: server, nextWorkspace: next, canManage: false, canScore: true });
+  return d.ok ? { ok: true as const } : { ok: false as const, error: d.error };
+};
+
+test("Keep the current value on a finalized day's score writes a change the server refuses, and the conflict can never be cleared", () => {
+  const base = ws({ rangeDays: [{ id: "day-1", status: "In Progress" }], rangeDayDrills: [drill], results: [result(40)] });
+  // This device: corrected the score and recorded a malfunction with it.
+  const local = ws({ ...base, results: [result(42, ["m1"])], malfunctions: [m1] });
+  // Other device: corrected the score and completed the day.
+  const server = ws({ rangeDays: [{ id: "day-1", status: "Completed" }], rangeDayDrills: [drill], results: [result(45)] });
+  const accept = acceptFor(server);
+
+  const first = recoverWorkspace({ base, local, server, conflicts: [], accept });
+  assert.equal(accept(first.workspace).ok, true, "after recovery the workspace saves");
+  const scoreConflict = first.conflicts.find((c) => c.collection === "results")!;
+  assert.ok(scoreConflict && !scoreConflict.reason, "an ordinary both-changed conflict: buttons 'Use this device's value' / 'Keep the current value'");
+  const shownNow = currentRecord(first.workspace, scoreConflict);
+
+  // Instructor: "Keep the current value" (documented as writing nothing).
+  let workspace = applyConflictChoice(first.workspace, scoreConflict, "server");
+  let conflicts = first.conflicts.filter((c) => conflictKey(c) !== conflictKey(scoreConflict));
+  const written = currentRecord(workspace, scoreConflict);
+  // FAULT 1: it wrote something the panel did not show (malfunctionIds on a completed day's score)...
+  assert.notDeepEqual(written, shownNow);
+  assert.deepEqual((written as any).malfunctionIds, ["m1"]);
+  // ...and every save is now refused (and m1 itself is not even in the workspace: a dangling reference).
+  assert.equal(accept(workspace).ok, false);
+  assert.equal(workspace.malfunctions.some((m) => m.id === "m1"), false);
+
+  // Also discard the held-back malfunction: still refused.
+  const mConflict = conflicts.find((c) => c.collection === "malfunctions");
+  if (mConflict) { workspace = applyConflictChoice(workspace, mConflict, "server"); conflicts = conflicts.filter((c) => c !== mConflict); }
+  assert.equal(accept(workspace).ok, false);
+
+  // Page: refused save -> recoverRangeWorkspace(refusal) once per server version.
+  const refusal = "Completed, locked, archived, or finalized range records cannot be changed.";
+  const again = recoverWorkspace({ base: server, local: workspace, server, conflicts, accept: (w) => { const d = accept(w); return d.ok ? { ok: false, error: refusal } : d; } });
+  const reheld = again.conflicts.find((c) => c.collection === "results")!;
+  assert.ok(reheld.reason, "re-listed as held back");
+  // "Discard this device's value" re-applies the same malfunction id: refused again.
+  const afterDiscard = applyConflictChoice(again.workspace, reheld, "server");
+  assert.equal(accept(afterDiscard).ok, false);
+  // "Try this device's value again" is refused too. Neither button reaches a savable workspace,
+  // and the page's refusalRecoveredFor guard does not recover a second time for the same server version.
+  assert.equal(accept(applyConflictChoice(again.workspace, reheld, "local")).ok, false);
+});

@@ -1,34 +1,36 @@
 import Image from "next/image";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { resolveLoginSession } from "@/lib/authentication/login-session-core";
+import { loginNotice } from "@/lib/authentication/login-notice";
 import { resolveAuthenticatedPrincipal } from "@/lib/authentication/request-session";
 import { shouldRedirectAuthenticatedLogin } from "@/lib/authentication/login-recovery-core";
 import { runtimeAuthenticationProvider } from "@/lib/authentication/request-session-core";
 import { resolvePostgresPlatformLanding } from "@/lib/tracepoint/server-access-postgres";
+import { DEFAULT_RETURN_PATH, loginReturnPath } from "@/lib/authentication/return-path";
 
 import LoginForm from "./LoginForm";
 
 type LoginPageProps = {
   searchParams: Promise<{
     error?: string;
-    next?: string;
+    next?: string | string[];
+    notice?: string | string[];
   }>;
 };
-
-function safeNextPath(value?: string) {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/";
-  }
-
-  return value;
-}
 
 export default async function LoginPage({
   searchParams,
 }: LoginPageProps) {
   const params = await searchParams;
-  const nextPath = safeNextPath(params.next);
+  // SV-32: one validator for the destination. An explicit ?next= wins; a
+  // repeated ?next= is hostile and goes home; otherwise the idle sign-out
+  // hand-off cookie (host-only, HttpOnly) supplies the page the user was on.
+  const nextPath = Array.isArray(params.next)
+    ? DEFAULT_RETURN_PATH
+    : loginReturnPath(params.next, (await cookies()).toString());
+  const notice = loginNotice(params.notice);
 
   // The proxy normally clears bad receipts before rendering. Keep this route
   // independently safe when it is bypassed or a stale request still arrives.
@@ -125,6 +127,19 @@ export default async function LoginPage({
                 Use the account issued by your department administrator.
               </p>
             </div>
+
+            {notice ? (
+              <div
+                role={notice.tone === "error" ? "alert" : "status"}
+                className={`mt-5 rounded-2xl border px-4 py-3 text-sm leading-6 ${
+                  notice.tone === "error"
+                    ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                    : "border-blue-500/30 bg-blue-500/10 text-blue-100"
+                }`}
+              >
+                {notice.message}
+              </div>
+            ) : null}
 
             {params.error ? (
               <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">

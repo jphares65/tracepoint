@@ -1,0 +1,250 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- in-memory data client double */
+// Adversarial review of f85ba7a. Each test ASSERTS THE FAULTY BEHAVIOUR (passing = defect present).
+// Run: cd /home/user/tracepoint && node --import tsx --test /tmp/claude-0/-home-user/b5479cfd-55fa-5cdf-b476-2c1a1867a0a5/scratchpad/review2/proofs.test.ts
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import test from "node:test";
+
+const REPO = "/home/user/tracepoint/src";
+const require = createRequire(`${REPO}/lib/range/simultaneous-instructors-route.test.ts`);
+const stub = (path: string, exports: Record<string, unknown>) => { require.cache[path] = { id: path, filename: path, loaded: true, exports } as any; };
+stub(require.resolve("server-only"), {});
+stub(require.resolve(`${REPO}/lib/tracepoint/server-access.ts`), {
+  resolveServerAccess: async () => (globalThis as any).__rangeAccess,
+  accessFailureResponse: () => Response.json({ error: "denied" }, { status: 403 }),
+  featureDisabledResponse: () => Response.json({ error: "disabled" }, { status: 403 }),
+  hasAnyServerPermission: (context: any, permissions: string[]) => context.permissions.includes("administer_department") || permissions.some((permission) => context.permissions.includes(permission)),
+  hasServerFeature: () => true,
+  requireServerFeature: () => null,
+});
+
+const department = "agency-a";
+let stored: { department_id: string; workspace: any; updated_at: string } | null = null;
+
+const admin = {
+  from(table: string) {
+    let op: "select" | "update" | "insert" = "select";
+    let payload: any = null;
+    const filters: [string, any][] = [];
+    const builder: any = {
+      select: () => builder,
+      update: (value: any) => { op = "update"; payload = value; return builder; },
+      insert: (value: any) => { op = "insert"; payload = value; return builder; },
+      eq: (column: string, value: any) => { filters.push([column, value]); return builder; },
+      maybeSingle: async () => {
+        if (table !== "pilot_range_workspaces") return { data: null, error: null };
+        const matches = stored && filters.every(([column, value]) => (stored as any)[column] === value);
+        if (op === "select") return { data: matches ? stored : null, error: null };
+        if (op === "insert") { stored = { ...payload }; return { data: { department_id: department }, error: null }; }
+        if (!matches) return { data: null, error: null };
+        stored = { ...(stored as any), ...payload };
+        return { data: { department_id: department, workspace: stored!.workspace }, error: null };
+      },
+    };
+    return builder;
+  },
+};
+(globalThis as any).__rangeAccess = { ok: true, context: { admin, user: { id: "instructor" }, userId: "instructor", departmentId: department, permissions: ["score_range_days"], enabledFeatures: ["range_training"] } };
+const access = () => (globalThis as any).__rangeAccess.context;
+const as = (permissions: string[]) => { access().permissions = permissions; };
+
+const plan = () => ({
+  rangeDays: [{ id: "day-1", departmentId: department, status: "In Progress", packetStatus: "Needs Setup" }],
+  drillLibrary: [] as any[],
+  rangeDayDrills: [
+    { id: "drill-1", rangeDayId: "day-1", name: "Handgun Qualification", maxScore: 50 },
+    { id: "drill-2", rangeDayId: "day-1", name: "Low light", maxScore: 50 },
+  ] as any[],
+  rangeRoster: [{ id: "roster-a", rangeDayId: "day-1", officerId: "officer-a", attended: false }, { id: "roster-b", rangeDayId: "day-1", officerId: "officer-b", attended: false }] as any[],
+  results: [] as any[],
+  malfunctions: [] as any[],
+});
+const fresh = (officer: string, score: number, extra: any = {}) => ({ id: `result-${crypto.randomUUID()}`, rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: officer, score, completed: true, passed: score >= 40, ...extra });
+const strip = (workspace: any) => ({ rangeDays: workspace.rangeDays, drillLibrary: workspace.drillLibrary, rangeDayDrills: workspace.rangeDayDrills, rangeRoster: workspace.rangeRoster, results: workspace.results, malfunctions: workspace.malfunctions });
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+async function put(workspace: unknown, baseUpdatedAt: string | null) {
+  const { PUT } = await import(`${REPO}/app/api/pilot/range-workspace/route.ts`);
+  const response = await PUT(new Request("http://x/api/pilot/range-workspace", { method: "PUT", body: JSON.stringify({ workspace, baseUpdatedAt }) }) as any);
+  return { status: response.status, body: await response.json() as any };
+}
+async function removeDrill(rangeDayId: string, drillId: string) {
+  const { DELETE } = await import(`${REPO}/app/api/pilot/range-workspace/drills/route.ts`);
+  const response = await DELETE(new Request("http://x/api/pilot/range-workspace/drills", { method: "DELETE", body: JSON.stringify({ rangeDayId, drillId }) }) as any);
+  return { status: response.status, body: await response.json() as any };
+}
+
+type Device = { base: any; baseUpdatedAt: string | null; local: any; conflicts: any[]; canManage: boolean; refusalRecoveredFor?: string | null };
+
+// Mirrors page.tsx recoverRangeWorkspace + serverAcceptance (preview against the fetched server copy).
+async function recover(device: Device) {
+  const { recoverWorkspace } = await import(`${REPO}/lib/range/workspace-device-copy.ts`);
+  const { previewRangeWorkspaceMutation } = await import(`${REPO}/lib/range/workspace-mutation.ts`);
+  const serverRaw = clone(stored!.workspace);
+  const server = strip(serverRaw);
+  const recovered = recoverWorkspace({
+    base: device.base, local: device.local, server, conflicts: device.conflicts,
+    accept: (workspace: any) => {
+      const decision = previewRangeWorkspaceMutation({ existingWorkspace: serverRaw, nextWorkspace: workspace, canManage: device.canManage, canScore: true });
+      return decision.ok ? { ok: true as const } : { ok: false as const, error: decision.error };
+    },
+  });
+  device.conflicts = recovered.conflicts;
+  device.local = recovered.workspace;
+  device.base = server;
+  device.baseUpdatedAt = stored!.updated_at;
+}
+
+// Mirrors saveRangeDayWorkspaceToServer: stale -> recover (+ the autosave that follows);
+// other refusal -> recover once per server version (refusalRecoveredFor).
+async function save(device: Device) {
+  let response = await put(device.local, device.baseUpdatedAt);
+  if (response.status === 409 && response.body.code === "stale_workspace") {
+    await recover(device);
+    response = await put(device.local, device.baseUpdatedAt);
+  } else if ([400, 403, 409].includes(response.status) && device.refusalRecoveredFor !== device.baseUpdatedAt) {
+    device.refusalRecoveredFor = device.baseUpdatedAt;
+    await recover(device);
+    response = await put(device.local, device.baseUpdatedAt);
+  }
+  if (response.status === 200) { device.base = clone(device.local); device.baseUpdatedAt = response.body.updatedAt; }
+  return response;
+}
+
+async function startDay(initial: any = plan()) {
+  stored = null;
+  as(["manage_range_days"]);
+  assert.equal((await put(initial, null)).status, 200);
+  as(["score_range_days"]);
+  const load = (canManage: boolean): Device => ({ base: strip(clone(stored!.workspace)), baseUpdatedAt: stored!.updated_at, local: strip(clone(stored!.workspace)), conflicts: [], canManage });
+  return load;
+}
+
+// ---------------------------------------------------------------- HIGH
+test("R2-H1: a drill removal adopts the newest server version without merging; the next autosave silently reverts the other instructor's attendance and drops this device's unsaved drill", async () => {
+  const load = await startDay();
+  const lead = load(true);
+  const line = load(false);
+  // Line instructor marks officer A present and it saves (v2).
+  as(["score_range_days"]);
+  line.local.rangeRoster = line.local.rangeRoster.map((entry: any) => (entry.id === "roster-a" ? { ...entry, attended: true } : entry));
+  assert.equal((await save(line)).status, 200);
+  assert.equal(stored!.workspace.rangeRoster[0].attended, true);
+  // Lead (still on v1) has added drill-3 locally (not yet saved) and removes drill-2.
+  as(["manage_range_days"]);
+  lead.local.rangeDayDrills = [...lead.local.rangeDayDrills, { id: "drill-3", rangeDayId: "day-1", name: "New drill (unsaved)", maxScore: 30 }];
+  const removed = await removeDrill("day-1", "drill-2");
+  assert.equal(removed.status, 200, "the DELETE route has no version check");
+  // page.tsx handleRemoveDrillFromSelectedRangeDay: base := payload.updatedAt; drills := payload.workspace.rangeDayDrills.
+  lead.baseUpdatedAt = removed.body.updatedAt;
+  lead.local.rangeDayDrills = removed.body.workspace.rangeDayDrills;
+  assert.ok(!lead.local.rangeDayDrills.some((drill: any) => drill.id === "drill-3"), "this device's unsaved drill is discarded");
+  // The autosave triggered by setRangeDayDrills.
+  const autosave = await save(lead);
+  assert.equal(autosave.status, 200, "accepted: version check passes, no 409, no conflict");
+  assert.equal(stored!.workspace.rangeRoster[0].attended, false, "the line instructor's saved attendance was silently reverted");
+  assert.deepEqual(lead.conflicts, []);
+});
+
+test("R2-H2: a shared tablet: user B's first load silently overwrites user A's unsynced scores (and the same user's copy for another agency)", async () => {
+  const { readDeviceCopy, usableDeviceCopy, writeDeviceCopy, RANGE_DAY_DEVICE_COPY_KEY } = await import(`${REPO}/lib/range/workspace-device-copy.ts`);
+  const items = new Map<string, string>();
+  const storage = { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) };
+  const unsynced = { ...plan(), results: [fresh("officer-a", 46)] };
+  // User A scored while the save was failing ("Your changes are kept on this device").
+  writeDeviceCopy(storage, { version: 2, userId: "user-a", departmentId: department, tabId: "t1", workspace: unsynced, base: plan(), baseUpdatedAt: "v1", conflicts: [] });
+  // User B signs in on the same device. page.tsx loadWorkspace, remote.ok branch:
+  const copy = usableDeviceCopy(readDeviceCopy(storage), { userId: "user-b", departmentId: department });
+  assert.equal(copy, null, "A's copy is ignored for B (correct)…");
+  const initial = plan(); // server form
+  writeDeviceCopy(storage, { version: 2, userId: "user-b", departmentId: department, tabId: "t2", workspace: initial, base: initial, baseUpdatedAt: "v1", conflicts: [] }); // persistDeviceCopy(initial, conflicts)
+  const after = JSON.parse(items.get(RANGE_DAY_DEVICE_COPY_KEY)!);
+  assert.equal(after.userId, "user-b");
+  assert.equal(JSON.stringify(after).includes("46"), false, "…and then destroyed: A's score exists nowhere any more");
+});
+
+// ---------------------------------------------------------------- MEDIUM
+test("R2-M1: a conflict outlives a later edit; 'Keep other device's value' then writes the stale server snapshot over the instructor's newer saved score", async () => {
+  const { applyConflictChoice } = await import(`${REPO}/lib/range/workspace-merge.ts`);
+  const load = await startDay({ ...plan(), results: [{ id: "result-a", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "officer-a", score: 40 }] });
+  const one = load(false);
+  const two = load(false);
+  one.local.results = [{ ...one.local.results[0], score: 46 }];
+  two.local.results = [{ ...two.local.results[0], score: 44 }];
+  assert.equal((await save(one)).status, 200);
+  assert.equal((await save(two)).status, 200);
+  assert.deepEqual(two.conflicts.map((c: any) => [c.local.score, c.server.score]), [[44, 46]]);
+  // The instructor on device two re-enters the score in the row (48); it saves.
+  two.local.results = [{ ...two.local.results[0], score: 48 }];
+  assert.equal((await save(two)).status, 200);
+  assert.equal(stored!.workspace.results[0].score, 48);
+  assert.equal(two.conflicts.length, 1, "the conflict is still listed (saves never reconcile)");
+  // Clicking "Keep other device's value" (thinking it keeps what is now in use)…
+  two.local = applyConflictChoice(two.local, two.conflicts[0], "server");
+  two.conflicts = [];
+  assert.equal((await save(two)).status, 200);
+  assert.equal(stored!.workspace.results[0].score, 46, "…writes 46, a value no device currently holds, over the saved 48");
+});
+
+test("R2-M2: logical-key aliasing orphans this device's malfunction: it is saved pointing at a result id that no longer exists", async () => {
+  const load = await startDay();
+  const one = load(false);
+  const two = load(false);
+  one.local.results = [fresh("officer-a", 46)];
+  const mine = fresh("officer-a", 31, { malfunctionIds: ["malfunction-x"] });
+  two.local.results = [mine];
+  two.local.malfunctions = [{ id: "malfunction-x", rangeDayId: "day-1", officerId: "officer-a", firearmId: "gun-1", drillRunId: mine.id, type: "Catastrophic Failure", removedFromService: true, inspectionRequired: true }];
+  assert.equal((await save(one)).status, 200);
+  assert.equal((await save(two)).status, 200);
+  const resultIds = stored!.workspace.results.map((item: any) => item.id);
+  assert.equal(resultIds.length, 1);
+  assert.ok(!resultIds.includes(mine.id), "this device's result id was replaced by the server's");
+  const saved = stored!.workspace.malfunctions.find((item: any) => item.id === "malfunction-x");
+  assert.ok(saved, "the malfunction was replayed and saved");
+  assert.equal(saved.drillRunId, mine.id, "…referencing a result that does not exist");
+  assert.equal(stored!.workspace.results[0].malfunctionIds, undefined, "and no saved result lists it");
+  // Even 'Use this device's value' keeps the mismatch: result id is the server's, malfunction points at the old id.
+  const { applyConflictChoice } = await import(`${REPO}/lib/range/workspace-merge.ts`);
+  two.local = applyConflictChoice(two.local, two.conflicts[0], "local");
+  assert.equal((await save(two)).status, 200);
+  assert.notEqual(stored!.workspace.malfunctions[0].drillRunId, stored!.workspace.results[0].id);
+});
+
+test("R2-M3: a refusal the client preview cannot foresee (agency/reference check) still wedges every save, survives a reload, and lists no conflict", async () => {
+  const load = await startDay();
+  // A lead planned day-2 with a roster and a practice score while sync was blocked; their
+  // manage permission was then removed (now a scorer). The copy's base is v1.
+  const device = load(false);
+  device.local.rangeDays = [...device.local.rangeDays, { id: "day-2", departmentId: department, status: "Planned" }];
+  device.local.rangeDayDrills = [...device.local.rangeDayDrills, { id: "drill-9", rangeDayId: "day-2", name: "Practice", maxScore: 50 }];
+  device.local.rangeRoster = [...device.local.rangeRoster, { id: "roster-9", rangeDayId: "day-2", officerId: "officer-c", attended: true }];
+  device.local.results = [{ ...fresh("officer-c", 45), rangeDayId: "day-2", drillId: "drill-9" }];
+  // Load-time recovery (page.tsx loadWorkspace -> recoverWorkspace with serverAcceptance).
+  await recover(device);
+  assert.ok(device.conflicts.some((c: any) => c.collection === "rangeDays"), "the day is held back (planning)");
+  assert.ok(!device.conflicts.some((c: any) => c.collection === "results"), "but its result is NOT held back: the preview has no reference check");
+  // Unrelated work: officer A attendance.
+  device.local.rangeRoster = device.local.rangeRoster.map((entry: any) => (entry.id === "roster-a" ? { ...entry, attended: true } : entry));
+  const first = await save(device);
+  assert.equal(first.status, 403);
+  assert.match(first.body.error, /outside your agency/);
+  // The one refusal recovery re-runs the same preview, so the retry is refused again; later saves are refused forever.
+  const second = await save(device);
+  assert.equal(second.status, 403);
+  assert.equal(stored!.workspace.rangeRoster[0].attended, false, "the unrelated attendance never saves");
+  assert.ok(!device.conflicts.some((c: any) => c.collection === "results"), "nothing for the instructor to discard");
+  // Reload: the copy (base = server, workspace = local) is merged again with the same preview.
+  device.refusalRecoveredFor = undefined;
+  await recover(device);
+  assert.equal((await save(device)).status, 403, "still wedged after reload");
+});
+
+test("R2-M4: unsynced work left under the pre-UX-RB keys is never read after upgrade (silently invisible)", async () => {
+  const { readDeviceCopy } = await import(`${REPO}/lib/range/workspace-device-copy.ts`);
+  const legacy = new Map<string, string>([
+    ["tracepoint.rangeDays.workspace.v1", JSON.stringify({ ...plan(), results: [fresh("officer-a", 46)] })],
+    ["tracepoint.rangeDays.workspace.v1.sync", JSON.stringify({ baseUpdatedAt: "v1", base: plan(), conflicts: [] })],
+  ]);
+  const storage = { getItem: (key: string) => legacy.get(key) ?? null, setItem: (key: string, value: string) => void legacy.set(key, value) };
+  assert.equal(readDeviceCopy(storage), null, "page.tsx then loads the server copy only; the 46 is never shown or merged");
+});

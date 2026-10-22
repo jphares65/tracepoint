@@ -18,7 +18,10 @@ import {
   STALE_RANGE_WORKSPACE_ERROR,
   withRangeResultRevisions,
 } from "@/lib/range/workspace-mutation";
-import { mergeProtectedWorkspaceRecords } from "@/lib/range/workspace-tenant-boundary";
+import {
+  mergeProtectedWorkspaceRecords,
+  workspaceForActiveDepartment,
+} from "@/lib/range/workspace-tenant-boundary";
 import {
   canViewDepartmentRecords,
   ownRangeWorkspace,
@@ -87,6 +90,11 @@ export async function GET() {
     const data = await createRangeReadRepository(admin, departmentId).getWorkspace(departmentId);
     // Without a range-record permission the caller sees only their own rows.
     const departmentRecords = canViewDepartmentRecords(resolved.context.permissions, RANGE_RECORD_PERMISSIONS);
+    // Legacy JSON can hold records stamped with another agency. They are never
+    // returned; PUT reattaches them from the stored copy.
+    const agencyWorkspace = data.workspace
+      ? workspaceForActiveDepartment(data.workspace as Record<string, unknown>, departmentId)
+      : data.workspace;
 
     return NextResponse.json({
       departmentId,
@@ -94,7 +102,7 @@ export async function GET() {
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
       canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
       recordScope: departmentRecords ? "department" : "own",
-      workspace: departmentRecords ? data.workspace : ownRangeWorkspace(data.workspace, resolved.context.userId),
+      workspace: departmentRecords ? agencyWorkspace : ownRangeWorkspace(agencyWorkspace, resolved.context.userId),
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
       updatedByUserId: data.updatedByUserId,
@@ -242,6 +250,8 @@ export async function PUT(request: NextRequest) {
         {
           error:
             "The workspace changed during validation. Reload before saving.",
+          // Review L3: the same "newer version" case as the version check.
+          code: "stale_workspace",
         },
         {
           status: 409,

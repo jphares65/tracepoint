@@ -1,0 +1,33 @@
+TAP version 13
+# Subtest: UX-RB2-3: vehicle detail (web and mobile) reports canInspect and canReportIssue as the POST routes decide
+not ok 1 - UX-RB2-3: vehicle detail (web and mobile) reports canInspect and canReportIssue as the POST routes decide
+  ---
+  duration_ms: 346.425984
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/lib/fleet/fleet-authorization-decisions.test.ts:2:14825'
+  failureType: 'testCodeFailure'
+  error: |-
+    view_fleet chief /api/fleet/vehicles/22222222-2222-4222-8222-222222222222 canInspect
+    + actual - expected
+    
+    + undefined
+    - false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/lib/fleet/fleet-authorization-decisions.test.ts:220:14)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 610.931482

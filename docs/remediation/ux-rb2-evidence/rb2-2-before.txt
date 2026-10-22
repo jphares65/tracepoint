@@ -1,0 +1,365 @@
+TAP version 13
+# Subtest: UX-RB2-2 (D-27): a second inspector role code can be typed and is saved
+not ok 1 - UX-RB2-2 (D-27): a second inspector role code can be typed and is saved
+  ---
+  duration_ms: 191.109672
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/settings/fleet/FleetRulesPanel.test.tsx:2:1475'
+  failureType: 'testCodeFailure'
+  error: |-
+    the trailing comma stays while typing
+    + actual - expected
+    
+    + 'patrol'
+    - 'patrol,'
+             ^
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'patrol,'
+  actual: 'patrol'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/settings/fleet/FleetRulesPanel.test.tsx:27:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: UX-RB2-2 (D-28): when the rules cannot be loaded, the defaults are never shown or saved
+not ok 2 - UX-RB2-2 (D-28): when the rules cannot be loaded, the defaults are never shown or saved
+  ---
+  duration_ms: 1021.269725
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/settings/fleet/FleetRulesPanel.test.tsx:2:2463'
+  failureType: 'testCodeFailure'
+  error: |-
+    Unable to find an element with the text: /Fleet rules are unavailable\. The current rules are unchanged; nothing can be saved until they load\./. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+    
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-5"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200"[39m
+          [36m>[39m
+            [0mFleet rules are unavailable.[0m
+          [36m</div>[39m
+          [36m<section[39m
+            [33mclass[39m=[32m"grid gap-3"[39m
+          [36m>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mAutomatic vehicle status[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mEvaluate open work, critical issues, and critical missing equipment after every change. Critical safety holds always apply.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mCritical issues remove vehicles from service[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mCritical defects and availability-affecting work always hold a vehicle Out of Service, whatever these settings.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mCritical missing equipment removes vehicles from service[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mRequired safety equipment marked Missing or Out of Service affects vehicle availability.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mAdd each vehicle's required equipment to inspections[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mShow the actual assigned equipment and serial number instead of one broad equipment checkbox.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mInspection defects create work orders[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mRoute inspection exceptions directly to the configured mechanic role.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mCritical inspection defects remove vehicles from service[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mA critical inspection exception immediately affects vehicle readiness.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mNotify mechanics about officer issue reports[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+         ...
+    
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-5"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200"[39m
+          [36m>[39m
+            [0mFleet rules are unavailable.[0m
+          [36m</div>[39m
+          [36m<section[39m
+            [33mclass[39m=[32m"grid gap-3"[39m
+          [36m>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mAutomatic vehicle status[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mEvaluate open work, critical issues, and critical missing equipment after every change. Critical safety holds always apply.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mCritical issues remove vehicles from service[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mCritical defects and availability-affecting work always hold a vehicle Out of Service, whatever these settings.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mCritical missing equipment removes vehicles from service[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mRequired safety equipment marked Missing or Out of Service affects vehicle availability.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mAdd each vehicle's required equipment to inspections[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mShow the actual assigned equipment and serial number instead of one broad equipment checkbox.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mInspection defects create work orders[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mRoute inspection exceptions directly to the configured mechanic role.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mCritical inspection defects remove vehicles from service[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+                  [0mA critical inspection exception immediately affects vehicle readiness.[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mclass[39m=[32m"mt-1 h-5 w-5 accent-blue-600"[39m
+                [33mtype[39m=[32m"checkbox"[39m
+              [36m/>[39m
+            [36m</label>[39m
+            [36m<label[39m
+              [33mclass[39m=[32m"flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4"[39m
+            [36m>[39m
+              [36m<span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"block text-sm font-semibold text-white"[39m
+                [36m>[39m
+                  [0mNotify mechanics about officer issue reports[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"mt-1 block text-xs leading-5 text-slate-500"[39m
+                [36m>[39m
+         ...
+  code: 'ERR_TEST_FAILURE'
+  name: 'TestingLibraryElementError'
+  stack: |-
+    waitForWrapper (/home/user/tracepoint/node_modules/@testing-library/dom/dist/wait-for.js:163:27)
+    /home/user/tracepoint/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/settings/fleet/FleetRulesPanel.test.tsx:37:26)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2481.90807

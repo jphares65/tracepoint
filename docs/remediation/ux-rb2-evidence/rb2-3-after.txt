@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: UX-RB2-3 (D-R1): Quick Inspect, Report Issue and the inspection form follow the server's decision
+ok 1 - UX-RB2-3 (D-R1): Quick Inspect, Report Issue and the inspection form follow the server's decision
+  ---
+  duration_ms: 16.248043
+  type: 'test'
+  ...
+# Subtest: one inspection eligibility rule: listed roles when configured, Fleet access when not
+ok 2 - one inspection eligibility rule: listed roles when configured, Fleet access when not
+  ---
+  duration_ms: 226.003352
+  type: 'test'
+  ...
+# Subtest: inspection route applies the eligibility rule
+ok 3 - inspection route applies the eligibility rule
+  ---
+  duration_ms: 28.397348
+  type: 'test'
+  ...
+# Subtest: inspection response withholds defect work-order costs from inspectors
+ok 4 - inspection response withholds defect work-order costs from inspectors
+  ---
+  duration_ms: 8.441489
+  type: 'test'
+  ...
+# Subtest: issue reports use the eligibility rule and grant no maintenance fields
+ok 5 - issue reports use the eligibility rule and grant no maintenance fields
+  ---
+  duration_ms: 15.691185
+  type: 'test'
+  ...
+# Subtest: vehicle detail (web and mobile) and the fleet report withhold costs without fleet cost access
+ok 6 - vehicle detail (web and mobile) and the fleet report withhold costs without fleet cost access
+  ---
+  duration_ms: 21.448751
+  type: 'test'
+  ...
+# Subtest: UX-RB2-3: vehicle detail (web and mobile) reports canInspect and canReportIssue as the POST routes decide
+ok 7 - UX-RB2-3: vehicle detail (web and mobile) reports canInspect and canReportIssue as the POST routes decide
+  ---
+  duration_ms: 24.072808
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 641.179537

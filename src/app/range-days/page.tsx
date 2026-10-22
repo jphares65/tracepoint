@@ -1,15 +1,45 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { WorkspaceAutosaveState } from "@/lib/range/workspace-autosave";
+import {
+  LatestWorkspaceSaveQueue,
+  type WorkspaceAutosaveState,
+} from "@/lib/range/workspace-autosave";
 import {
   preserveUnsavedBatchRows,
   withStoredCopiesOfUnchangedRecords,
 } from "@/lib/range/workspace-client-state";
 import {
+  EMPTY_MERGEABLE_WORKSPACE,
+  UNKNOWN_BASE_REASON,
+  applyConflictChoice,
+  conflictKey,
+  currentRecord,
+  reconcileConflicts,
+  unsyncedIds,
+  type MergeableWorkspace,
+  type WorkspaceConflict,
+} from "@/lib/range/workspace-merge";
+import {
+  LEGACY_COPY_REASON,
+  RANGE_DAY_DEVICE_COPY_KEY,
+  readDeviceCopy,
+  takeLegacyCopy,
+  takeUnknownAgencyCopy,
+  unattributedCopyConflicts,
+  recoverWorkspace,
+  usableDeviceCopy,
+  writeDeviceCopy,
+} from "@/lib/range/workspace-device-copy";
+import { previewRangeWorkspaceMutation, resultMeasurementError } from "@/lib/range/workspace-mutation";
+import {
+  completionChoiceRequired,
+  measurementField,
   resolveRunCompletion,
+  resolveRunOutcome,
   standardFirearmType,
 } from "@/lib/range/scoring-rules";
+import CompletionChoiceControl from "@/app/range-days/components/CompletionChoiceControl";
 import TracePointShell from "@/app/components/TracePointShell";
 import QualificationEvidence from "@/app/components/QualificationEvidence";
 import QuickQualificationCamera from "@/app/components/QuickQualificationCamera";
@@ -50,7 +80,6 @@ import type {
 
 import {
   addLibraryDrillToRangeDay,
-  addDrillLibraryTemplateToWorkspace,
   createDrillLibraryTemplate,
   createRangePacket,
   getAttendanceCount,
@@ -84,15 +113,24 @@ import {
   hydrateEditableRangeDay,
   isImmutableRangeDay,
 } from "@/lib/range/range-day-immutability";
-import { workspaceForActiveDepartment } from "@/lib/range/workspace-tenant-boundary";
 
 type RangeDayType =
-  "Qualification" | "Rifle" | "Low Light" | "Remedial" | "Make-Up" | "Training";
+  | "Qualification"
+  | "Rifle"
+  | "Low Light"
+  | "Remedial"
+  | "Make-Up"
+  | "Training";
 
 type PacketStatus = "Needs Setup" | "In Progress" | "Ready";
 
 type DepartmentStandardScoringBasis =
-  "Points" | "Percentage" | "Time" | "Pass/Fail" | "Hit Count" | "Completion";
+  | "Points"
+  | "Percentage"
+  | "Time"
+  | "Pass/Fail"
+  | "Hit Count"
+  | "Completion";
 
 type DepartmentStandardConfig = {
   isDepartmentStandard?: boolean;
@@ -136,6 +174,7 @@ type PlannedRangeDay = RangeDay & {
   aar?: RangeDayAAR;
 };
 
+
 type ScoringFormat =
   | "Qualification"
   | "Points"
@@ -161,21 +200,19 @@ type QualificationDrillComponent = {
   required: boolean;
 };
 
-type ExtendedDrillTemplate = DrillTemplate &
-  DepartmentStandardConfig & {
-    scoringFormat?: ScoringFormat;
-    defaultPassingTimeSeconds?: number;
-    defaultMinimumHits?: number;
-    qualificationComponents?: QualificationDrillComponent[];
-  };
+type ExtendedDrillTemplate = DrillTemplate & DepartmentStandardConfig & {
+  scoringFormat?: ScoringFormat;
+  defaultPassingTimeSeconds?: number;
+  defaultMinimumHits?: number;
+  qualificationComponents?: QualificationDrillComponent[];
+};
 
-type ExtendedRangeDayDrill = RangeDayDrill &
-  DepartmentStandardConfig & {
-    scoringFormat?: ScoringFormat;
-    passingTimeSeconds?: number;
-    minimumHits?: number;
-    qualificationComponents?: QualificationDrillComponent[];
-  };
+type ExtendedRangeDayDrill = RangeDayDrill & DepartmentStandardConfig & {
+  scoringFormat?: ScoringFormat;
+  passingTimeSeconds?: number;
+  minimumHits?: number;
+  qualificationComponents?: QualificationDrillComponent[];
+};
 
 type ExtendedDrillRunResult = DrillRunResult & {
   scoringFormatSnapshot?: ScoringFormat;
@@ -269,42 +306,12 @@ let activePersonnelDirectory: PilotPersonnel[] = EMPTY_PERSONNEL;
 let activeFirearmDirectory: LiveFirearm[] = [];
 
 const DEFAULT_EQUIPMENT_CHECKLIST: RangeEquipmentItem[] = [
-  {
-    id: "equipment-ammo",
-    label: "Ammunition staged",
-    required: true,
-    packed: false,
-  },
-  {
-    id: "equipment-targets",
-    label: "Targets / backers",
-    required: true,
-    packed: false,
-  },
-  {
-    id: "equipment-timers",
-    label: "Shot timers",
-    required: true,
-    packed: false,
-  },
-  {
-    id: "equipment-medical",
-    label: "Medical kit / trauma bag",
-    required: true,
-    packed: false,
-  },
-  {
-    id: "equipment-eye-ear",
-    label: "Spare eye and ear protection",
-    required: false,
-    packed: false,
-  },
-  {
-    id: "equipment-tools",
-    label: "Range tools / staplers / tape",
-    required: false,
-    packed: false,
-  },
+  { id: "equipment-ammo", label: "Ammunition staged", required: true, packed: false },
+  { id: "equipment-targets", label: "Targets / backers", required: true, packed: false },
+  { id: "equipment-timers", label: "Shot timers", required: true, packed: false },
+  { id: "equipment-medical", label: "Medical kit / trauma bag", required: true, packed: false },
+  { id: "equipment-eye-ear", label: "Spare eye and ear protection", required: false, packed: false },
+  { id: "equipment-tools", label: "Range tools / staplers / tape", required: false, packed: false },
 ];
 
 type ReadinessItem = {
@@ -368,11 +375,7 @@ const RANGE_DAY_DETAIL_TABS: Array<{
   label: string;
   description: string;
 }> = [
-  {
-    id: "overview",
-    label: "Overview",
-    description: "Day details and staffing",
-  },
+  { id: "overview", label: "Overview", description: "Day details and staffing" },
   { id: "readiness", label: "Readiness", description: "Pre-range checks" },
   { id: "roster", label: "Roster", description: "Officers and firearms" },
   { id: "drills", label: "Drills", description: "Planned drill library" },
@@ -438,7 +441,12 @@ function createDefaultQualificationComponents(): QualificationDrillComponent[] {
   }));
 }
 
-const RANGE_DAY_WORKSPACE_STORAGE_KEY = "tracepoint.rangeDays.workspace.v2";
+const DRILL_DIFFICULTIES: Array<NonNullable<DrillTemplate["difficulty"]>> = [
+  "Basic",
+  "Intermediate",
+  "Advanced",
+  "Instructor Discretion",
+];
 
 type StoredRangeDayWorkspace = {
   rangeDays: PlannedRangeDay[];
@@ -449,205 +457,105 @@ type StoredRangeDayWorkspace = {
   malfunctions: FirearmMalfunction[];
 };
 
-function rangeDayWorkspaceStorageKey(departmentId: string) {
-  return departmentId ? `${RANGE_DAY_WORKSPACE_STORAGE_KEY}.${departmentId}` : "";
-}
-
-function loadStoredRangeDayWorkspace(departmentId: string): Partial<StoredRangeDayWorkspace> | null {
+// UX-RB-5: this device's copy and its sync point live in one storage record
+// (workspace-device-copy.ts). The pre-UX-RB key `tracepoint.rangeDays.workspace.v1`
+// is no longer read: it names no user or agency, so it cannot be shown safely.
+function deviceStorage(): Storage | null {
   if (typeof window === "undefined") return null;
-  const storageKey = rangeDayWorkspaceStorageKey(departmentId);
-  if (!storageKey) return null;
-
   try {
-    const storedWorkspace = window.localStorage.getItem(
-      storageKey,
-    );
-
-    if (!storedWorkspace) return null;
-
-    return JSON.parse(storedWorkspace) as Partial<StoredRangeDayWorkspace>;
-  } catch (error) {
-    console.warn("Could not load saved range day workspace.", error);
+    return window.localStorage;
+  } catch {
     return null;
   }
 }
 
-function writeStoredRangeDayWorkspace(
-  workspace: StoredRangeDayWorkspace,
-  departmentId: string,
-) {
-  if (typeof window === "undefined") return;
-  const storageKey = rangeDayWorkspaceStorageKey(departmentId);
-  if (!storageKey) return;
-
-  try {
-    window.localStorage.setItem(
-      storageKey,
-      JSON.stringify(workspace),
-    );
-  } catch (error) {
-    console.warn("Could not save range day workspace.", error);
-  }
-}
-
-type RemoteRangeDayWorkspace =
-  | { ok: true; departmentId: string; workspace: Partial<StoredRangeDayWorkspace> | null }
-  | { ok: false };
+// Identifies this tab's writes, so another tab's writes can be recognised.
+const RANGE_DAY_TAB_ID = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : String(Math.random());
 
 // The server version the web client last loaded or saved. Sent with every save
 // so a stale copy is rejected instead of overwriting another device's changes.
 let rangeWorkspaceBaseUpdatedAt: string | null | undefined;
+// Advances whenever the workspace is reloaded from the server. A snapshot taken
+// before that is never sent (review M4).
+let rangeWorkspaceEpoch = 0;
 
 class StaleRangeWorkspaceError extends Error {}
+// A save the server refused for a reason other than a newer version.
+class RefusedRangeWorkspaceError extends Error {}
 
-async function loadRemoteRangeDayWorkspace(): Promise<RemoteRangeDayWorkspace> {
-  if (typeof window === "undefined") return { ok: false };
-  // Server errors must not silently turn into local-only data. A stale local
-  // roster displayed as saved is particularly dangerous during Range Day prep.
-  const response = await fetch("/api/pilot/range-workspace", {
-    method: "GET",
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Range Day server data could not be loaded (${response.status}).`);
+// UX-RB-5: a load that could not reach the server is not the same as an empty
+// workspace. Only a successful load sets the version this device saves against.
+async function fetchRemoteRangeDayWorkspace(): Promise<
+  { ok: true; workspace: Partial<StoredRangeDayWorkspace> | null; updatedAt: string | null; departmentId: string | null } | { ok: false }
+> {
+  try {
+    const response = await fetch("/api/pilot/range-workspace", { method: "GET", cache: "no-store" });
+    if (!response.ok) return { ok: false };
+    const payload = (await response.json()) as { workspace?: Partial<StoredRangeDayWorkspace> | null; updatedAt?: string | null; departmentId?: string | null };
+    return { ok: true, workspace: payload.workspace ?? null, updatedAt: payload.updatedAt ?? null, departmentId: payload.departmentId ?? null };
+  } catch (error) {
+    console.warn("Could not load range day workspace.", error);
+    return { ok: false };
   }
-  const payload = (await response.json()) as {
-    departmentId?: string;
-    workspace?: Partial<StoredRangeDayWorkspace> | null;
-    updatedAt?: string | null;
-  };
-  rangeWorkspaceBaseUpdatedAt = payload.updatedAt ?? null;
+}
+
+function toMergeableWorkspace(stored: unknown, currentUserId: string): MergeableWorkspace {
+  const workspace = (stored && typeof stored === "object" ? stored : {}) as Partial<Record<keyof StoredRangeDayWorkspace, unknown>>;
+  const list = (value: unknown) => (Array.isArray(value) ? value : []);
   return {
-    ok: true,
-    departmentId: typeof payload.departmentId === "string" ? payload.departmentId : "",
-    workspace: payload.workspace ?? null,
+    rangeDays: normalizeRangeDaysForWorkspace(list(workspace?.rangeDays), currentUserId),
+    drillLibrary: normalizeDrillLibraryForWorkspace(list(workspace?.drillLibrary)),
+    rangeDayDrills: normalizeRangeDayDrillsForWorkspace(list(workspace?.rangeDayDrills)),
+    rangeRoster: list(workspace?.rangeRoster),
+    results: list(workspace?.results),
+    malfunctions: list(workspace?.malfunctions),
+  } as unknown as MergeableWorkspace;
+}
+
+type WorkspaceBaseline = {
+  rangeDays: [PlannedRangeDay[], unknown[]];
+  drillLibrary: [ExtendedDrillTemplate[], unknown[]];
+  rangeDayDrills: [ExtendedRangeDayDrill[], unknown[]];
+};
+
+function workspaceBaselineFor(remoteWorkspace: Partial<StoredRangeDayWorkspace>, currentUserId: string): WorkspaceBaseline {
+  const storedRangeDays = Array.isArray(remoteWorkspace.rangeDays) ? remoteWorkspace.rangeDays : [];
+  const storedDrillLibrary = Array.isArray(remoteWorkspace.drillLibrary) ? remoteWorkspace.drillLibrary : [];
+  const storedRangeDayDrills = Array.isArray(remoteWorkspace.rangeDayDrills) ? remoteWorkspace.rangeDayDrills : [];
+  return {
+    rangeDays: [normalizeRangeDaysForWorkspace(storedRangeDays, currentUserId), storedRangeDays],
+    drillLibrary: [normalizeDrillLibraryForWorkspace(storedDrillLibrary), storedDrillLibrary],
+    rangeDayDrills: [normalizeRangeDayDrillsForWorkspace(storedRangeDayDrills), storedRangeDayDrills],
   };
 }
 
-type PendingRangeDayWorkspaceWrite = { workspace: StoredRangeDayWorkspace; departmentId: string };
+// What a save sends: unchanged planning records go back exactly as stored.
+function workspaceSnapshotFor(workspace: MergeableWorkspace, baseline: WorkspaceBaseline | null): StoredRangeDayWorkspace {
+  const current = workspace as unknown as StoredRangeDayWorkspace & { rangeDays: PlannedRangeDay[]; drillLibrary: ExtendedDrillTemplate[]; rangeDayDrills: ExtendedRangeDayDrill[] };
+  return {
+    rangeDays: baseline ? withStoredCopiesOfUnchangedRecords(current.rangeDays, ...baseline.rangeDays) : current.rangeDays,
+    drillLibrary: baseline ? withStoredCopiesOfUnchangedRecords(current.drillLibrary, ...baseline.drillLibrary) : current.drillLibrary,
+    rangeDayDrills: baseline ? withStoredCopiesOfUnchangedRecords(current.rangeDayDrills, ...baseline.rangeDayDrills) : current.rangeDayDrills,
+    rangeRoster: current.rangeRoster,
+    results: current.results,
+    malfunctions: current.malfunctions,
+  };
+}
 
-type RangeWorkspaceSaveStatus = {
-  state: WorkspaceAutosaveState;
-  error?: string;
-  stale?: boolean;
-};
-
-let remoteWorkspaceSyncTimer: ReturnType<typeof setTimeout> | null = null;
-let remoteWorkspaceWriteInFlight: Promise<void> | null = null;
-let remoteWorkspacePendingSnapshot: PendingRangeDayWorkspaceWrite | null = null;
-// The newest autosave that the server rejected, kept for an explicit Retry.
-let remoteWorkspaceFailedSnapshot: PendingRangeDayWorkspaceWrite | null = null;
-let remoteWorkspaceSequence = 0;
-let remoteWorkspaceStatusListener: ((status: RangeWorkspaceSaveStatus) => void) | null = null;
-
-// Every save is bound to the agency the workspace was loaded for, and only that
-// agency's records are sent.
-async function saveRemoteRangeDayWorkspace(
-  workspace: StoredRangeDayWorkspace,
-  departmentId: string,
-) {
-  if (!departmentId) {
-    throw new Error("Your active agency could not be resolved. Reload before saving.");
-  }
+async function saveRemoteRangeDayWorkspace(workspace: StoredRangeDayWorkspace) {
   const response = await fetch("/api/pilot/range-workspace", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      workspace: workspaceForActiveDepartment(workspace, departmentId),
-      baseUpdatedAt: rangeWorkspaceBaseUpdatedAt,
-    }),
+    body: JSON.stringify({ workspace, baseUpdatedAt: rangeWorkspaceBaseUpdatedAt }),
   });
-  const payload = (await response.json().catch(() => ({}))) as {
-    error?: string;
-    code?: string;
-    updatedAt?: string;
-  };
+  const payload = await response.json().catch(() => ({})) as { error?: string; code?: string; updatedAt?: string };
   if (!response.ok) {
-    if (payload.code === "stale_workspace") {
-      throw new StaleRangeWorkspaceError(
-        payload.error || "This range workspace was changed on another device. Reload before saving.",
-      );
-    }
-    throw new Error(
-      `${payload.error || "The range workspace could not be saved."} (HTTP ${response.status})`,
-    );
+    const message = payload.error || "The range workspace could not be saved.";
+    if (payload.code === "stale_workspace") throw new StaleRangeWorkspaceError(message);
+    if ([400, 403, 409].includes(response.status)) throw new RefusedRangeWorkspaceError(message);
+    throw new Error(message);
   }
   if (payload.updatedAt) rangeWorkspaceBaseUpdatedAt = payload.updatedAt;
-}
-
-// Serialize every workspace save. Targeted delete must never race a pending
-// full-workspace PUT or silently discard the last 650ms of edits.
-function enqueueRemoteRangeDayWorkspaceWrite(write: PendingRangeDayWorkspaceWrite, sequence: number) {
-  const prior = remoteWorkspaceWriteInFlight ?? Promise.resolve();
-  const pending = prior.catch(() => undefined).then(() => saveRemoteRangeDayWorkspace(write.workspace, write.departmentId));
-  remoteWorkspaceWriteInFlight = pending;
-  void pending.then(() => {
-    if (sequence === remoteWorkspaceSequence) {
-      remoteWorkspaceFailedSnapshot = null;
-      remoteWorkspaceStatusListener?.({ state: "saved" });
-    }
-  }).catch((error) => {
-    console.error("Range Day workspace save failed.", error);
-    if (sequence === remoteWorkspaceSequence) {
-      // "Saved" is shown only after the server confirms; a rejection stays
-      // visible with an explicit Retry (or Reload when the copy is stale).
-      remoteWorkspaceFailedSnapshot = write;
-      remoteWorkspaceStatusListener?.({
-        state: "error",
-        error: error instanceof Error ? error.message : "Unable to save the Range Day.",
-        stale: error instanceof StaleRangeWorkspaceError,
-      });
-    }
-  }).finally(() => {
-    if (remoteWorkspaceWriteInFlight === pending) remoteWorkspaceWriteInFlight = null;
-  });
-  return pending;
-}
-
-async function finishPendingRangeWorkspaceWrite() {
-  if (remoteWorkspaceSyncTimer) {
-    clearTimeout(remoteWorkspaceSyncTimer);
-    remoteWorkspaceSyncTimer = null;
-  }
-  if (remoteWorkspacePendingSnapshot) {
-    const snapshot = remoteWorkspacePendingSnapshot;
-    remoteWorkspacePendingSnapshot = null;
-    enqueueRemoteRangeDayWorkspaceWrite(snapshot, remoteWorkspaceSequence);
-  }
-  if (remoteWorkspaceWriteInFlight) await remoteWorkspaceWriteInFlight;
-}
-
-// An explicit save of the current workspace supersedes any earlier failed autosave.
-function settleRemoteRangeDayWorkspaceWrites() {
-  remoteWorkspaceFailedSnapshot = null;
-  remoteWorkspaceStatusListener?.({ state: "saved" });
-}
-
-function retryRemoteRangeDayWorkspaceWrite() {
-  const failed = remoteWorkspaceFailedSnapshot;
-  if (!failed || remoteWorkspacePendingSnapshot) return;
-  remoteWorkspaceFailedSnapshot = null;
-  const sequence = ++remoteWorkspaceSequence;
-  remoteWorkspaceStatusListener?.({ state: "saving" });
-  void enqueueRemoteRangeDayWorkspaceWrite(failed, sequence).catch(() => undefined);
-}
-
-function writeRemoteRangeDayWorkspace(
-  workspace: StoredRangeDayWorkspace,
-  departmentId: string,
-) {
-  if (typeof window === "undefined") return;
-  remoteWorkspacePendingSnapshot = { workspace, departmentId };
-  remoteWorkspaceFailedSnapshot = null;
-  const sequence = ++remoteWorkspaceSequence;
-  remoteWorkspaceStatusListener?.({ state: "saving" });
-  if (remoteWorkspaceSyncTimer) clearTimeout(remoteWorkspaceSyncTimer);
-  remoteWorkspaceSyncTimer = setTimeout(() => {
-    remoteWorkspaceSyncTimer = null;
-    const snapshot = remoteWorkspacePendingSnapshot;
-    remoteWorkspacePendingSnapshot = null;
-    if (snapshot) void enqueueRemoteRangeDayWorkspaceWrite(snapshot, sequence).catch(() => undefined);
-  }, 650);
 }
 
 async function loadPilotPersonnel() {
@@ -723,6 +631,7 @@ async function loadArmoryFirearms() {
     };
   }
 }
+
 
 function isQualificationNameOrCategory(name?: string, category?: string) {
   return (
@@ -826,12 +735,10 @@ function getDepartmentStandardConfig(
     departmentStandardName: drill.departmentStandardName || drill.name,
     departmentStandardScoringBasis: drill.departmentStandardScoringBasis,
     departmentStandardMinimumScore: drill.departmentStandardMinimumScore,
-    departmentStandardPassingTimeSeconds:
-      drill.departmentStandardPassingTimeSeconds,
+    departmentStandardPassingTimeSeconds: drill.departmentStandardPassingTimeSeconds,
     departmentStandardMinimumHits: drill.departmentStandardMinimumHits,
     departmentStandardAppliesTo: drill.departmentStandardAppliesTo,
-    departmentStandardRemediationRequired:
-      drill.departmentStandardRemediationRequired,
+    departmentStandardRemediationRequired: drill.departmentStandardRemediationRequired,
     departmentStandardRetestRequired: drill.departmentStandardRetestRequired,
     departmentStandardEffectiveDate: drill.departmentStandardEffectiveDate,
     departmentStandardRetirementDate: drill.departmentStandardRetirementDate,
@@ -932,7 +839,8 @@ function formatResultMetric(
 ) {
   if (!result) return "";
 
-  const scoringFormat = result.scoringFormatSnapshot ?? getScoringFormat(drill);
+  const scoringFormat =
+    result.scoringFormatSnapshot ?? getScoringFormat(drill);
 
   if (scoringFormat === "Time") {
     return typeof result.timeSeconds === "number"
@@ -941,7 +849,9 @@ function formatResultMetric(
   }
 
   if (scoringFormat === "Hit Count") {
-    return typeof result.hitCount === "number" ? `${result.hitCount} hits` : "";
+    return typeof result.hitCount === "number"
+      ? `${result.hitCount} hits`
+      : "";
   }
 
   if (scoringFormat === "Completion") {
@@ -966,22 +876,27 @@ function formatResultMetric(
 function getEffectiveRunCount(drill?: RangeDayDrill | null) {
   if (!drill) return 1;
 
-  const qualificationComponents = (drill as ExtendedRangeDayDrill)
-    .qualificationComponents;
+  const qualificationComponents = (
+    drill as ExtendedRangeDayDrill
+  ).qualificationComponents;
 
-  if (isQualificationDrill(drill) && qualificationComponents?.length) {
+  if (
+    isQualificationDrill(drill) &&
+    qualificationComponents?.length
+  ) {
     return qualificationComponents.length;
   }
 
   return isQualificationDrill(drill)
     ? Math.max(drill.runCount ?? 1, 2)
-    : (drill.runCount ?? 1);
+    : drill.runCount ?? 1;
 }
 
 function getRunLabel(drill: RangeDayDrill | undefined, runNumber: number) {
   if (isQualificationDrill(drill)) {
-    const component = (drill as ExtendedRangeDayDrill)
-      .qualificationComponents?.[runNumber - 1];
+    const component = (
+      drill as ExtendedRangeDayDrill
+    ).qualificationComponents?.[runNumber - 1];
 
     if (component) return component.name;
     if (runNumber === 1) return "Day Qualification";
@@ -1020,7 +935,10 @@ function getQualificationStandardMatch(
 ) {
   if (!drill || !isQualificationDrill(drill)) return undefined;
 
-  const configuredComponent = getQualificationDrillComponent(drill, runNumber);
+  const configuredComponent = getQualificationDrillComponent(
+    drill,
+    runNumber,
+  );
 
   if (configuredComponent) {
     return {
@@ -1032,10 +950,10 @@ function getQualificationStandardMatch(
       },
       component: {
         name: configuredComponent.name,
-        scoringBasis:
-          configuredComponent.scoringFormat as DepartmentStandardScoringBasis,
+        scoringBasis: configuredComponent.scoringFormat as DepartmentStandardScoringBasis,
         passingScore: configuredComponent.passingScore ?? null,
-        passingTimeSeconds: configuredComponent.passingTimeSeconds ?? null,
+        passingTimeSeconds:
+          configuredComponent.passingTimeSeconds ?? null,
         minimumHits: configuredComponent.minimumHits ?? null,
         isRequired: configuredComponent.required,
       },
@@ -1062,13 +980,22 @@ function getQualificationStandardMatch(
     (component) => component.isRequired !== false,
   );
 
-  const period = runNumber === 1 ? "day" : runNumber === 2 ? "night" : "";
+  const period =
+    runNumber === 1
+      ? "day"
+      : runNumber === 2
+        ? "night"
+        : "";
 
   const component =
     requiredComponents.find(
       (candidate) =>
-        period && candidate.name.trim().toLowerCase().includes(period),
-    ) ?? (requiredComponents.length === 1 ? requiredComponents[0] : undefined);
+        period &&
+        candidate.name.trim().toLowerCase().includes(period),
+    ) ??
+    (requiredComponents.length === 1
+      ? requiredComponents[0]
+      : undefined);
 
   if (!component) return undefined;
 
@@ -1150,10 +1077,12 @@ function getQualificationStandardSnapshot(
     isDepartmentStandard: true,
     departmentStandardName: `${standard.name} - ${component.name}`,
     departmentStandardScoringBasis: component.scoringBasis,
-    departmentStandardMinimumScore: component.passingScore ?? undefined,
+    departmentStandardMinimumScore:
+      component.passingScore ?? undefined,
     departmentStandardPassingTimeSeconds:
       component.passingTimeSeconds ?? undefined,
-    departmentStandardMinimumHits: component.minimumHits ?? undefined,
+    departmentStandardMinimumHits:
+      component.minimumHits ?? undefined,
   };
 }
 
@@ -1258,9 +1187,13 @@ function normalizeRangeDaysForWorkspace(
         : [];
 
       const fallbackLeadInstructorId =
-        editableRangeDay.leadInstructorId || storedInstructorIds[0] || currentUserId;
+        editableRangeDay.leadInstructorId ||
+        storedInstructorIds[0] ||
+        currentUserId;
 
-      const instructorIds = storedInstructorIds.includes(fallbackLeadInstructorId)
+      const instructorIds = storedInstructorIds.includes(
+        fallbackLeadInstructorId,
+      )
         ? storedInstructorIds
         : [fallbackLeadInstructorId, ...storedInstructorIds];
 
@@ -1268,10 +1201,13 @@ function normalizeRangeDaysForWorkspace(
         ...editableRangeDay,
         leadInstructorId: fallbackLeadInstructorId,
         instructorIds,
-        attendanceMode: normalizeRangeDayAttendanceMode(editableRangeDay.attendanceMode),
+        attendanceMode: normalizeRangeDayAttendanceMode(
+          editableRangeDay.attendanceMode,
+        ),
         staffingNotes: editableRangeDay.staffingNotes ?? "",
         outline:
-          Array.isArray(editableRangeDay.outline) && editableRangeDay.outline.length > 0
+          Array.isArray(editableRangeDay.outline) &&
+          editableRangeDay.outline.length > 0
             ? editableRangeDay.outline
             : getDefaultOutlineForRangeType(editableRangeDay.rangeType),
         equipmentChecklist:
@@ -1365,7 +1301,9 @@ function buildDrillLifecycleLibrary({
         doesRangeDayDrillMatchTemplate(drill, template),
       );
 
-      const matchingDrillIds = new Set(matchingDrills.map((drill) => drill.id));
+      const matchingDrillIds = new Set(
+        matchingDrills.map((drill) => drill.id),
+      );
 
       const performedRunKeys = new Set<string>();
       let lastPerformedDate = "";
@@ -1439,8 +1377,8 @@ function buildDrillLifecycleLibrary({
 
 function getUserName(userId: string) {
   return (
-    activePersonnelDirectory.find((person) => person.id === userId)
-      ?.displayName ?? "Unknown User"
+    activePersonnelDirectory.find((person) => person.id === userId)?.displayName ??
+    "Unknown User"
   );
 }
 
@@ -1495,14 +1433,30 @@ function getPreferredFirearmId(
 
   const matchingFirearm = firearmIds
     .map((firearmId) =>
-      activeFirearmDirectory.find((firearm) => firearm.id === firearmId),
+      activeFirearmDirectory.find(
+        (firearm) => firearm.id === firearmId,
+      ),
     )
     .find(
       (firearm) =>
-        normalizeFirearmType(firearm?.firearm_type) === normalizedDrillType,
+        normalizeFirearmType(firearm?.firearm_type) ===
+        normalizedDrillType,
     );
 
   return matchingFirearm?.id ?? firearmIds[0];
+}
+
+// UX-RB-6: the server's value rule (RNG-14), checked on the officer's row before saving.
+function batchRowMeasurementError(
+  row: { metricValue: string } | undefined,
+  drill: ExtendedRangeDayDrill | null | undefined,
+  runNumber: number,
+) {
+  if (!row || !drill || !row.metricValue.trim()) return "";
+  const field = measurementField(getRunScoringFormat(drill, runNumber));
+  return field
+    ? resultMeasurementError({ runNumber, [field]: row.metricValue }, drill as unknown as Record<string, unknown>)
+    : "";
 }
 
 function StatusPill({
@@ -1566,7 +1520,9 @@ function buildRangeActivitySummaries({
   const summaries = new Map<string, RangeActivitySummary>();
 
   for (const result of results) {
-    const drill = drills.find((item) => item.id === result.drillId);
+    const drill = drills.find(
+      (item) => item.id === result.drillId,
+    );
 
     if (!drill) continue;
 
@@ -1587,13 +1543,16 @@ function buildRangeActivitySummaries({
   }
 
   return Array.from(summaries.values()).sort((left, right) => {
-    const drillComparison = left.drill.name.localeCompare(right.drill.name);
+    const drillComparison = left.drill.name.localeCompare(
+      right.drill.name,
+    );
 
     return drillComparison !== 0
       ? drillComparison
       : left.runNumber - right.runNumber;
   });
 }
+
 
 type PrintableRangePacketProps = {
   rangeDay: PlannedRangeDay;
@@ -1775,19 +1734,13 @@ function PrintableRangePacket({
                   <tr key={drill.id}>
                     <td>
                       <strong>{drill.name}</strong>
-                      {drill.description ? (
-                        <span> — {drill.description}</span>
-                      ) : null}
+                      {drill.description ? <span> — {drill.description}</span> : null}
                     </td>
                     <td>{drill.category}</td>
                     <td>{getScoringFormat(drill)}</td>
                     <td>{getEffectiveRunCount(drill)}</td>
                     <td>{drill.roundCount ?? "—"}</td>
-                    <td>
-                      {drill.isDepartmentStandard
-                        ? getDepartmentStandardRequirementLabel(drill)
-                        : "—"}
-                    </td>
+                    <td>{drill.isDepartmentStandard ? getDepartmentStandardRequirementLabel(drill) : "—"}</td>
                   </tr>
                 ))
               )}
@@ -1918,8 +1871,10 @@ export default function RangeDaysPage() {
   const [rangeRoster, setRangeRoster] =
     useState<RangeRosterEntry[]>(INITIAL_RANGE_ROSTER);
 
-  const [personnel, setPersonnel] = useState<PilotPersonnel[]>(EMPTY_PERSONNEL);
-  const [firearms, setFirearms] = useState<LiveFirearm[]>(EMPTY_FIREARMS);
+  const [personnel, setPersonnel] =
+    useState<PilotPersonnel[]>(EMPTY_PERSONNEL);
+  const [firearms, setFirearms] =
+    useState<LiveFirearm[]>(EMPTY_FIREARMS);
   const [departmentId, setDepartmentId] = useState("");
   const [personnelMessage, setPersonnelMessage] = useState(
     "Loading department personnel...",
@@ -1928,24 +1883,6 @@ export default function RangeDaysPage() {
   const [hasLoadedStoredWorkspace, setHasLoadedStoredWorkspace] =
     useState(false);
   const [saveMessage, setSaveMessage] = useState("");
-  const [workspaceSaveState, setWorkspaceSaveState] =
-    useState<WorkspaceAutosaveState>("idle");
-  const [workspaceSaveError, setWorkspaceSaveError] = useState("");
-  const [workspaceStale, setWorkspaceStale] = useState(false);
-  useEffect(() => {
-    const listener = (status: RangeWorkspaceSaveStatus) => {
-      setWorkspaceSaveState(status.state);
-      setWorkspaceSaveError(status.error ?? "");
-      if (status.stale) setWorkspaceStale(true);
-    };
-    remoteWorkspaceStatusListener = listener;
-    return () => {
-      if (remoteWorkspaceStatusListener === listener) remoteWorkspaceStatusListener = null;
-    };
-  }, []);
-  const [workspaceFeedback, setWorkspaceFeedback] = useState("");
-  const [isSavingRangeDay, setIsSavingRangeDay] = useState(false);
-  const [isRangeDayDirty, setIsRangeDayDirty] = useState(false);
   const [removingDrillId, setRemovingDrillId] = useState("");
   const [canManageRangeDays, setCanManageRangeDays] = useState(false);
   const [canScoreRangeDays, setCanScoreRangeDays] = useState(false);
@@ -1957,9 +1894,8 @@ export default function RangeDaysPage() {
 
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [showCreateDrillForm, setShowCreateDrillForm] = useState(false);
-  const [editingDrillTemplateId, setEditingDrillTemplateId] = useState<
-    string | null
-  >(null);
+  const [editingDrillTemplateId, setEditingDrillTemplateId] =
+    useState<string | null>(null);
 
   const [newDrillName, setNewDrillName] = useState("");
   const [newDrillCategory, setNewDrillCategory] =
@@ -1974,13 +1910,13 @@ export default function RangeDaysPage() {
     useState<NonNullable<DrillTemplate["difficulty"]>>("Basic");
   const [newDrillScoringMode, setNewDrillScoringMode] =
     useState<ScoringFormat>("Pass/Fail");
-  const [newQualificationComponents, setNewQualificationComponents] = useState<
-    QualificationDrillComponent[]
-  >(() => createDefaultQualificationComponents());
+  const [newQualificationComponents, setNewQualificationComponents] =
+    useState<QualificationDrillComponent[]>(() =>
+      createDefaultQualificationComponents(),
+    );
   const [newDrillPassingScore, setNewDrillPassingScore] = useState("");
   const [newDrillMaxScore, setNewDrillMaxScore] = useState("");
-  const [newDrillPassingTimeSeconds, setNewDrillPassingTimeSeconds] =
-    useState("");
+  const [newDrillPassingTimeSeconds, setNewDrillPassingTimeSeconds] = useState("");
   const [newDrillMinimumHits, setNewDrillMinimumHits] = useState("");
   const [newDrillRunCount, setNewDrillRunCount] = useState("1");
   const [newDrillDefaultRequired, setNewDrillDefaultRequired] = useState(false);
@@ -1989,18 +1925,14 @@ export default function RangeDaysPage() {
   const [newDrillStandardName, setNewDrillStandardName] = useState("");
   const [newDrillStandardMinimumScore, setNewDrillStandardMinimumScore] =
     useState("");
-  const [
-    newDrillStandardPassingTimeSeconds,
-    setNewDrillStandardPassingTimeSeconds,
-  ] = useState("");
+  const [newDrillStandardPassingTimeSeconds, setNewDrillStandardPassingTimeSeconds] =
+    useState("");
   const [newDrillStandardMinimumHits, setNewDrillStandardMinimumHits] =
     useState("");
   const [newDrillStandardAppliesTo, setNewDrillStandardAppliesTo] =
     useState("All sworn officers");
-  const [
-    newDrillStandardRemediationRequired,
-    setNewDrillStandardRemediationRequired,
-  ] = useState(true);
+  const [newDrillStandardRemediationRequired, setNewDrillStandardRemediationRequired] =
+    useState(true);
   const [newDrillStandardRetestRequired, setNewDrillStandardRetestRequired] =
     useState(true);
   const [newDrillStandardEffectiveDate, setNewDrillStandardEffectiveDate] =
@@ -2012,10 +1944,8 @@ export default function RangeDaysPage() {
   const [newRosterOfficerId, setNewRosterOfficerId] = useState("");
   const [openAttendanceOfficerId, setOpenAttendanceOfficerId] = useState("");
   const [openAttendanceFirearmId, setOpenAttendanceFirearmId] = useState("");
-  const [
-    openAttendanceOfficerSearchQuery,
-    setOpenAttendanceOfficerSearchQuery,
-  ] = useState("");
+  const [openAttendanceOfficerSearchQuery, setOpenAttendanceOfficerSearchQuery] =
+    useState("");
   const [openAttendanceOfficerPickerOpen, setOpenAttendanceOfficerPickerOpen] =
     useState(false);
   const [newInstructorUserId, setNewInstructorUserId] = useState("");
@@ -2024,7 +1954,6 @@ export default function RangeDaysPage() {
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
   const [selectedDrillId, setSelectedDrillId] = useState("");
   const [selectedRunNumber, setSelectedRunNumber] = useState(1);
-  const [addingDrillTemplateId, setAddingDrillTemplateId] = useState("");
   const [qualificationStandards, setQualificationStandards] = useState<
     QualificationStandardReference[]
   >([]);
@@ -2049,7 +1978,9 @@ export default function RangeDaysPage() {
         };
 
         if (!cancelled) {
-          setQualificationStandards(payload.qualificationStandards ?? []);
+          setQualificationStandards(
+            payload.qualificationStandards ?? [],
+          );
           setCanManageRangeDays(payload.canManage === true);
           setCanScoreRangeDays(payload.canScore === true);
           setCurrentUserId(payload.userId ?? "");
@@ -2068,36 +1999,65 @@ export default function RangeDaysPage() {
       cancelled = true;
     };
   }, []);
-  const [, setScore] = useState("");
-  const [, setPassed] = useState<boolean | undefined>(undefined);
-  const [, setCompleted] = useState(true);
-  const [, setNotes] = useState("");
-  const [, setMalfunctionOccurred] = useState(false);
-  const [, setMalfunctionType] =
+  const [score, setScore] = useState("");
+  const [passed, setPassed] = useState<boolean | undefined>(undefined);
+  const [completed, setCompleted] = useState(true);
+  const [notes, setNotes] = useState("");
+  const [malfunctionOccurred, setMalfunctionOccurred] = useState(false);
+  const [malfunctionType, setMalfunctionType] =
     useState<MalfunctionType>("Failure to Feed");
-  const [, setMalfunctionNotes] = useState("");
+  const [malfunctionNotes, setMalfunctionNotes] = useState("");
   const [results, setResults] = useState<ExtendedDrillRunResult[]>([]);
-  const [batchScoreRows, setBatchScoreRows] = useState<
-    Record<string, BatchScoreRow>
-  >({});
+  const [batchScoreRows, setBatchScoreRows] = useState<Record<string, BatchScoreRow>>({});
   const unsavedBatchOfficerIds = useRef(new Set<string>());
   const batchRowsContext = useRef("");
-  const loadedWorkspaceBaseline = useRef<{
-    rangeDays: [PlannedRangeDay[], unknown[]];
-    drillLibrary: [ExtendedDrillTemplate[], unknown[]];
-    rangeDayDrills: [ExtendedRangeDayDrill[], unknown[]];
-  } | null>(null);
+  const [workspaceSaveState, setWorkspaceSaveState] =
+    useState<WorkspaceAutosaveState>("idle");
+  const [workspaceSaveError, setWorkspaceSaveError] = useState("");
+  const [workspaceStale, setWorkspaceStale] = useState(false);
+  // UX-RB-5: merge base, conflicts and offline protection.
+  const syncedWorkspace = useRef<MergeableWorkspace>(EMPTY_MERGEABLE_WORKSPACE);
+  const [syncedResults, setSyncedResults] = useState<MergeableWorkspace["results"]>([]);
+  const [workspaceConflicts, setWorkspaceConflicts] = useState<WorkspaceConflict[]>([]);
+  const workspaceConflictsRef = useRef<WorkspaceConflict[]>([]);
+  const [workspaceSyncBlocked, setWorkspaceSyncBlocked] = useState(false);
+  const workspaceSyncBlockedRef = useRef(false);
+  const [workspaceRecoveryError, setWorkspaceRecoveryError] = useState("");
+  const workspaceRecovering = useRef(false);
+  const snapshotClientForms = useRef(new WeakMap<StoredRangeDayWorkspace, MergeableWorkspace>());
+  const snapshotEpochs = useRef(new WeakMap<StoredRangeDayWorkspace, number>());
+  // Whether syncedWorkspace is a real sync point (false for a copy whose sync point is unknown).
+  const baseKnown = useRef(false);
+  const deviceDepartmentId = useRef<string | null>(null);
+  // The server's copy as last loaded or saved, for checking a conflict choice.
+  const serverWorkspace = useRef<Partial<StoredRangeDayWorkspace>>({});
+  const localCopy = useRef<unknown>(null);
+  const refusalRecoveredFor = useRef<string | null | undefined>(undefined);
+  const [deviceCopyFailed, setDeviceCopyFailed] = useState(false);
+  const [otherTabActive, setOtherTabActive] = useState(false);
+  const latestWorkspaceState = useRef<MergeableWorkspace>(EMPTY_MERGEABLE_WORKSPACE);
+  const workspaceSaveQueue = useRef<LatestWorkspaceSaveQueue<StoredRangeDayWorkspace> | null>(null);
+  if (!workspaceSaveQueue.current) workspaceSaveQueue.current = new LatestWorkspaceSaveQueue();
+  const loadedWorkspaceBaseline = useRef<WorkspaceBaseline | null>(null);
   const [malfunctions, setMalfunctions] = useState<FirearmMalfunction[]>([]);
+  latestWorkspaceState.current = { rangeDays, drillLibrary, rangeDayDrills, rangeRoster, results, malfunctions } as unknown as MergeableWorkspace;
+  // UX-RB-6: a result shows "Saved" only when the server holds exactly this version.
+  const unsyncedResultIds = useMemo(
+    () => unsyncedIds(syncedResults, results as unknown as MergeableWorkspace["results"]),
+    [syncedResults, results],
+  );
+  const conflictedResultIds = useMemo(
+    () => new Set(workspaceConflicts.filter((conflict) => conflict.collection === "results").map((conflict) => conflict.id)),
+    [workspaceConflicts],
+  );
 
   const selectedRangeDay = selectedRangeDayId
-    ? (rangeDays.find((item) => item.id === selectedRangeDayId) ?? null)
+    ? rangeDays.find((item) => item.id === selectedRangeDayId) ?? null
     : null;
   // Packet readiness is a planning milestone; only the day status finalizes it.
-  const selectedRangeDayFinalized = Boolean(
-    selectedRangeDay && isImmutableRangeDay({ status: selectedRangeDay.status }),
-  );
-  const canEditSelectedRangeDay =
-    canManageRangeDays && !selectedRangeDayFinalized;
+  const selectedRangeDayFinalized = Boolean(selectedRangeDay &&
+    isImmutableRangeDay({ status: selectedRangeDay.status }));
+  const canEditSelectedRangeDay = canManageRangeDays && !selectedRangeDayFinalized;
   // Instructors who score may run the line: mark attendance and add walk-ups.
   const canTakeSelectedRangeDayAttendance =
     (canManageRangeDays || canScoreRangeDays) && !selectedRangeDayFinalized;
@@ -2171,9 +2131,7 @@ export default function RangeDaysPage() {
   const selectedRangeResults = useMemo(() => {
     if (!selectedRangeDay) return [];
 
-    return results.filter(
-      (result) => result.rangeDayId === selectedRangeDay.id,
-    );
+    return results.filter((result) => result.rangeDayId === selectedRangeDay.id);
   }, [results, selectedRangeDay]);
 
   const selectedDrill =
@@ -2190,8 +2148,7 @@ export default function RangeDaysPage() {
     [firearms, openAttendanceOfficerId, selectedDrill?.firearmType],
   );
 
-  const selectableOpenAttendanceFirearms =
-    openAttendanceFirearmOptions.firearms;
+  const selectableOpenAttendanceFirearms = openAttendanceFirearmOptions.firearms;
 
   useEffect(() => {
     const nextFirearmId = resolveOpenAttendanceFirearmSelection({
@@ -2200,16 +2157,20 @@ export default function RangeDaysPage() {
     });
 
     if (nextFirearmId !== openAttendanceFirearmId) {
-      const selectionTimer = window.setTimeout(() => {
-        setOpenAttendanceFirearmId(nextFirearmId);
-      }, 0);
-
-      return () => window.clearTimeout(selectionTimer);
+      setOpenAttendanceFirearmId(nextFirearmId);
     }
-  }, [openAttendanceFirearmId, selectableOpenAttendanceFirearms]);
+  }, [
+    openAttendanceFirearmId,
+    selectableOpenAttendanceFirearms,
+  ]);
 
   const selectedEffectiveRunCount = getEffectiveRunCount(selectedDrill);
 
+  const selectedRosterEntry = selectedRoster.find(
+    (entry) => entry.officerId === selectedOfficerId,
+  );
+
+  const selectedFirearmId = selectedRosterEntry?.assignedFirearmIds[0];
 
   const selectedOfficerResults = useMemo(
     () =>
@@ -2263,13 +2224,17 @@ export default function RangeDaysPage() {
     const requiredDrillFirearmTypes = Array.from(
       new Set(
         selectedDrills
-          .map((drill) => normalizeFirearmType(drill.firearmType))
-          .filter((type) => Boolean(type) && type !== "any"),
+          .map((drill) =>
+            normalizeFirearmType(drill.firearmType),
+          )
+          .filter(
+            (type) => Boolean(type) && type !== "any",
+          ),
       ),
     );
 
-    const officersMissingRequiredFirearmTypes = selectedRoster.filter(
-      (entry) => {
+    const officersMissingRequiredFirearmTypes =
+      selectedRoster.filter((entry) => {
         if (entry.assignedFirearmIds.length === 0) {
           return false;
         }
@@ -2281,19 +2246,21 @@ export default function RangeDaysPage() {
                 (firearm) => firearm.id === firearmId,
               ),
             )
-            .map((firearm) => normalizeFirearmType(firearm?.firearm_type))
+            .map((firearm) =>
+              normalizeFirearmType(firearm?.firearm_type),
+            )
             .filter(Boolean),
         );
 
         return requiredDrillFirearmTypes.some(
-          (requiredType) => !officerFirearmTypes.has(requiredType),
+          (requiredType) =>
+            !officerFirearmTypes.has(requiredType),
         );
-      },
-    ).length;
+      }).length;
 
-    const unpackedRequiredEquipment = getRangeDayEquipment(
-      selectedRangeDay,
-    ).filter((item) => item.required && !item.packed).length;
+    const unpackedRequiredEquipment = getRangeDayEquipment(selectedRangeDay).filter(
+      (item) => item.required && !item.packed,
+    ).length;
 
     const dayMalfunctions = malfunctions.filter(
       (malfunction) => malfunction.rangeDayId === selectedRangeDay.id,
@@ -2329,7 +2296,10 @@ export default function RangeDaysPage() {
           officersWithoutFirearms === 0
             ? "Each rostered officer has at least one firearm selected"
             : `${officersWithoutFirearms} officer${officersWithoutFirearms === 1 ? "" : "s"} missing firearm assignment`,
-        status: officersWithoutFirearms === 0 ? "ready" : "critical",
+        status:
+          officersWithoutFirearms === 0
+            ? "ready"
+            : "critical",
       },
       {
         label: "Firearm / drill compatibility",
@@ -2339,7 +2309,10 @@ export default function RangeDaysPage() {
             : officersMissingRequiredFirearmTypes === 0
               ? "Rostered officers have firearms matching the planned drill types"
               : `${officersMissingRequiredFirearmTypes} officer${officersMissingRequiredFirearmTypes === 1 ? "" : "s"} missing a firearm type required by the planned drills`,
-        status: officersMissingRequiredFirearmTypes === 0 ? "ready" : "warning",
+        status:
+          officersMissingRequiredFirearmTypes === 0
+            ? "ready"
+            : "warning",
       },
       {
         label: "Planned drills",
@@ -2355,8 +2328,7 @@ export default function RangeDaysPage() {
           selectedDepartmentStandardDrills.length > 0
             ? `${selectedDepartmentStandardDrills.length} standard${selectedDepartmentStandardDrills.length === 1 ? "" : "s"} included`
             : "No department standards included",
-        status:
-          selectedDepartmentStandardDrills.length > 0 ? "ready" : "warning",
+        status: selectedDepartmentStandardDrills.length > 0 ? "ready" : "warning",
       },
       {
         label: "Required equipment",
@@ -2384,7 +2356,7 @@ export default function RangeDaysPage() {
     attendingRoster.length,
     malfunctions,
     selectedDepartmentStandardDrills.length,
-    selectedDrills,
+    selectedDrills.length,
     selectedRangeDay,
     selectedRoster,
   ]);
@@ -2499,9 +2471,7 @@ export default function RangeDaysPage() {
 
       setPersonnel(personnelPayload.personnel);
       setFirearms(armoryPayload.firearms);
-      // The Range Workspace endpoint is the authority for the department used
-      // to serialize its PUT payload. Do not let this independent Armory
-      // request race and replace it with a stale context.
+      setDepartmentId(armoryPayload.departmentId);
       setPersonnelMessage(
         personnelPayload.source === "error"
           ? "Department personnel could not be loaded."
@@ -2531,111 +2501,108 @@ export default function RangeDaysPage() {
     let isMounted = true;
 
     async function loadWorkspace() {
-      const remote = await loadRemoteRangeDayWorkspace();
-      const activeDepartmentId = remote.ok ? remote.departmentId : departmentId;
-      const remoteWorkspace = remote.ok ? remote.workspace : null;
-      const storedWorkspace = remoteWorkspace ?? loadStoredRangeDayWorkspace(activeDepartmentId);
-
+      const remote = await fetchRemoteRangeDayWorkspace();
       if (!isMounted) return;
+      const storage = deviceStorage();
 
-      if (remote.ok && remote.departmentId) {
-        setDepartmentId(remote.departmentId);
-      }
+      let initial: MergeableWorkspace;
+      let conflicts: WorkspaceConflict[] = [];
+      let afterPersist = () => {};
 
-      if (remoteWorkspace) {
-        writeStoredRangeDayWorkspace({
-          rangeDays: Array.isArray(remoteWorkspace.rangeDays)
-            ? normalizeRangeDaysForWorkspace(
-                remoteWorkspace.rangeDays,
-                currentUserId,
-              )
-            : [],
-          drillLibrary: Array.isArray(remoteWorkspace.drillLibrary)
-            ? normalizeDrillLibraryForWorkspace(remoteWorkspace.drillLibrary)
-            : [],
-          rangeDayDrills: Array.isArray(remoteWorkspace.rangeDayDrills)
-            ? normalizeRangeDayDrillsForWorkspace(
-                remoteWorkspace.rangeDayDrills,
-              )
-            : [],
-          rangeRoster: Array.isArray(remoteWorkspace.rangeRoster)
-            ? remoteWorkspace.rangeRoster
-            : [],
-          results: Array.isArray(remoteWorkspace.results)
-            ? remoteWorkspace.results
-            : [],
-          malfunctions: Array.isArray(remoteWorkspace.malfunctions)
-            ? remoteWorkspace.malfunctions
-            : [],
-        }, activeDepartmentId);
-      }
-
-      const activeWorkspace = storedWorkspace && activeDepartmentId
-        ? workspaceForActiveDepartment(storedWorkspace, activeDepartmentId)
-        : storedWorkspace;
-
-      if (remoteWorkspace) {
-        // Keep the server copies so records the user has not changed are sent
-        // back exactly as stored, never as load-time normalization.
-        const storedRangeDays = Array.isArray(activeWorkspace?.rangeDays) ? activeWorkspace.rangeDays : [];
-        const storedDrillLibrary = Array.isArray(activeWorkspace?.drillLibrary) ? activeWorkspace.drillLibrary : [];
-        const storedRangeDayDrills = Array.isArray(activeWorkspace?.rangeDayDrills) ? activeWorkspace.rangeDayDrills : [];
-        loadedWorkspaceBaseline.current = {
-          rangeDays: [normalizeRangeDaysForWorkspace(storedRangeDays, currentUserId), storedRangeDays],
-          drillLibrary: [normalizeDrillLibraryForWorkspace(storedDrillLibrary), storedDrillLibrary],
-          rangeDayDrills: [normalizeRangeDayDrillsForWorkspace(storedRangeDayDrills), storedRangeDayDrills],
+      if (remote.ok) {
+        // Review R2-H2: this user's record for this agency only.
+        const copy = usableDeviceCopy(readDeviceCopy(storage, currentUserId, remote.departmentId), { userId: currentUserId, departmentId: remote.departmentId });
+        rangeWorkspaceBaseUpdatedAt = remote.updatedAt;
+        rangeWorkspaceEpoch += 1;
+        deviceDepartmentId.current = remote.departmentId;
+        setLoadedWorkspaceBaseline(remote.workspace ?? {});
+        const serverForm = toMergeableWorkspace(remote.workspace, currentUserId);
+        initial = serverForm;
+        // UX-RB-5: changes made on this device and not yet on the server are replayed, not dropped.
+        if (copy) {
+          const recovered = recoverWorkspace({
+            base: copy.base ? toMergeableWorkspace(copy.base, currentUserId) : null,
+            local: toMergeableWorkspace(copy.workspace, currentUserId),
+            server: serverForm,
+            serverEmpty: remote.workspace === null,
+            conflicts: copy.conflicts ?? [],
+            accept: serverAcceptance(remote.workspace ?? {}, remote.departmentId),
+          });
+          initial = recovered.workspace;
+          conflicts = recovered.conflicts;
+        }
+        // Review L6 / R2-M4: a copy written before the agency was known, and one
+        // left by an earlier version, are listed as differences; never applied.
+        const unknownCopy = takeUnknownAgencyCopy(storage, currentUserId);
+        const legacy = canManageRangeDays || canScoreRangeDays ? takeLegacyCopy(storage, currentUserId) : null;
+        const unattributed = [
+          ...(unknownCopy ? unattributedCopyConflicts(toMergeableWorkspace(unknownCopy.copy.workspace, currentUserId), initial, UNKNOWN_BASE_REASON, remote.departmentId) : []),
+          ...(legacy ? unattributedCopyConflicts(toMergeableWorkspace(legacy.workspace, currentUserId), initial, LEGACY_COPY_REASON, remote.departmentId) : []),
+        ];
+        // This user's own conflicts win over a leftover copy's (review 3177a83 L-c).
+        if (unattributed.length) conflicts = reconcileConflicts(unattributed, conflicts, initial);
+        afterPersist = () => {
+          unknownCopy?.discard();
+          legacy?.markListed();
         };
+        syncedWorkspace.current = serverForm;
+        baseKnown.current = true;
+        workspaceSyncBlockedRef.current = false;
+        setWorkspaceSyncBlocked(false);
+      } else {
+        // B-03: a copy whose server version is unknown is shown but never saved
+        // until the server copy has been loaded and merged.
+        const copy = usableDeviceCopy(readDeviceCopy(storage, currentUserId, null), { userId: currentUserId, departmentId: null });
+        initial = toMergeableWorkspace(copy?.workspace, currentUserId);
+        conflicts = copy?.conflicts ?? [];
+        deviceDepartmentId.current = copy?.departmentId ?? null;
+        baseKnown.current = Boolean(copy?.base);
+        syncedWorkspace.current = copy?.base ? toMergeableWorkspace(copy.base, currentUserId) : EMPTY_MERGEABLE_WORKSPACE;
+        workspaceSyncBlockedRef.current = true;
+        setWorkspaceSyncBlocked(true);
       }
 
-      if (Array.isArray(activeWorkspace?.rangeDays)) {
-        setRangeDays(
-          normalizeRangeDaysForWorkspace(
-            activeWorkspace.rangeDays,
-            currentUserId,
-          ),
-        );
-      }
-
-      if (Array.isArray(activeWorkspace?.drillLibrary)) {
-        setDrillLibrary(
-          normalizeDrillLibraryForWorkspace(activeWorkspace.drillLibrary),
-        );
-      }
-
-      if (Array.isArray(activeWorkspace?.rangeDayDrills)) {
-        setRangeDayDrills(
-          normalizeRangeDayDrillsForWorkspace(activeWorkspace.rangeDayDrills),
-        );
-      }
-
-      if (Array.isArray(activeWorkspace?.rangeRoster)) {
-        setRangeRoster(activeWorkspace.rangeRoster);
-      }
-
-      if (Array.isArray(activeWorkspace?.results)) {
-        setResults(activeWorkspace.results);
-      }
-
-      if (Array.isArray(activeWorkspace?.malfunctions)) {
-        setMalfunctions(activeWorkspace.malfunctions);
-      }
-
+      setSyncedResults(syncedWorkspace.current.results);
+      workspaceConflictsRef.current = conflicts;
+      setWorkspaceConflicts(conflicts);
+      applyMergeableWorkspace(initial);
+      // The merged copy and its sync point are written together (review H2).
+      if (persistDeviceCopy(initial, conflicts)) afterPersist();
       setHasLoadedStoredWorkspace(true);
     }
 
     void loadWorkspace().catch((error) => {
-      if (isMounted) setSaveMessage(`Range Day synchronization unavailable: ${error instanceof Error ? error.message : "Try reloading the page."}`);
+      if (isMounted)
+        setSaveMessage(
+          `Range Day synchronization unavailable: ${error instanceof Error ? error.message : "Try reloading the page."}`,
+        );
     });
 
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per signed-in user; helpers read refs
   }, [currentUserId]);
+
+  // Review H2: another tab writing this device's copy is shown, not silently raced.
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (!event.key?.startsWith(`${RANGE_DAY_DEVICE_COPY_KEY}.`) || !event.newValue) return;
+      try {
+        const copy = JSON.parse(event.newValue) as { tabId?: string };
+        if (copy.tabId && copy.tabId !== RANGE_DAY_TAB_ID) setOtherTabActive(true);
+      } catch {
+        // Not a copy this page can read.
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   useEffect(() => {
     if (!hasLoadedStoredWorkspace) return;
 
-    queueRangeDayWorkspaceSave(createRangeDayWorkspaceSnapshot());
+    queueRangeDayWorkspaceSave(createRangeDayWorkspaceSnapshot(), 650);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the snapshot reads exactly these values
   }, [
     drillLibrary,
@@ -2647,18 +2614,17 @@ export default function RangeDaysPage() {
     results,
     canManageRangeDays,
     canScoreRangeDays,
-    departmentId,
   ]);
+
+  useEffect(() => () => workspaceSaveQueue.current?.dispose(), []);
 
   useEffect(() => {
     if (!selectedRangeDay) return;
 
     if (availableRosterOfficers.length === 0) {
-      window.setTimeout(() => {
-        setNewRosterOfficerId("");
-        setOpenAttendanceOfficerId("");
-        setOpenAttendanceFirearmId("");
-      }, 0);
+      setNewRosterOfficerId("");
+      setOpenAttendanceOfficerId("");
+      setOpenAttendanceFirearmId("");
       return;
     }
 
@@ -2667,10 +2633,7 @@ export default function RangeDaysPage() {
     );
 
     if (!selectedOfficerIsAvailable) {
-      window.setTimeout(
-        () => setNewRosterOfficerId(availableRosterOfficers[0].id),
-        0,
-      );
+      setNewRosterOfficerId(availableRosterOfficers[0].id);
     }
 
     const openAttendanceOfficerIsAvailable = availableRosterOfficers.some(
@@ -2678,10 +2641,8 @@ export default function RangeDaysPage() {
     );
 
     if (!openAttendanceOfficerIsAvailable) {
-      window.setTimeout(() => {
-        setOpenAttendanceOfficerId("");
-        setOpenAttendanceFirearmId("");
-      }, 0);
+      setOpenAttendanceOfficerId("");
+      setOpenAttendanceFirearmId("");
     }
   }, [
     availableRosterOfficers,
@@ -2694,7 +2655,7 @@ export default function RangeDaysPage() {
     if (!selectedRangeDay) return;
 
     if (availableInstructorUsers.length === 0) {
-      window.setTimeout(() => setNewInstructorUserId(""), 0);
+      setNewInstructorUserId("");
       return;
     }
 
@@ -2703,10 +2664,7 @@ export default function RangeDaysPage() {
     );
 
     if (!selectedInstructorIsAvailable) {
-      window.setTimeout(
-        () => setNewInstructorUserId(availableInstructorUsers[0].id),
-        0,
-      );
+      setNewInstructorUserId(availableInstructorUsers[0].id);
     }
   }, [availableInstructorUsers, newInstructorUserId, selectedRangeDay]);
 
@@ -2714,7 +2672,7 @@ export default function RangeDaysPage() {
     if (!selectedRangeDay || !selectedDrill) {
       unsavedBatchOfficerIds.current.clear();
       batchRowsContext.current = "";
-      window.setTimeout(() => setBatchScoreRows({}), 0);
+      setBatchScoreRows({});
       return;
     }
 
@@ -2724,7 +2682,10 @@ export default function RangeDaysPage() {
       batchRowsContext.current = rowsContext;
     }
 
-    const scoringFormat = getRunScoringFormat(selectedDrill, selectedRunNumber);
+    const scoringFormat = getRunScoringFormat(
+      selectedDrill,
+      selectedRunNumber,
+    );
     const nextRows: Record<string, BatchScoreRow> = {};
 
     attendingRoster.forEach((entry) => {
@@ -2787,12 +2748,8 @@ export default function RangeDaysPage() {
       };
     });
 
-    window.setTimeout(
-      () =>
-        setBatchScoreRows((current) =>
-          preserveUnsavedBatchRows(nextRows, current, unsavedBatchOfficerIds.current),
-        ),
-      0,
+    setBatchScoreRows((current) =>
+      preserveUnsavedBatchRows(nextRows, current, unsavedBatchOfficerIds.current),
     );
   }, [
     attendingRoster,
@@ -2805,11 +2762,7 @@ export default function RangeDaysPage() {
 
   useEffect(() => {
     if (selectedRunNumber > selectedEffectiveRunCount) {
-      const runTimer = window.setTimeout(() => {
-        setSelectedRunNumber(selectedEffectiveRunCount);
-      }, 0);
-
-      return () => window.clearTimeout(runTimer);
+      setSelectedRunNumber(selectedEffectiveRunCount);
     }
   }, [selectedEffectiveRunCount, selectedRunNumber]);
 
@@ -2927,18 +2880,14 @@ export default function RangeDaysPage() {
   function handleArchiveDrillTemplate(template: ExtendedDrillTemplate) {
     if (!canManageRangeDays) return;
     const nextStatus = template.status === "Archived" ? "Active" : "Archived";
-    setDrillLibrary((current) =>
-      current.map((item) =>
-        item.id === template.id
-          ? { ...item, status: nextStatus, updatedAt: new Date().toISOString() }
-          : item,
-      ),
-    );
-    setWorkspaceFeedback(
-      nextStatus === "Archived"
-        ? `${template.name} archived. Existing range-day copies and results were preserved.`
-        : `${template.name} restored to the drill library.`,
-    );
+    setDrillLibrary((current) => current.map((item) =>
+      item.id === template.id
+        ? { ...item, status: nextStatus, updatedAt: new Date().toISOString() }
+        : item,
+    ));
+    setSaveMessage(nextStatus === "Archived"
+      ? `${template.name} archived. Existing range-day copies and results were preserved.`
+      : `${template.name} restored to the drill library.`);
   }
 
   function openRangeDay(rangeDayId: string) {
@@ -2970,12 +2919,12 @@ export default function RangeDaysPage() {
   function handleCreateRangeDay() {
     if (!canManageRangeDays) return;
     if (!departmentId) {
-      setWorkspaceFeedback("Department context could not be loaded.");
+      setSaveMessage("Department context could not be loaded.");
       return;
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const newRangeDayId = `range-${Date.now()}`;
+    const newRangeDayId = `range-${crypto.randomUUID()}`;
 
     const newRangeDay: PlannedRangeDay = {
       id: newRangeDayId,
@@ -2995,9 +2944,7 @@ export default function RangeDaysPage() {
       staffingNotes: "",
       outline: getDefaultOutlineForRangeType("Training"),
       notes: "",
-      equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({
-        ...item,
-      })),
+      equipmentChecklist: DEFAULT_EQUIPMENT_CHECKLIST.map((item) => ({ ...item })),
       aar: { objectivesAchieved: "" },
     };
 
@@ -3029,9 +2976,7 @@ export default function RangeDaysPage() {
     );
   }
 
-  function updateSelectedEquipmentChecklist(
-    nextChecklist: RangeEquipmentItem[],
-  ) {
+  function updateSelectedEquipmentChecklist(nextChecklist: RangeEquipmentItem[]) {
     if (!selectedRangeDay) return;
 
     updateSelectedRangeDay("equipmentChecklist", nextChecklist);
@@ -3058,7 +3003,7 @@ export default function RangeDaysPage() {
     updateSelectedEquipmentChecklist([
       ...getRangeDayEquipment(selectedRangeDay),
       {
-        id: `equipment-${Date.now()}`,
+        id: `equipment-${crypto.randomUUID()}`,
         label: newEquipmentLabel.trim(),
         required: false,
         packed: false,
@@ -3072,9 +3017,7 @@ export default function RangeDaysPage() {
     if (!selectedRangeDay) return;
 
     updateSelectedEquipmentChecklist(
-      getRangeDayEquipment(selectedRangeDay).filter(
-        (item) => item.id !== itemId,
-      ),
+      getRangeDayEquipment(selectedRangeDay).filter((item) => item.id !== itemId),
     );
   }
 
@@ -3122,11 +3065,7 @@ export default function RangeDaysPage() {
   ) {
     if (!canManageRangeDays) return;
     const currentDay = rangeDays.find((item) => item.id === rangeDayId);
-    if (
-      currentDay &&
-      isImmutableRangeDay({ status: currentDay.status })
-    )
-      return;
+    if (currentDay && isImmutableRangeDay({ status: currentDay.status })) return;
     if (!confirmFinalRangeDayStatus(nextStatus)) return;
     setRangeDays((current) =>
       current.map((rangeDay) =>
@@ -3140,64 +3079,226 @@ export default function RangeDaysPage() {
     );
   }
 
-  function createRangeDayWorkspaceSnapshot(): StoredRangeDayWorkspace {
-    const baseline = loadedWorkspaceBaseline.current;
-    return {
-      rangeDays: baseline ? withStoredCopiesOfUnchangedRecords(rangeDays, ...baseline.rangeDays) : rangeDays,
-      drillLibrary: baseline ? withStoredCopiesOfUnchangedRecords(drillLibrary, ...baseline.drillLibrary) : drillLibrary,
-      rangeDayDrills: baseline ? withStoredCopiesOfUnchangedRecords(rangeDayDrills, ...baseline.rangeDayDrills) : rangeDayDrills,
-      rangeRoster,
-      results,
-      malfunctions,
+  function setLoadedWorkspaceBaseline(remoteWorkspace: Partial<StoredRangeDayWorkspace>) {
+    loadedWorkspaceBaseline.current = workspaceBaselineFor(remoteWorkspace, currentUserId);
+    serverWorkspace.current = remoteWorkspace;
+  }
+
+  // Review H1: the server's own decision for a merged workspace, so a replayed
+  // change it would refuse is listed for the instructor instead of being sent.
+  function serverAcceptance(remoteWorkspace: Partial<StoredRangeDayWorkspace>, departmentId: string | null) {
+    const baseline = workspaceBaselineFor(remoteWorkspace, currentUserId);
+    return (workspace: MergeableWorkspace) => {
+      const decision = previewRangeWorkspaceMutation({
+        existingWorkspace: remoteWorkspace,
+        nextWorkspace: workspaceSnapshotFor(workspace, baseline),
+        canManage: canManageRangeDays,
+        canScore: canScoreRangeDays,
+        departmentId,
+      });
+      return decision.ok ? { ok: true as const } : { ok: false as const, error: decision.error };
     };
   }
 
-  function queueRangeDayWorkspaceSave(workspace: StoredRangeDayWorkspace) {
-    if (!departmentId) return;
-    writeStoredRangeDayWorkspace(workspace, departmentId);
+  function applyMergeableWorkspace(workspace: MergeableWorkspace) {
+    setRangeDays(workspace.rangeDays as unknown as PlannedRangeDay[]);
+    setDrillLibrary(workspace.drillLibrary as unknown as ExtendedDrillTemplate[]);
+    setRangeDayDrills(workspace.rangeDayDrills as unknown as ExtendedRangeDayDrill[]);
+    setRangeRoster(workspace.rangeRoster as unknown as RangeRosterEntry[]);
+    setResults(workspace.results as unknown as ExtendedDrillRunResult[]);
+    setMalfunctions(workspace.malfunctions as unknown as FirearmMalfunction[]);
+  }
+
+  // Review H2: the local copy, its sync point and the conflicts are one record.
+  function persistDeviceCopy(workspace: unknown = localCopy.current, conflicts = workspaceConflictsRef.current) {
+    if (!currentUserId) return false;
+    localCopy.current = workspace;
+    const kept = writeDeviceCopy(deviceStorage(), {
+      version: 2,
+      userId: currentUserId,
+      departmentId: deviceDepartmentId.current,
+      tabId: RANGE_DAY_TAB_ID,
+      workspace,
+      base: baseKnown.current ? syncedWorkspace.current : null,
+      baseUpdatedAt: rangeWorkspaceBaseUpdatedAt ?? null,
+      conflicts,
+    });
+    setDeviceCopyFailed(!kept);
+    return kept;
+  }
+
+  function createRangeDayWorkspaceSnapshot(): StoredRangeDayWorkspace {
+    const clientForm = { rangeDays, drillLibrary, rangeDayDrills, rangeRoster, results, malfunctions } as unknown as MergeableWorkspace;
+    const snapshot = workspaceSnapshotFor(clientForm, loadedWorkspaceBaseline.current);
+    snapshotClientForms.current.set(snapshot, clientForm);
+    snapshotEpochs.current.set(snapshot, rangeWorkspaceEpoch);
+    return snapshot;
+  }
+
+  async function saveRangeDayWorkspaceToServer(workspace: StoredRangeDayWorkspace) {
+    if (workspaceSyncBlockedRef.current) {
+      throw new Error("Not synced: the server copy could not be loaded. Your changes are kept on this device.");
+    }
+    if (workspaceRecovering.current || snapshotEpochs.current.get(workspace) !== rangeWorkspaceEpoch) {
+      throw new Error("Merging changes from another device…");
+    }
+    try {
+      await saveRemoteRangeDayWorkspace(workspace);
+      serverWorkspace.current = workspace;
+      const clientForm = snapshotClientForms.current.get(workspace);
+      if (clientForm) {
+        syncedWorkspace.current = clientForm;
+        setSyncedResults(clientForm.results);
+        persistDeviceCopy();
+      }
+    } catch (error) {
+      if (error instanceof StaleRangeWorkspaceError) {
+        setWorkspaceStale(true);
+        void recoverRangeWorkspace();
+      } else if (error instanceof RefusedRangeWorkspaceError && refusalRecoveredFor.current !== rangeWorkspaceBaseUpdatedAt) {
+        // Review H1: once per server version, reload and hold back the change
+        // the server refused, so the rest of this device's work still saves.
+        refusalRecoveredFor.current = rangeWorkspaceBaseUpdatedAt;
+        void recoverRangeWorkspace(error.message);
+      }
+      throw error;
+    }
+  }
+
+  // UX-RB-5: load the server copy and replay this device's changes onto it.
+  // Used after a "changed on another device" refusal, after any other refusal
+  // (`refusal` is the server's message), and when the first load failed.
+  async function recoverRangeWorkspace(refusal?: string) {
+    if (workspaceRecovering.current) return;
+    workspaceRecovering.current = true;
+    setWorkspaceRecoveryError("");
+    try {
+      const remote = await fetchRemoteRangeDayWorkspace();
+      if (!remote.ok) {
+        setWorkspaceRecoveryError("The latest copy could not be loaded. Your changes are kept on this device.");
+        return;
+      }
+      const serverForm = toMergeableWorkspace(remote.workspace, currentUserId);
+      // A copy that belongs to another agency is never merged into this one.
+      // (The other agency's record stays in storage under its own key.)
+      const sameAgency = !deviceDepartmentId.current || deviceDepartmentId.current === remote.departmentId;
+      const recoverWith = (accept: ReturnType<typeof serverAcceptance>) => recoverWorkspace({
+        base: baseKnown.current ? syncedWorkspace.current : null,
+        local: latestWorkspaceState.current,
+        server: serverForm,
+        serverEmpty: remote.workspace === null,
+        conflicts: workspaceConflictsRef.current,
+        accept,
+      });
+      const serverRule = serverAcceptance(remote.workspace ?? {}, remote.departmentId);
+      // Review R2-M3: after a refusal this device could not predict, every
+      // unsynced change is held back (with the rule's own reason where it has
+      // one, else the server's message), so nothing keeps failing and each can
+      // be discarded or tried again.
+      const recovered = !sameAgency
+        ? { workspace: serverForm, conflicts: [] as WorkspaceConflict[], applied: 0, heldBack: 0 }
+        : recoverWith(refusal
+          ? (workspace) => {
+              const decision = serverRule(workspace);
+              return decision.ok ? { ok: false as const, error: refusal } : decision;
+            }
+          : serverRule);
+      setLoadedWorkspaceBaseline(remote.workspace ?? {});
+      rangeWorkspaceBaseUpdatedAt = remote.updatedAt;
+      rangeWorkspaceEpoch += 1;
+      deviceDepartmentId.current = remote.departmentId;
+      baseKnown.current = true;
+      syncedWorkspace.current = serverForm;
+      setSyncedResults(serverForm.results);
+      workspaceConflictsRef.current = recovered.conflicts;
+      setWorkspaceConflicts(recovered.conflicts);
+      workspaceSyncBlockedRef.current = false;
+      setWorkspaceSyncBlocked(false);
+      setWorkspaceStale(false);
+      applyMergeableWorkspace(recovered.workspace);
+      persistDeviceCopy(recovered.workspace, recovered.conflicts);
+    } finally {
+      workspaceRecovering.current = false;
+    }
+  }
+
+  // Review M3: either choice writes that value; the choice and the remaining
+  // conflicts are kept together so a reload cannot lose it.
+  function resolveWorkspaceConflict(conflict: WorkspaceConflict, keepThisDevice: boolean) {
+    const workspace = applyConflictChoice(latestWorkspaceState.current, conflict, keepThisDevice ? "local" : "server");
+    // Review 2c073ae: a choice the server would refuse is not applied (it would
+    // block every later save); the entry stays listed with the reason.
+    if (keepThisDevice) {
+      const decision = serverAcceptance(serverWorkspace.current, deviceDepartmentId.current)(workspace);
+      if (!decision.ok) {
+        const conflicts = workspaceConflictsRef.current.map((item) => (conflictKey(item) === conflictKey(conflict) ? { ...item, reason: decision.error } : item));
+        workspaceConflictsRef.current = conflicts;
+        setWorkspaceConflicts(conflicts);
+        persistDeviceCopy(undefined, conflicts);
+        return;
+      }
+    }
+    const conflicts = workspaceConflictsRef.current.filter((item) => conflictKey(item) !== conflictKey(conflict));
+    workspaceConflictsRef.current = conflicts;
+    setWorkspaceConflicts(conflicts);
+    applyMergeableWorkspace(workspace);
+    persistDeviceCopy(workspace, conflicts);
+  }
+
+  function describeWorkspaceConflict(conflict: WorkspaceConflict) {
+    const record = (conflict.local ?? conflict.server ?? {}) as Record<string, unknown>;
+    if (conflict.collection === "results") {
+      const drill = rangeDayDrills.find((item) => item.id === record.drillId);
+      const value = (item: Record<string, unknown> | null) =>
+        item ? formatResultMetric(item as unknown as ExtendedDrillRunResult, drill) || "recorded" : conflict.reason ? "none" : "removed";
+      // Review ba6bccf R4-M1: compared with the record as it is now.
+      return `${getUserName(String(record.officerId ?? ""))} · ${drill?.name ?? "Drill"} · Run ${String(record.runNumber ?? "")}: this device ${value(conflict.local)}, now ${value(currentRecord(latestWorkspaceState.current, conflict))}`;
+    }
+    const label = { rangeDays: "Range day", drillLibrary: "Drill template", rangeDayDrills: "Drill", rangeRoster: "Roster entry", malfunctions: "Malfunction" }[conflict.collection];
+    const name = record.title ?? record.name ?? (record.officerId ? getUserName(String(record.officerId)) : conflict.id);
+    return conflict.reason ? `${label}: ${String(name)}` : `${label}: ${String(name)} was changed on both devices.`;
+  }
+
+  function updateWorkspaceSaveState(
+    state: WorkspaceAutosaveState,
+    error?: string,
+  ) {
+    setWorkspaceSaveState(state);
+    setWorkspaceSaveError(error ?? "");
+  }
+
+  function queueRangeDayWorkspaceSave(
+    workspace: StoredRangeDayWorkspace,
+    delay: number,
+  ) {
+    persistDeviceCopy(workspace);
     if (!canManageRangeDays && !canScoreRangeDays) return;
-    writeRemoteRangeDayWorkspace(workspace, departmentId);
+    workspaceSaveQueue.current?.schedule(
+      workspace,
+      delay,
+      saveRangeDayWorkspaceToServer,
+      updateWorkspaceSaveState,
+    );
   }
 
   function retryRangeDayWorkspaceSave() {
-    retryRemoteRangeDayWorkspaceWrite();
+    workspaceSaveQueue.current?.retry(
+      saveRangeDayWorkspaceToServer,
+      updateWorkspaceSaveState,
+    );
   }
 
-  async function handleSaveRangeDayWorkspace() {
+  function handleSaveRangeDayWorkspace() {
     if (!canManageRangeDays && !canScoreRangeDays) {
-      setWorkspaceFeedback("You do not have permission to update range records.");
+      setSaveMessage("You do not have permission to update range records.");
       return;
     }
-    const workspace = createRangeDayWorkspaceSnapshot();
-    writeStoredRangeDayWorkspace(workspace, departmentId);
-
-    setIsSavingRangeDay(true);
-    setWorkspaceFeedback("");
-    try {
-      // Manual save must finish older debounced writes before persisting the
-      // exact workspace currently shown to this instructor.
-      await finishPendingRangeWorkspaceWrite();
-      await saveRemoteRangeDayWorkspace(workspace, departmentId);
-      settleRemoteRangeDayWorkspaceWrites();
-      setIsRangeDayDirty(false);
-      setWorkspaceFeedback("Saved");
-      // The explicit save supersedes any earlier autosave status.
-      setSaveMessage("");
-    } catch (error) {
-      if (error instanceof StaleRangeWorkspaceError) setWorkspaceStale(true);
-      setWorkspaceFeedback(
-        error instanceof Error
-          ? error.message
-          : "The range workspace could not be saved.",
-      );
-      setIsSavingRangeDay(false);
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      window.setTimeout(() => setWorkspaceFeedback(""), 2000);
-    }
-    setIsSavingRangeDay(false);
+    setSaveMessage("");
+    queueRangeDayWorkspaceSave(createRangeDayWorkspaceSnapshot(), 0);
+    void workspaceSaveQueue.current?.flushNow(
+      saveRangeDayWorkspaceToServer,
+      updateWorkspaceSaveState,
+    );
   }
 
   function handleSetLeadInstructor(userId: string) {
@@ -3246,13 +3347,13 @@ export default function RangeDaysPage() {
     if (!canEditSelectedRangeDay) return;
     if (!selectedRangeDay) return;
 
-    const remainingInstructorIds = (
-      selectedRangeDay.instructorIds ?? []
-    ).filter((instructorId) => instructorId !== userId);
+    const remainingInstructorIds = (selectedRangeDay.instructorIds ?? []).filter(
+      (instructorId) => instructorId !== userId,
+    );
 
     const nextLeadInstructorId =
       selectedRangeDay.leadInstructorId === userId
-        ? (remainingInstructorIds[0] ?? currentUserId)
+        ? remainingInstructorIds[0] ?? currentUserId
         : selectedRangeDay.leadInstructorId;
 
     const nextInstructorIds = remainingInstructorIds.includes(
@@ -3285,7 +3386,7 @@ export default function RangeDaysPage() {
     if (alreadyRostered) return;
 
     const newRosterEntry: RangeRosterEntry = {
-      id: `roster-${Date.now()}`,
+      id: `roster-${crypto.randomUUID()}`,
       rangeDayId: selectedRangeDay.id,
       officerId: newRosterOfficerId,
       assignedFirearmIds: [],
@@ -3320,7 +3421,7 @@ export default function RangeDaysPage() {
 
     const arrival = new Date();
     const newRosterEntry = createOpenAttendanceRosterEntry({
-      id: `roster-${arrival.getTime()}`,
+      id: `roster-${crypto.randomUUID()}`,
       rangeDayId: selectedRangeDay.id,
       officerId: openAttendanceOfficerId,
       attendanceTime: arrival.toISOString(),
@@ -3347,9 +3448,7 @@ export default function RangeDaysPage() {
 
   function handleRemoveOfficerFromRoster(rosterEntryId: string) {
     if (!canEditSelectedRangeDay) return;
-    const entryToRemove = rangeRoster.find(
-      (entry) => entry.id === rosterEntryId,
-    );
+    const entryToRemove = rangeRoster.find((entry) => entry.id === rosterEntryId);
     const savedResultCount = entryToRemove && selectedRangeDay
       ? results.filter((result) =>
           result.rangeDayId === selectedRangeDay.id &&
@@ -3391,18 +3490,24 @@ export default function RangeDaysPage() {
     );
   }
 
-  function handleToggleRosterFirearm(rosterEntryId: string, firearmId: string) {
+  function handleToggleRosterFirearm(
+    rosterEntryId: string,
+    firearmId: string,
+  ) {
     if (!canEditSelectedRangeDay) return;
     setRangeRoster((current) =>
       current.map((entry) => {
         if (entry.id !== rosterEntryId) return entry;
 
-        const alreadySelected = entry.assignedFirearmIds.includes(firearmId);
+        const alreadySelected =
+          entry.assignedFirearmIds.includes(firearmId);
 
         return {
           ...entry,
           assignedFirearmIds: alreadySelected
-            ? entry.assignedFirearmIds.filter((id) => id !== firearmId)
+            ? entry.assignedFirearmIds.filter(
+                (id) => id !== firearmId,
+              )
             : [...entry.assignedFirearmIds, firearmId],
         };
       }),
@@ -3440,100 +3545,156 @@ export default function RangeDaysPage() {
 
     const currentRow = batchScoreRows[officerId];
     const automaticPass =
-      getQualificationStandardPass({
-        standards: qualificationStandards,
-        drill: selectedDrill,
-        runNumber: selectedRunNumber,
-        metricValue: value,
-        firearmId:
-          currentRow?.firearmId ||
-          attendingRoster.find((entry) => entry.officerId === officerId)?.assignedFirearmIds[0],
-      }) ??
-      getAutomaticPassValue(
-        selectedDrill,
-        getRunScoringFormat(selectedDrill, selectedRunNumber),
-        value,
-        currentRow?.completed,
-      );
+          getQualificationStandardPass({
+            standards: qualificationStandards,
+            drill: selectedDrill,
+            runNumber: selectedRunNumber,
+            metricValue: value,
+            firearmId:
+              currentRow?.firearmId ||
+              attendingRoster.find((entry) => entry.officerId === officerId)?.assignedFirearmIds[0],
+          }) ??
+          getAutomaticPassValue(
+            selectedDrill,
+            getRunScoringFormat(selectedDrill, selectedRunNumber),
+            value,
+            currentRow?.completed,
+          );
 
     updateBatchScoreRow(officerId, {
       metricValue: value,
-      ...(typeof automaticPass === "boolean" ? { passed: automaticPass } : {}),
+      ...(typeof automaticPass === "boolean"
+        ? { passed: automaticPass }
+        : {}),
     });
   }
 
   function handleSaveBatchResults() {
     if (!selectedRangeDay || !selectedDrill) return;
 
-    const scoringFormat = getRunScoringFormat(selectedDrill, selectedRunNumber);
+    const scoringFormat = getRunScoringFormat(
+      selectedDrill,
+      selectedRunNumber,
+    );
     const rosterToScore = attendingRoster;
 
     if (rosterToScore.length === 0) {
-      setWorkspaceFeedback(
-        "Mark at least one rostered officer present before scoring.",
-      );
+      setSaveMessage("Mark at least one rostered officer present before scoring.");
       return;
     }
 
-    const officersWithEntriesButNoFirearm = rosterToScore.flatMap((entry) => {
-      const row = batchScoreRows[entry.officerId];
+    const officersWithEntriesButNoFirearm =
+      rosterToScore.flatMap((entry) => {
+        const row = batchScoreRows[entry.officerId];
 
-      if (!row) return [];
+        if (!row) return [];
 
-      const metricEntered = row.metricValue.trim().length > 0;
+        const metricEntered =
+          row.metricValue.trim().length > 0;
 
-      const hasEntry =
-        metricEntered ||
-        typeof row.passed === "boolean" ||
-        typeof row.completed === "boolean" ||
-        Boolean(row.notes.trim()) ||
-        row.malfunctionOccurred;
+        const hasEntry =
+          metricEntered ||
+          typeof row.passed === "boolean" ||
+          typeof row.completed === "boolean" ||
+          Boolean(row.notes.trim()) ||
+          row.malfunctionOccurred;
 
-      const firearmId = row.firearmId || entry.assignedFirearmIds[0];
+        const firearmId =
+          row.firearmId ||
+          entry.assignedFirearmIds[0];
 
-      return hasEntry && !firearmId ? [getUserName(entry.officerId)] : [];
-    });
+        return hasEntry && !firearmId
+          ? [getUserName(entry.officerId)]
+          : [];
+      });
 
     if (officersWithEntriesButNoFirearm.length > 0) {
-      setWorkspaceFeedback(
+      setSaveMessage(
         `Select a firearm before saving results for: ${officersWithEntriesButNoFirearm.join(", ")}.`,
       );
       return;
     }
 
-    const expectedFirearmType = normalizeFirearmType(selectedDrill.firearmType);
+    // UX-RB-1: a Completion drill is never saved as complete or incomplete by default.
+    const officersNeedingCompletionChoice = rosterToScore.flatMap((entry) => {
+      const row = batchScoreRows[entry.officerId];
+      if (!row) return [];
+      const hasEntry =
+        row.metricValue.trim().length > 0 ||
+        typeof row.passed === "boolean" ||
+        typeof row.completed === "boolean" ||
+        Boolean(row.notes.trim()) ||
+        row.malfunctionOccurred;
+      return hasEntry && completionChoiceRequired(scoringFormat, row.completed)
+        ? [getUserName(entry.officerId)]
+        : [];
+    });
 
-    if (expectedFirearmType && expectedFirearmType !== "any") {
-      const mismatchedOfficers = rosterToScore.flatMap((entry) => {
-        const row = batchScoreRows[entry.officerId];
-        const firearmId = row?.firearmId || entry.assignedFirearmIds[0];
+    if (officersNeedingCompletionChoice.length > 0) {
+      setSaveMessage(
+        `Choose Complete or Incomplete before saving results for: ${officersNeedingCompletionChoice.join(", ")}.`,
+      );
+      return;
+    }
 
-        if (!firearmId) return [];
+    // UX-RB-6: an impossible value is stopped here, named by officer, instead of
+    // being refused by the server and stalling every later save.
+    const invalidMeasurements = rosterToScore.flatMap((entry) => {
+      const error = batchRowMeasurementError(batchScoreRows[entry.officerId], selectedDrill, selectedRunNumber);
+      return error ? [`${getUserName(entry.officerId)}: ${error}`] : [];
+    });
 
-        const firearm = activeFirearmDirectory.find(
-          (item) => item.id === firearmId,
-        );
+    if (invalidMeasurements.length > 0) {
+      setSaveMessage(`Correct before saving. ${invalidMeasurements.join(" ")}`);
+      return;
+    }
 
-        const selectedType = normalizeFirearmType(firearm?.firearm_type);
+    const expectedFirearmType = normalizeFirearmType(
+      selectedDrill.firearmType,
+    );
 
-        return selectedType !== expectedFirearmType
-          ? [getUserName(entry.officerId)]
-          : [];
-      });
+    if (
+      expectedFirearmType &&
+      expectedFirearmType !== "any"
+    ) {
+      const mismatchedOfficers = rosterToScore.flatMap(
+        (entry) => {
+          const row = batchScoreRows[entry.officerId];
+          const firearmId =
+            row?.firearmId ||
+            entry.assignedFirearmIds[0];
+
+          if (!firearmId) return [];
+
+          const firearm = activeFirearmDirectory.find(
+            (item) => item.id === firearmId,
+          );
+
+          const selectedType = normalizeFirearmType(
+            firearm?.firearm_type,
+          );
+
+          return selectedType !== expectedFirearmType
+            ? [getUserName(entry.officerId)]
+            : [];
+        },
+      );
 
       if (mismatchedOfficers.length > 0) {
         const proceed = window.confirm(
           [
             `The selected firearm does not match the ${selectedDrill.firearmType} drill for:`,
             "",
-            ...mismatchedOfficers.map((name) => `• ${name}`),
+            ...mismatchedOfficers.map(
+              (name) => `• ${name}`,
+            ),
             "",
             "Save these results anyway?",
           ].join("\n"),
         );
 
         if (!proceed) {
-          setWorkspaceFeedback(
+          setSaveMessage(
             "Results were not saved. Review the selected firearms.",
           );
           return;
@@ -3543,9 +3704,8 @@ export default function RangeDaysPage() {
 
     const newMalfunctions: FirearmMalfunction[] = [];
     const clearedMalfunctionIds = new Set<string>();
-    const now = Date.now();
 
-    const savedResults = rosterToScore.flatMap((entry, index) => {
+    const savedResults = rosterToScore.flatMap((entry) => {
       const row = batchScoreRows[entry.officerId];
       if (!row) return [];
 
@@ -3572,21 +3732,24 @@ export default function RangeDaysPage() {
       const existingMalfunction = malfunctions.find(
         (malfunction) => malfunction.id === existingResult?.malfunctionIds?.[0],
       );
-      const resultId = existingResult?.id ?? `result-${now}-${index}`;
+      // Review 3177a83 P1: a saved result the instructor did not touch in this
+      // entry is left exactly as stored (not rebuilt or re-attributed).
+      if (existingResult && !unsavedBatchOfficerIds.current.has(entry.officerId)) return [];
+      const resultId = existingResult?.id ?? `result-${crypto.randomUUID()}`;
       const automaticPass =
-        getQualificationStandardPass({
-          standards: qualificationStandards,
-          drill: selectedDrill,
-          runNumber: selectedRunNumber,
-          metricValue: row.metricValue,
-          firearmId,
-        }) ??
-        getAutomaticPassValue(
-          selectedDrill,
-          scoringFormat,
-          row.metricValue,
-          row.completed,
-        );
+          getQualificationStandardPass({
+            standards: qualificationStandards,
+            drill: selectedDrill,
+            runNumber: selectedRunNumber,
+            metricValue: row.metricValue,
+            firearmId,
+          }) ??
+          getAutomaticPassValue(
+            selectedDrill,
+            scoringFormat,
+            row.metricValue,
+            row.completed,
+          );
       const { completed, passed: finalPassed } = resolveRunCompletion({
         scoringFormat,
         completed: row.completed,
@@ -3594,33 +3757,42 @@ export default function RangeDaysPage() {
       });
       const malfunctionId =
         row.malfunctionOccurred && firearmId
-          ? existingMalfunction?.id ?? `malfunction-${now}-${index}`
+          ? existingMalfunction?.id ?? `malfunction-${crypto.randomUUID()}`
           : undefined;
       if (existingMalfunction && !malfunctionId) clearedMalfunctionIds.add(existingMalfunction.id);
       const otherMalfunctionIds = existingResult?.malfunctionIds?.slice(1) ?? [];
 
       const departmentStandardSnapshot =
-        getQualificationStandardSnapshot(
-          qualificationStandards,
-          selectedDrill,
-          selectedRunNumber,
-          firearmId,
-        ) ?? getDepartmentStandardConfig(selectedDrill);
-      const departmentStandardPassed = !completed ? false :
-        getQualificationStandardPass({
-          standards: qualificationStandards,
-          drill: selectedDrill,
-          runNumber: selectedRunNumber,
-          metricValue: row.metricValue,
-          firearmId,
-        }) ??
-        getDepartmentStandardStatus({
-          drill: selectedDrill,
-          scoringFormat,
-          metricValue: row.metricValue,
-          completed: row.completed,
-          passed: finalPassed,
-        });
+      getQualificationStandardSnapshot(
+        qualificationStandards,
+        selectedDrill,
+        selectedRunNumber,
+        firearmId,
+      ) ?? getDepartmentStandardConfig(selectedDrill);
+      const standardPassedWhenComplete =
+      getQualificationStandardPass({
+        standards: qualificationStandards,
+        drill: selectedDrill,
+        runNumber: selectedRunNumber,
+        metricValue: row.metricValue,
+        firearmId,
+      }) ??
+      getDepartmentStandardStatus({
+        drill: selectedDrill,
+        scoringFormat,
+        metricValue: row.metricValue,
+        completed: row.completed,
+        passed: finalPassed,
+      });
+      const outcome = resolveRunOutcome({
+        scoringFormat,
+        completed,
+        finalPassed,
+        hasStandard: Boolean(departmentStandardSnapshot),
+        standardPassedWhenComplete,
+        remediationRequired: departmentStandardSnapshot?.departmentStandardRemediationRequired === true,
+      });
+      const departmentStandardPassed = outcome.departmentStandardPassed;
 
       const numericMetric = metricEntered ? Number(row.metricValue) : undefined;
 
@@ -3652,19 +3824,14 @@ export default function RangeDaysPage() {
             ? numericMetric
             : undefined,
         scoringFormatSnapshot: scoringFormat,
-        passed: scoringFormat === "Notes Only" ? undefined : finalPassed,
-        finalPassed: scoringFormat === "Notes Only" ? undefined : finalPassed,
+        passed: outcome.passed,
+        finalPassed: outcome.passed,
         departmentStandardSnapshot: departmentStandardSnapshot ?? undefined,
         departmentStandardPassed,
         instructorId: currentUserId,
         notes: row.notes.trim(),
-        deficiencyObserved:
-          finalPassed === false || departmentStandardPassed === false,
-        remedialTrainingRecommended:
-          finalPassed === false ||
-          (departmentStandardPassed === false &&
-            departmentStandardSnapshot?.departmentStandardRemediationRequired ===
-              true),
+        deficiencyObserved: outcome.deficiencyObserved,
+        remedialTrainingRecommended: outcome.remedialTrainingRecommended,
         malfunctionIds: malfunctionId ? [malfunctionId, ...otherMalfunctionIds] : otherMalfunctionIds,
       };
 
@@ -3709,7 +3876,7 @@ export default function RangeDaysPage() {
     ]);
 
     unsavedBatchOfficerIds.current.clear();
-    setWorkspaceFeedback(
+    setSaveMessage(
       `${savedResults.length} officer result${
         savedResults.length === 1 ? "" : "s"
       } recorded for ${getRunLabel(selectedDrill, selectedRunNumber)}.`,
@@ -3722,19 +3889,12 @@ export default function RangeDaysPage() {
     const packet = createRangePacket(selectedRangeDay, currentUserId);
     console.log("Generated range packet:", packet);
 
-    writeStoredRangeDayWorkspace({
-      rangeDays,
-      drillLibrary,
-      rangeDayDrills,
-      rangeRoster,
-      results,
-      malfunctions,
-    }, departmentId);
+    persistDeviceCopy(createRangeDayWorkspaceSnapshot());
 
     window.requestAnimationFrame(() => window.print());
   }
 
-  async function handleCreateDrillTemplate() {
+  function handleCreateDrillTemplate() {
     if (!canManageRangeDays) return;
     if (!newDrillName.trim()) return;
 
@@ -3745,9 +3905,11 @@ export default function RangeDaysPage() {
     if (
       isQualification &&
       (newQualificationComponents.length === 0 ||
-        newQualificationComponents.some((component) => !component.name.trim()))
+        newQualificationComponents.some(
+          (component) => !component.name.trim(),
+        ))
     ) {
-      setWorkspaceFeedback(
+      setSaveMessage(
         "Qualification drills require at least one named scoring component.",
       );
       return;
@@ -3774,9 +3936,10 @@ export default function RangeDaysPage() {
         newDrillScoringMode === "Points"
           ? parseOptionalNumber(newDrillMaxScore)
           : undefined,
-      defaultRunCount: isQualification
-        ? newQualificationComponents.length
-        : Math.max(Number(newDrillRunCount) || 1, 1),
+      defaultRunCount:
+        isQualification
+          ? newQualificationComponents.length
+          : Math.max(Number(newDrillRunCount) || 1, 1),
       defaultRequired: newDrillDefaultRequired,
       tags: newDrillTags
         .split(",")
@@ -3847,7 +4010,9 @@ export default function RangeDaysPage() {
     };
 
     const existingTemplate = editingDrillTemplateId
-      ? drillLibrary.find((template) => template.id === editingDrillTemplateId)
+      ? drillLibrary.find(
+          (template) => template.id === editingDrillTemplateId,
+        )
       : undefined;
 
     const savedTemplate: ExtendedDrillTemplate = editingDrillTemplateId
@@ -3858,52 +4023,20 @@ export default function RangeDaysPage() {
         }
       : createdTemplate;
 
+    setDrillLibrary((current) =>
+      editingDrillTemplateId
+        ? current.map((template) =>
+            template.id === editingDrillTemplateId
+              ? savedTemplate
+              : template,
+          )
+        : [savedTemplate, ...current],
+    );
+
     if (editingDrillTemplateId) {
-      setDrillLibrary((current) =>
-        current.map((template) =>
-          template.id === editingDrillTemplateId
-            ? savedTemplate
-            : template,
-        ),
+      const scoredDrillIds = new Set(
+        results.map((result) => result.drillId),
       );
-    } else {
-      const workspace = addDrillLibraryTemplateToWorkspace({
-        rangeDays,
-        drillLibrary,
-        rangeDayDrills,
-        rangeRoster,
-        results,
-        malfunctions,
-      }, savedTemplate);
-
-      // Documents validates the template against the server workspace. Persist
-      // before rendering the new card so its first document request succeeds.
-      // Earlier queued edits are written first so the version check sees the
-      // latest server copy.
-      writeStoredRangeDayWorkspace(workspace, departmentId);
-      setWorkspaceFeedback("Creating drill...");
-
-      try {
-        await finishPendingRangeWorkspaceWrite();
-        await saveRemoteRangeDayWorkspace(
-          addDrillLibraryTemplateToWorkspace(createRangeDayWorkspaceSnapshot(), savedTemplate),
-          departmentId,
-        );
-      } catch (error) {
-        if (error instanceof StaleRangeWorkspaceError) setWorkspaceStale(true);
-        setWorkspaceFeedback(
-          error instanceof Error
-            ? error.message
-            : "The drill could not be created.",
-        );
-        return;
-      }
-
-      setDrillLibrary(workspace.drillLibrary);
-    }
-
-    if (editingDrillTemplateId) {
-      const scoredDrillIds = new Set(results.map((result) => result.drillId));
 
       setRangeDayDrills((current) =>
         current.map((drill) => {
@@ -3913,7 +4046,10 @@ export default function RangeDaysPage() {
             (drill.name === existingTemplate?.name &&
               drill.category === existingTemplate?.category);
 
-          if (!matchesEditedTemplate || scoredDrillIds.has(drill.id)) {
+          if (
+            !matchesEditedTemplate ||
+            scoredDrillIds.has(drill.id)
+          ) {
             return drill;
           }
 
@@ -3938,13 +4074,13 @@ export default function RangeDaysPage() {
               savedTemplate.qualificationComponents?.length ??
               savedTemplate.defaultRunCount ??
               drill.runCount,
-            qualificationComponents: savedTemplate.qualificationComponents?.map(
-              (component) => ({
+            qualificationComponents:
+              savedTemplate.qualificationComponents?.map((component) => ({
                 ...component,
-              }),
-            ),
+              })),
             isDepartmentStandard: savedTemplate.isDepartmentStandard,
-            departmentStandardName: savedTemplate.departmentStandardName,
+            departmentStandardName:
+              savedTemplate.departmentStandardName,
             departmentStandardScoringBasis:
               savedTemplate.departmentStandardScoringBasis,
             departmentStandardMinimumScore:
@@ -3968,7 +4104,7 @@ export default function RangeDaysPage() {
       );
     }
 
-    setWorkspaceFeedback(
+    setSaveMessage(
       editingDrillTemplateId
         ? `${newDrillName.trim()} updated in the drill library and active unscored range days.`
         : `${newDrillName.trim()} added to the drill library.`,
@@ -3977,9 +4113,8 @@ export default function RangeDaysPage() {
     setShowCreateDrillForm(false);
   }
 
-  async function handleAddTemplateToSelectedRangeDay(templateId: string) {
-    if (!selectedRangeDay || !canEditSelectedRangeDay || addingDrillTemplateId)
-      return;
+  function handleAddTemplateToSelectedRangeDay(templateId: string) {
+    if (!selectedRangeDay || !canEditSelectedRangeDay) return;
 
     const copiedDrill = addLibraryDrillToRangeDay(
       {
@@ -3990,9 +4125,7 @@ export default function RangeDaysPage() {
     );
 
     if (!copiedDrill) {
-      setWorkspaceFeedback(
-        "The selected Drill Library record is no longer available. Reload and try again.",
-      );
+      setSaveMessage("The selected Drill Library record is no longer available. Reload and try again.");
       return;
     }
 
@@ -4006,8 +4139,8 @@ export default function RangeDaysPage() {
       // same library drill must be independently addressable for deletion.
       id: crypto.randomUUID(),
       runCount: isQualificationDrill(copiedDrill)
-        ? (sourceTemplate?.qualificationComponents?.length ??
-          Math.max(copiedDrill.runCount ?? 1, 2))
+        ? sourceTemplate?.qualificationComponents?.length ??
+          Math.max(copiedDrill.runCount ?? 1, 2)
         : copiedDrill.runCount,
       scoringFormat: sourceTemplate
         ? getScoringFormat(sourceTemplate)
@@ -4019,123 +4152,79 @@ export default function RangeDaysPage() {
       ),
       isDepartmentStandard: sourceTemplate?.isDepartmentStandard,
       departmentStandardName: sourceTemplate?.departmentStandardName,
-      departmentStandardScoringBasis:
-        sourceTemplate?.departmentStandardScoringBasis,
-      departmentStandardMinimumScore:
-        sourceTemplate?.departmentStandardMinimumScore,
-      departmentStandardPassingTimeSeconds:
-        sourceTemplate?.departmentStandardPassingTimeSeconds,
-      departmentStandardMinimumHits:
-        sourceTemplate?.departmentStandardMinimumHits,
+      departmentStandardScoringBasis: sourceTemplate?.departmentStandardScoringBasis,
+      departmentStandardMinimumScore: sourceTemplate?.departmentStandardMinimumScore,
+      departmentStandardPassingTimeSeconds: sourceTemplate?.departmentStandardPassingTimeSeconds,
+      departmentStandardMinimumHits: sourceTemplate?.departmentStandardMinimumHits,
       departmentStandardAppliesTo: sourceTemplate?.departmentStandardAppliesTo,
       departmentStandardRemediationRequired:
         sourceTemplate?.departmentStandardRemediationRequired,
-      departmentStandardRetestRequired:
-        sourceTemplate?.departmentStandardRetestRequired,
-      departmentStandardEffectiveDate:
-        sourceTemplate?.departmentStandardEffectiveDate,
-      departmentStandardRetirementDate:
-        sourceTemplate?.departmentStandardRetirementDate,
+      departmentStandardRetestRequired: sourceTemplate?.departmentStandardRetestRequired,
+      departmentStandardEffectiveDate: sourceTemplate?.departmentStandardEffectiveDate,
+      departmentStandardRetirementDate: sourceTemplate?.departmentStandardRetirementDate,
     };
 
-    const workspace: StoredRangeDayWorkspace = {
-      rangeDays,
-      drillLibrary,
-      rangeDayDrills: [...rangeDayDrills, normalizedCopiedDrill],
-      rangeRoster,
-      results,
-      malfunctions,
-    };
-
-    // Documents are attached to the source Drill Library template, not this
-    // Range Day instance. Persist the association before changing the UI so a
-    // document-related workspace write cannot race and overwrite it. Earlier
-    // queued edits are written first, never dropped.
-    setAddingDrillTemplateId(templateId);
-    setWorkspaceFeedback("Adding drill...");
-    try {
-      await finishPendingRangeWorkspaceWrite();
-      const snapshot = createRangeDayWorkspaceSnapshot();
-      await saveRemoteRangeDayWorkspace(
-        { ...snapshot, rangeDayDrills: [...snapshot.rangeDayDrills, normalizedCopiedDrill] },
-        departmentId,
-      );
-      writeStoredRangeDayWorkspace(workspace, departmentId);
-      setRangeDayDrills(workspace.rangeDayDrills);
-      setSelectedDrillId(normalizedCopiedDrill.id);
-      resetEntryForm(1);
-      setIsRangeDayDirty(true);
-      setWorkspaceFeedback(`${normalizedCopiedDrill.name} added. Save Range Day when you are ready.`);
-    } catch (error) {
-      if (error instanceof StaleRangeWorkspaceError) setWorkspaceStale(true);
-      setWorkspaceFeedback(
-        error instanceof Error
-          ? error.message
-          : "The drill could not be added to this range day.",
-      );
-    } finally {
-      setAddingDrillTemplateId("");
-    }
+    setRangeDayDrills((current) => [...current, normalizedCopiedDrill]);
+    setSelectedDrillId(normalizedCopiedDrill.id);
+    resetEntryForm(1);
   }
 
-  async function handleRemoveDrillFromSelectedRangeDay(
-    drill: ExtendedRangeDayDrill,
-  ) {
-    if (!selectedRangeDay || !canEditSelectedRangeDay || removingDrillId)
+  async function handleRemoveDrillFromSelectedRangeDay(drill: ExtendedRangeDayDrill) {
+    if (!selectedRangeDay || !canEditSelectedRangeDay || removingDrillId) return;
+    if (!window.confirm(`Remove ${drill.name} from this range day? This cannot be undone.`)) return;
+
+    if (workspaceSyncBlockedRef.current || workspaceRecovering.current) {
+      setSaveMessage("Load and merge the latest copy before removing a drill.");
       return;
-    if (
-      !window.confirm(
-        `Remove ${drill.name} from this range day? This cannot be undone.`,
-      )
-    )
-      return;
+    }
 
     setRemovingDrillId(drill.id);
-    setWorkspaceFeedback("Removing drill...");
+    setSaveMessage("Removing drill...");
     try {
-      await finishPendingRangeWorkspaceWrite();
+      // Review R2-H1: the removal carries this device's version, like a save.
       const response = await fetch("/api/pilot/range-workspace/drills", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rangeDayId: selectedRangeDay.id,
-          drillId: drill.id,
-        }),
+        body: JSON.stringify({ rangeDayId: selectedRangeDay.id, drillId: drill.id, baseUpdatedAt: rangeWorkspaceBaseUpdatedAt ?? null }),
       });
-      const payload = (await response.json().catch(() => ({}))) as {
+      const payload = await response.json().catch(() => ({})) as {
         error?: string;
-        workspace?: Partial<StoredRangeDayWorkspace>;
+        code?: string;
+        workspace?: Partial<StoredRangeDayWorkspace> | null;
         removedRangeDayDrillId?: string;
         updatedAt?: string | null;
       };
-      if (!response.ok) {
-        throw new Error(
-          `${payload.error || "The drill could not be removed."} (HTTP ${response.status})`,
-        );
+      if (payload.code === "stale_workspace") {
+        setWorkspaceStale(true);
+        void recoverRangeWorkspace();
+        throw new Error("This range workspace changed on another device. The latest copy is being merged; remove the drill again if it is still needed.");
       }
-      if (payload.removedRangeDayDrillId !== drill.id) {
+      if (!response.ok) throw new Error(payload.error || "The drill could not be removed.");
+      if (payload.removedRangeDayDrillId !== drill.id)
         throw new Error("The server did not confirm the selected drill's removal. Reload before continuing.");
-      }
-      if (payload.updatedAt) rangeWorkspaceBaseUpdatedAt = payload.updatedAt;
 
-      const nextDrills =
-        payload.workspace?.rangeDayDrills ??
-        rangeDayDrills.filter((item) => item.id !== drill.id);
-      setRangeDayDrills(normalizeRangeDayDrillsForWorkspace(nextDrills));
-      if (selectedDrillId === drill.id) {
-        setSelectedDrillId(
-          nextDrills.find((item) => item.rangeDayId === selectedRangeDay.id)
-            ?.id ?? "",
-        );
+      // The server held exactly this device's synced copy, minus the drill. This
+      // device's unsaved changes stay; snapshots taken before the removal are
+      // never sent (they still contain the drill).
+      const withoutDrill = (items: readonly unknown[]) => items.filter((item) => (item as { id?: unknown }).id !== drill.id);
+      if (payload.updatedAt) {
+        rangeWorkspaceBaseUpdatedAt = payload.updatedAt;
+        rangeWorkspaceEpoch += 1;
+        if (payload.workspace) setLoadedWorkspaceBaseline(payload.workspace);
+        syncedWorkspace.current = { ...syncedWorkspace.current, rangeDayDrills: withoutDrill(syncedWorkspace.current.rangeDayDrills) as MergeableWorkspace["rangeDayDrills"] };
       }
-      setIsRangeDayDirty(true);
-      setWorkspaceFeedback(`${drill.name} removed. Save Range Day when you are ready.`);
-    } catch (error) {
-      setWorkspaceFeedback(
-        error instanceof Error
-          ? error.message
-          : "The drill could not be removed.",
+      // Review 3177a83 P3: from the current list, so drill changes (or a merge)
+      // made while the removal was in flight are kept.
+      const rangeDayId = selectedRangeDay.id;
+      setRangeDayDrills((current) => current.filter((item) => item.id !== drill.id));
+      setSelectedDrillId((current) =>
+        current === drill.id
+          ? String(latestWorkspaceState.current.rangeDayDrills.find((item) => item.id !== drill.id && item.rangeDayId === rangeDayId)?.id ?? "")
+          : current,
       );
+      setSaveMessage(`${drill.name} removed.`);
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "The drill could not be removed.");
     } finally {
       setRemovingDrillId("");
     }
@@ -4145,13 +4234,30 @@ export default function RangeDaysPage() {
     <div className="inline-flex min-h-8 items-center gap-2 text-[11px]" role={announce ? "status" : undefined} aria-live={announce ? "polite" : undefined}>
       {workspaceStale ? (
         <>
-          <span className="text-amber-300">{workspaceSaveError || "Changed on another device."}</span>
+          <span className="text-amber-300">
+            {workspaceRecoveryError || "Changed on another device. Merging your changes…"}
+          </span>
+          {workspaceRecoveryError ? (
+            <button
+              type="button"
+              onClick={() => void recoverRangeWorkspace()}
+              className="font-semibold text-blue-300 hover:text-blue-200"
+            >
+              Try again
+            </button>
+          ) : null}
+        </>
+      ) : workspaceSyncBlocked ? (
+        <>
+          <span className="text-amber-300">
+            {workspaceRecoveryError || "Not synced: showing this device's copy."}
+          </span>
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={() => void recoverRangeWorkspace()}
             className="font-semibold text-blue-300 hover:text-blue-200"
           >
-            Reload
+            Load and merge
           </button>
         </>
       ) : workspaceSaveState === "saving" ? (
@@ -4173,6 +4279,38 @@ export default function RangeDaysPage() {
     </div>
   );
   const workspaceSaveStatus = renderWorkspaceSaveStatus();
+  const deviceCopyNotice = otherTabActive || deviceCopyFailed ? (
+    <p role="status" className="rounded-2xl border border-amber-500/40 bg-amber-500/[0.06] p-3 text-[12px] text-amber-100">
+      {otherTabActive
+        ? "Range Days is also open in another tab or window on this device. Use one at a time: changes not yet saved are kept only in the tab where they were made."
+        : "This device could not keep a backup copy of your changes (storage is full or blocked). Keep this page open until it shows Saved."}
+    </p>
+  ) : null;
+  const workspaceConflictPanel = workspaceConflicts.length ? (
+    <section role="alert" className="rounded-2xl border border-amber-500/40 bg-amber-500/[0.06] p-4 text-[12px] text-amber-100">
+      <p className="font-semibold text-amber-200">
+        {workspaceConflicts.length} {workspaceConflicts.length === 1 ? "change was" : "changes were"} made on this device and on another device. The current value stays in use until you choose. Using this device&apos;s value replaces the whole entry with this device&apos;s version.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {workspaceConflicts.map((conflict) => (
+          <li key={conflictKey(conflict)} className="flex flex-col gap-2 rounded-xl border border-amber-500/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {describeWorkspaceConflict(conflict)}
+              {conflict.reason ? <span className="mt-1 block text-amber-200/80">Not saved: {conflict.reason}</span> : null}
+            </span>
+            <span className="flex gap-2">
+              <button type="button" onClick={() => resolveWorkspaceConflict(conflict, true)} className="min-h-10 rounded-xl border border-amber-400/50 px-3 font-semibold text-amber-100 hover:bg-amber-500/10">
+                {conflict.reason ? "Try this device\u2019s value again" : "Use this device\u2019s value"}
+              </button>
+              <button type="button" onClick={() => resolveWorkspaceConflict(conflict, false)} className="min-h-10 rounded-xl border border-slate-600 px-3 font-semibold text-slate-200 hover:bg-slate-800">
+                {conflict.reason ? "Discard this device\u2019s value" : "Keep the current value"}
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  ) : null;
 
   if (!selectedRangeDay) {
     const visibleRangeDayIds = new Set(
@@ -4208,18 +4346,18 @@ export default function RangeDaysPage() {
 
               {workspaceSaveStatus}
 
-              {canManageRangeDays ? (
-                <button
-                  type="button"
-                  onClick={handleCreateRangeDay}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
-                >
-                  <Plus size={14} />
-                  New Range Day
-                </button>
-              ) : null}
+              {canManageRangeDays ? <button
+                type="button"
+                onClick={handleCreateRangeDay}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+              >
+                <Plus size={14} />
+                New Range Day
+              </button> : null}
             </div>
           </header>
+          {deviceCopyNotice}
+          {workspaceConflictPanel}
 
           <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             <StatCard
@@ -4253,9 +4391,7 @@ export default function RangeDaysPage() {
                 <input
                   type="search"
                   value={rangeDaySearchQuery}
-                  onChange={(event) =>
-                    setRangeDaySearchQuery(event.target.value)
-                  }
+                  onChange={(event) => setRangeDaySearchQuery(event.target.value)}
                   placeholder="Search title, location, instructor, officer, firearm, type..."
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
                 />
@@ -4289,9 +4425,7 @@ export default function RangeDaysPage() {
                 <select
                   value={rangeDayTypeFilter}
                   onChange={(event) =>
-                    setRangeDayTypeFilter(
-                      event.target.value as RangeDayTypeFilter,
-                    )
+                    setRangeDayTypeFilter(event.target.value as RangeDayTypeFilter)
                   }
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                 >
@@ -4306,8 +4440,7 @@ export default function RangeDaysPage() {
 
             <div className="mt-3 flex flex-col gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
               <p>
-                Showing {filteredRangeDays.length} of {rangeDays.length} range
-                day
+                Showing {filteredRangeDays.length} of {rangeDays.length} range day
                 {rangeDays.length !== 1 ? "s" : ""}. Archived range days are
                 hidden by default.
               </p>
@@ -4350,8 +4483,7 @@ export default function RangeDaysPage() {
                 dayResults,
               );
 
-              const malfunctionCount =
-                getMalfunctionCountForRangeDay(dayResults);
+              const malfunctionCount = getMalfunctionCountForRangeDay(dayResults);
 
               return (
                 <div
@@ -4393,32 +4525,23 @@ export default function RangeDaysPage() {
                     </div>
 
                     <div className="flex flex-col items-end gap-2">
-                      {canManageRangeDays &&
-                      !["Completed", "Locked", "Archived"].includes(
-                        rangeDay.status,
-                      ) ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleChangeRangeDayStatus(
-                              rangeDay.id,
-                              rangeDay.status === "Archived"
-                                ? "Planned"
-                                : "Archived",
-                            );
-                          }}
-                          className={`rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition ${
-                            rangeDay.status === "Archived"
-                              ? "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:border-blue-400/60"
-                              : "border-slate-700 bg-slate-950/50 text-slate-500 hover:border-amber-500/40 hover:text-amber-300"
-                          }`}
-                        >
-                          {rangeDay.status === "Archived"
-                            ? "Restore"
-                            : "Archive"}
-                        </button>
-                      ) : null}
+                      {canManageRangeDays && !["Completed", "Locked", "Archived"].includes(rangeDay.status) ? <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleChangeRangeDayStatus(
+                            rangeDay.id,
+                            rangeDay.status === "Archived" ? "Planned" : "Archived",
+                          );
+                        }}
+                        className={`rounded-xl border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition ${
+                          rangeDay.status === "Archived"
+                            ? "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:border-blue-400/60"
+                            : "border-slate-700 bg-slate-950/50 text-slate-500 hover:border-amber-500/40 hover:text-amber-300"
+                        }`}
+                      >
+                        {rangeDay.status === "Archived" ? "Restore" : "Archive"}
+                      </button> : null}
 
                       <ChevronRight
                         size={18}
@@ -4450,14 +4573,12 @@ export default function RangeDaysPage() {
                       Day Outline
                     </p>
                     <ul className="space-y-1 text-[11px] text-slate-400">
-                      {getRangeDayOutlineForDisplay(rangeDay)
-                        .slice(0, 4)
-                        .map((item) => (
-                          <li key={item} className="flex gap-2">
-                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-400" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
+                      {getRangeDayOutlineForDisplay(rangeDay).slice(0, 4).map((item) => (
+                        <li key={item} className="flex gap-2">
+                          <span className="mt-1 h-1.5 w-1.5 rounded-full bg-blue-400" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
                     </ul>
                   </div>
 
@@ -4467,23 +4588,17 @@ export default function RangeDaysPage() {
                     </p>
                     <div className="space-y-1 text-[11px] text-slate-400">
                       <p>
-                        <span className="font-semibold text-slate-300">
-                          Lead:
-                        </span>{" "}
+                        <span className="font-semibold text-slate-300">Lead:</span>{" "}
                         {getUserName(rangeDay.leadInstructorId)}
                       </p>
                       <p>
-                        <span className="font-semibold text-slate-300">
-                          Instructors:
-                        </span>{" "}
+                        <span className="font-semibold text-slate-300">Instructors:</span>{" "}
                         {rangeDay.instructorIds.length > 0
                           ? rangeDay.instructorIds.map(getUserName).join(", ")
                           : "None assigned"}
                       </p>
                       {rangeDay.staffingNotes && (
-                        <p className="pt-1 text-slate-500">
-                          {rangeDay.staffingNotes}
-                        </p>
+                        <p className="pt-1 text-slate-500">{rangeDay.staffingNotes}</p>
                       )}
                     </div>
                   </div>
@@ -4580,8 +4695,8 @@ export default function RangeDaysPage() {
                   No range days match those filters.
                 </p>
                 <p className="mt-1 text-[12px] text-slate-500">
-                  Clear the search, change the status/type filter, or create a
-                  new range day.
+                  Clear the search, change the status/type filter, or create a new
+                  range day.
                 </p>
               </div>
             )}
@@ -4788,729 +4903,400 @@ export default function RangeDaysPage() {
       <div className="range-day-screen">
         <TracePointShell activePage="Range & Training">
           <div className="mx-auto w-full max-w-[1600px] space-y-5">
-            <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <button
-                    type="button"
-                    onClick={goBackToOverview}
-                    className="mb-3 inline-flex items-center gap-2 text-[12px] font-semibold text-slate-500 hover:text-white"
-                  >
-                    <ArrowLeft size={14} />
-                    Back to Range Day Overview
-                  </button>
+        <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <button
+                type="button"
+                onClick={goBackToOverview}
+                className="mb-3 inline-flex items-center gap-2 text-[12px] font-semibold text-slate-500 hover:text-white"
+              >
+                <ArrowLeft size={14} />
+                Back to Range Day Overview
+              </button>
 
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    <StatusPill label={selectedRangeDay.status} />
-                    <StatusPill
-                      label={selectedRangeDay.rangeType}
-                      tone="slate"
-                    />
-                    <StatusPill
-                      label={selectedRangeDay.packetStatus}
-                      tone={
-                        selectedRangeDay.packetStatus === "Ready"
-                          ? "green"
-                          : selectedRangeDay.packetStatus === "In Progress"
-                            ? "amber"
-                            : "red"
+              <div className="mb-2 flex flex-wrap gap-2">
+                <StatusPill label={selectedRangeDay.status} />
+                <StatusPill label={selectedRangeDay.rangeType} tone="slate" />
+                <StatusPill
+                  label={selectedRangeDay.packetStatus}
+                  tone={
+                    selectedRangeDay.packetStatus === "Ready"
+                      ? "green"
+                      : selectedRangeDay.packetStatus === "In Progress"
+                        ? "amber"
+                        : "red"
+                  }
+                />
+              </div>
+
+              <h1 className="text-[22px] font-bold text-white">
+                {selectedRangeDay.title}
+              </h1>
+              <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
+                Edit this range day, manage staffing and drills, print the packet,
+                score live, and log firearm malfunctions.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleGeneratePacket}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+              >
+                <Printer size={14} />
+                Print Packet
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveRangeDayWorkspace}
+                disabled={(!canManageRangeDays && !canScoreRangeDays) || selectedRangeDayFinalized}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Save size={14} />
+                Save Range Day
+              </button>
+              {workspaceSaveStatus}
+              <span className={`self-center text-[12px] ${saveMessage.startsWith("Range Day synchronization unavailable") ? "text-red-300" : "text-slate-400"}`} role="status" aria-live="polite">{saveMessage}</span>
+            </div>
+          </div>
+        </header>
+        {deviceCopyNotice}
+        {workspaceConflictPanel}
+
+        <section className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+          <StatCard
+            label="Roster"
+            value={selectedRoster.length}
+            sub="Officers assigned"
+          />
+          <StatCard
+            label="Attendance"
+            value={`${getAttendanceRate(selectedRoster)}%`}
+            sub={`${getAttendanceCount(selectedRoster)} present`}
+          />
+          <StatCard
+            label="Drills"
+            value={selectedDrills.length}
+            sub="Planned events"
+          />
+          <StatCard
+            label="Completion"
+            value={`${completionSummary.completionRate}%`}
+            sub={`${completionSummary.completedRuns}/${completionSummary.expectedRuns} runs`}
+          />
+          <StatCard
+            label="Standards"
+            value={selectedDepartmentStandardDrills.length}
+            sub="Department standards"
+          />
+          <StatCard
+            label="Malfunctions"
+            value={getMalfunctionCountForRangeDay(selectedRangeResults)}
+            sub="Linked to firearms"
+          />
+        </section>
+
+        <section className="space-y-5">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-2">
+            <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
+              {RANGE_DAY_DETAIL_TABS.map((tab) => {
+                const active = activeRangeDayTab === tab.id;
+                const openAttendanceManagementTab =
+                  isOpenAttendance && tab.id === "roster";
+                const tabLabel = openAttendanceManagementTab
+                  ? "Attendance / Manage"
+                  : tab.label;
+                const tabDescription = openAttendanceManagementTab
+                  ? "Corrections and history"
+                  : tab.description;
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveRangeDayTab(tab.id)}
+                    className={`rounded-2xl px-3 py-3 text-left transition ${
+                      active
+                        ? "border border-blue-500/40 bg-blue-500/10 text-white"
+                        : "border border-transparent text-slate-500 hover:border-slate-800 hover:bg-slate-950/40 hover:text-slate-300"
+                    }`}
+                  >
+                    <p className="text-[12px] font-bold">{tabLabel}</p>
+                    <p className="mt-0.5 hidden text-[10px] leading-4 md:block">
+                      {tabDescription}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {activeRangeDayTab === "overview" && (
+            <div aria-disabled={!canEditSelectedRangeDay} className={`grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-[16px] font-bold text-white">
+                      Range Day Details
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Core details shown on the overview card and printed packet.
+                    </p>
+                  </div>
+                  <StatusPill label={selectedRangeDay.packetStatus} tone={selectedRangeDay.packetStatus === "Ready" ? "green" : selectedRangeDay.packetStatus === "In Progress" ? "amber" : "red"} />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="lg:col-span-2">
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Title
+                    </label>
+                    <input
+                      value={selectedRangeDay.title}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("title", event.target.value)
                       }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
                     />
                   </div>
 
-                  <h1 className="text-[22px] font-bold text-white">
-                    {selectedRangeDay.title}
-                  </h1>
-                  <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
-                    Edit this range day, manage staffing and drills, print the
-                    packet, score live, and log firearm malfunctions.
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={handleGeneratePacket}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                  >
-                    <Printer size={14} />
-                    Print Packet
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveRangeDayWorkspace()}
-                    disabled={
-                      (!canManageRangeDays && !canScoreRangeDays) ||
-                      selectedRangeDayFinalized ||
-                      isSavingRangeDay
-                    }
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Save size={14} />
-                    {isSavingRangeDay ? "Saving…" : "Save Range Day"}
-                  </button>
-                  {workspaceSaveStatus}
-                  <span
-                    className={`self-center text-[12px] ${saveMessage.startsWith("Range Day synchronization unavailable") ? "text-red-300" : "text-slate-400"}`}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    {workspaceFeedback ||
-                      saveMessage ||
-                      (isRangeDayDirty ? "Unsaved changes" : "")}
-                  </span>
-                </div>
-              </div>
-            </header>
-
-            <section className="grid grid-cols-2 gap-3 xl:grid-cols-6">
-              <StatCard
-                label="Roster"
-                value={selectedRoster.length}
-                sub="Officers assigned"
-              />
-              <StatCard
-                label="Attendance"
-                value={`${getAttendanceRate(selectedRoster)}%`}
-                sub={`${getAttendanceCount(selectedRoster)} present`}
-              />
-              <StatCard
-                label="Drills"
-                value={selectedDrills.length}
-                sub="Planned events"
-              />
-              <StatCard
-                label="Completion"
-                value={`${completionSummary.completionRate}%`}
-                sub={`${completionSummary.completedRuns}/${completionSummary.expectedRuns} runs`}
-              />
-              <StatCard
-                label="Standards"
-                value={selectedDepartmentStandardDrills.length}
-                sub="Department standards"
-              />
-              <StatCard
-                label="Malfunctions"
-                value={getMalfunctionCountForRangeDay(selectedRangeResults)}
-                sub="Linked to firearms"
-              />
-            </section>
-
-            <section className="space-y-5">
-              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-2">
-                <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-8">
-                  {RANGE_DAY_DETAIL_TABS.map((tab) => {
-                    const active = activeRangeDayTab === tab.id;
-                    const openAttendanceManagementTab =
-                      isOpenAttendance && tab.id === "roster";
-                    const tabLabel = openAttendanceManagementTab
-                      ? "Attendance / Manage"
-                      : tab.label;
-                    const tabDescription = openAttendanceManagementTab
-                      ? "Corrections and history"
-                      : tab.description;
-
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setActiveRangeDayTab(tab.id)}
-                        className={`rounded-2xl px-3 py-3 text-left transition ${
-                          active
-                            ? "border border-blue-500/40 bg-blue-500/10 text-white"
-                            : "border border-transparent text-slate-500 hover:border-slate-800 hover:bg-slate-950/40 hover:text-slate-300"
-                        }`}
-                      >
-                        <p className="text-[12px] font-bold">{tabLabel}</p>
-                        <p className="mt-0.5 hidden text-[10px] leading-4 md:block">
-                          {tabDescription}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {activeRangeDayTab === "overview" && (
-                <div
-                  aria-disabled={!canEditSelectedRangeDay}
-                  className={`grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}
-                >
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                      <div>
-                        <h2 className="text-[16px] font-bold text-white">
-                          Range Day Details
-                        </h2>
-                        <p className="mt-1 text-[12px] text-slate-500">
-                          Core details shown on the overview card and printed
-                          packet.
-                        </p>
-                      </div>
-                      <StatusPill
-                        label={selectedRangeDay.packetStatus}
-                        tone={
-                          selectedRangeDay.packetStatus === "Ready"
-                            ? "green"
-                            : selectedRangeDay.packetStatus === "In Progress"
-                              ? "amber"
-                              : "red"
-                        }
-                      />
-                    </div>
-
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div className="lg:col-span-2">
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Title
-                        </label>
-                        <input
-                          value={selectedRangeDay.title}
-                          onChange={(event) =>
-                            updateSelectedRangeDay("title", event.target.value)
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Date
-                        </label>
-                        <input
-                          type="date"
-                          value={selectedRangeDay.date}
-                          onChange={(event) =>
-                            updateSelectedRangeDay("date", event.target.value)
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Status
-                        </label>
-                        <select
-                          value={selectedRangeDay.status}
-                          onChange={(event) => {
-                            const nextStatus = event.target.value as PlannedRangeDay["status"];
-                            if (!confirmFinalRangeDayStatus(nextStatus)) return;
-                            updateSelectedRangeDay("status", nextStatus);
-                          }}
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {RANGE_STATUSES.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Start
-                        </label>
-                        <input
-                          value={selectedRangeDay.startTime}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "startTime",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          End
-                        </label>
-                        <input
-                          value={selectedRangeDay.endTime}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "endTime",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Location
-                        </label>
-                        <input
-                          value={selectedRangeDay.location}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "location",
-                              event.target.value,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Type
-                        </label>
-                        <select
-                          value={selectedRangeDay.rangeType}
-                          onChange={(event) =>
-                            handleChangeRangeDayType(
-                              event.target.value as RangeDayType,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {RANGE_DAY_TYPES.map((type) => (
-                            <option key={type} value={type}>
-                              {type}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Packet Status
-                        </label>
-                        <select
-                          value={selectedRangeDay.packetStatus}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "packetStatus",
-                              event.target.value as PacketStatus,
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {PACKET_STATUSES.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Attendance Mode
-                        </label>
-                        <select
-                          value={normalizeRangeDayAttendanceMode(
-                            selectedRangeDay.attendanceMode,
-                          )}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "attendanceMode",
-                              event.target
-                                .value as PlannedRangeDay["attendanceMode"],
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          {RANGE_DAY_ATTENDANCE_MODES.map((mode) => (
-                            <option key={mode} value={mode}>
-                              {mode}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          Open sessions let instructors add present shooters
-                          while scoring.
-                        </p>
-                      </div>
-
-                      <div className="lg:col-span-2">
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Syllabus / Day Outline
-                        </label>
-                        <textarea
-                          value={formatOutlineText(
-                            getRangeDayOutlineForDisplay(selectedRangeDay),
-                          )}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "outline",
-                              parseOutlineText(event.target.value),
-                            )
-                          }
-                          rows={5}
-                          placeholder="Enter one syllabus item per line"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Staffing Notes
-                        </label>
-                        <textarea
-                          value={selectedRangeDay.staffingNotes}
-                          onChange={(event) =>
-                            updateSelectedRangeDay(
-                              "staffingNotes",
-                              event.target.value,
-                            )
-                          }
-                          rows={3}
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Notes
-                        </label>
-                        <textarea
-                          value={selectedRangeDay.notes ?? ""}
-                          onChange={(event) =>
-                            updateSelectedRangeDay("notes", event.target.value)
-                          }
-                          rows={3}
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={selectedRangeDay.date}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("date", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
                   </div>
 
-                  <div className="space-y-5">
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                        <Users size={15} className="text-blue-400" />
-                        Staffing
-                      </h3>
-
-                      <div className="space-y-3">
-                        <div>
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                            Lead Instructor
-                          </label>
-                          <select
-                            value={selectedRangeDay.leadInstructorId}
-                            onChange={(event) =>
-                              handleSetLeadInstructor(event.target.value)
-                            }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                          >
-                            {personnel.map((user) => (
-                              <option key={user.id} value={user.id}>
-                                {user.displayName}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                            Add Instructor
-                          </label>
-                          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                            <select
-                              value={newInstructorUserId}
-                              onChange={(event) =>
-                                setNewInstructorUserId(event.target.value)
-                              }
-                              disabled={availableInstructorUsers.length === 0}
-                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                            >
-                              {availableInstructorUsers.length === 0 ? (
-                                <option value="">All users are assigned</option>
-                              ) : (
-                                availableInstructorUsers.map((user) => (
-                                  <option key={user.id} value={user.id}>
-                                    {user.displayName}
-                                  </option>
-                                ))
-                              )}
-                            </select>
-
-                            <button
-                              type="button"
-                              onClick={handleAddInstructorToRangeDay}
-                              disabled={availableInstructorUsers.length === 0}
-                              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
-                            >
-                              <Plus size={14} />
-                              Add
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          {(selectedRangeDay.instructorIds ?? []).map(
-                            (instructorId) => {
-                              const isLead =
-                                instructorId ===
-                                selectedRangeDay.leadInstructorId;
-
-                              return (
-                                <div
-                                  key={instructorId}
-                                  className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div>
-                                      <p className="text-[13px] font-semibold text-white">
-                                        {getUserName(instructorId)}
-                                      </p>
-                                      <p className="mt-1 text-[11px] text-slate-500">
-                                        {isLead
-                                          ? "Lead instructor"
-                                          : "Assigned instructor"}
-                                      </p>
-                                    </div>
-
-                                    {isLead && (
-                                      <StatusPill label="Lead" tone="green" />
-                                    )}
-                                  </div>
-
-                                  <div className="mt-3 grid grid-cols-2 gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleSetLeadInstructor(instructorId)
-                                      }
-                                      disabled={isLead}
-                                      className="rounded-xl border border-slate-700 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
-                                    >
-                                      {isLead ? "Current Lead" : "Make Lead"}
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleRemoveInstructorFromRangeDay(
-                                          instructorId,
-                                        )
-                                      }
-                                      disabled={
-                                        (selectedRangeDay.instructorIds ?? [])
-                                          .length <= 1
-                                      }
-                                      className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            },
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 text-[14px] font-bold text-white">
-                        Quick Actions
-                      </h3>
-                      <div className="grid gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setActiveRangeDayTab("roster")}
-                          className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                        >
-                          Manage roster and firearm assignments
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveRangeDayTab("readiness")}
-                          className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                        >
-                          Review pre-range readiness
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveRangeDayTab("drills")}
-                          className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                        >
-                          Add or review planned drills
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveRangeDayTab("scoring")}
-                          className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                        >
-                          Open scoring board
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeRangeDayTab === "readiness" && (
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h2 className="text-[17px] font-bold text-white">
-                          Pre-Range Readiness
-                        </h2>
-                        <p className="mt-1 text-[12px] text-slate-500">
-                          Surface setup gaps before the range staff discovers
-                          them on the line.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <StatusPill
-                          label={`${readinessCriticalCount} critical`}
-                          tone={readinessCriticalCount > 0 ? "red" : "green"}
-                        />
-                        <StatusPill
-                          label={`${readinessWarningCount} warning`}
-                          tone={readinessWarningCount > 0 ? "amber" : "green"}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      {preRangeReadinessItems.map((item) => (
-                        <div
-                          key={item.label}
-                          className={`rounded-2xl border px-3 py-3 ${
-                            item.status === "ready"
-                              ? "border-emerald-500/20 bg-emerald-500/[0.04]"
-                              : item.status === "warning"
-                                ? "border-amber-500/20 bg-amber-500/[0.06]"
-                                : "border-red-500/20 bg-red-500/[0.06]"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[13px] font-semibold text-white">
-                                {item.label}
-                              </p>
-                              <p className="mt-1 text-[11px] text-slate-500">
-                                {item.detail}
-                              </p>
-                            </div>
-                            {item.status === "ready" ? (
-                              <CheckCircle2
-                                size={16}
-                                className="text-emerald-400"
-                              />
-                            ) : (
-                              <AlertTriangle
-                                size={16}
-                                className={
-                                  item.status === "warning"
-                                    ? "text-amber-300"
-                                    : "text-red-300"
-                                }
-                              />
-                            )}
-                          </div>
-                        </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Status
+                    </label>
+                    <select
+                      value={selectedRangeDay.status}
+                      onChange={(event) => {
+                        const nextStatus = event.target.value as PlannedRangeDay["status"];
+                        if (!confirmFinalRangeDayStatus(nextStatus)) return;
+                        updateSelectedRangeDay("status", nextStatus);
+                      }}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {RANGE_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
                       ))}
-                    </div>
+                    </select>
                   </div>
 
-                  <div className="space-y-5">
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                        <Shield size={15} className="text-blue-400" />
-                        Department Standards Included
-                      </h3>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Start
+                    </label>
+                    <input
+                      value={selectedRangeDay.startTime}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("startTime", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-                      <div className="space-y-2">
-                        {selectedDepartmentStandardDrills.length === 0 ? (
-                          <p className="text-[12px] text-slate-500">
-                            No department-standard drills are attached to this
-                            range day.
-                          </p>
-                        ) : (
-                          selectedDepartmentStandardDrills.map((drill) => (
-                            <div
-                              key={drill.id}
-                              className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.06] px-3 py-3"
-                            >
-                              <p className="text-[12px] font-semibold text-white">
-                                {drill.departmentStandardName || drill.name}
-                              </p>
-                              <p className="mt-1 text-[11px] text-blue-200">
-                                {getDepartmentStandardRequirementLabel(drill)} ·{" "}
-                                {drill.departmentStandardAppliesTo ||
-                                  "Agency configured"}
-                              </p>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      End
+                    </label>
+                    <input
+                      value={selectedRangeDay.endTime}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("endTime", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
 
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                        <Wrench size={15} className="text-blue-400" />
-                        Equipment Snapshot
-                      </h3>
-                      <p className="text-[12px] text-slate-500">
-                        {
-                          selectedEquipmentChecklist.filter(
-                            (item) => item.packed,
-                          ).length
-                        }
-                        /{selectedEquipmentChecklist.length} checklist items
-                        marked ready.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setActiveRangeDayTab("equipment")}
-                        className="mt-3 rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                      >
-                        Open equipment checklist
-                      </button>
-                    </div>
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Location
+                    </label>
+                    <input
+                      value={selectedRangeDay.location}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("location", event.target.value)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Type
+                    </label>
+                    <select
+                      value={selectedRangeDay.rangeType}
+                      onChange={(event) =>
+                        handleChangeRangeDayType(event.target.value as RangeDayType)
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {RANGE_DAY_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Packet Status
+                    </label>
+                    <select
+                      value={selectedRangeDay.packetStatus}
+                      onChange={(event) =>
+                        updateSelectedRangeDay(
+                          "packetStatus",
+                          event.target.value as PacketStatus,
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {PACKET_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Attendance Mode
+                    </label>
+                    <select
+                      value={normalizeRangeDayAttendanceMode(
+                        selectedRangeDay.attendanceMode,
+                      )}
+                      onChange={(event) =>
+                        updateSelectedRangeDay(
+                          "attendanceMode",
+                          event.target.value as PlannedRangeDay["attendanceMode"],
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      {RANGE_DAY_ATTENDANCE_MODES.map((mode) => (
+                        <option key={mode} value={mode}>
+                          {mode}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Open sessions let instructors add present shooters while scoring.
+                    </p>
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Syllabus / Day Outline
+                    </label>
+                    <textarea
+                      value={formatOutlineText(
+                        getRangeDayOutlineForDisplay(selectedRangeDay),
+                      )}
+                      onChange={(event) =>
+                        updateSelectedRangeDay(
+                          "outline",
+                          parseOutlineText(event.target.value),
+                        )
+                      }
+                      rows={5}
+                      placeholder="Enter one syllabus item per line"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Staffing Notes
+                    </label>
+                    <textarea
+                      value={selectedRangeDay.staffingNotes}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("staffingNotes", event.target.value)
+                      }
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Notes
+                    </label>
+                    <textarea
+                      value={selectedRangeDay.notes ?? ""}
+                      onChange={(event) =>
+                        updateSelectedRangeDay("notes", event.target.value)
+                      }
+                      rows={3}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
                   </div>
                 </div>
-              )}
+              </div>
 
-              {activeRangeDayTab === "roster" && (
-                <div
-                  aria-disabled={!canTakeSelectedRangeDayAttendance}
-                  className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canTakeSelectedRangeDayAttendance ? "pointer-events-none opacity-70" : ""}`}
-                >
-                  <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Users size={15} className="text-blue-400" />
+                    Staffing
+                  </h3>
+
+                  <div className="space-y-3">
                     <div>
-                      <h2 className="text-[17px] font-bold text-white">
-                        {isOpenAttendance
-                          ? "Attendance / Manage"
-                          : "Roster & Firearms"}
-                      </h2>
-                      <p className="mt-1 text-[12px] text-slate-500">
-                        {isOpenAttendance
-                          ? "Live arrivals are added from Scoring. Use this area for attendance corrections and range-day history."
-                          : "Add officers, mark attendance, and assign firearms without scrolling through the entire range day."}{" "}
-                        <span className="text-blue-300">
-                          {personnelMessage}
-                        </span>
-                      </p>
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        Lead Instructor
+                      </label>
+                      <select
+                        value={selectedRangeDay.leadInstructorId}
+                        onChange={(event) => handleSetLeadInstructor(event.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                      >
+                        {personnel.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.displayName}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
-                    {!isOpenAttendance ? (
-                      <div className="grid gap-2 sm:grid-cols-[260px_auto]">
+                    <div>
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        Add Instructor
+                      </label>
+                      <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                         <select
-                          value={newRosterOfficerId}
+                          value={newInstructorUserId}
                           onChange={(event) =>
-                            setNewRosterOfficerId(event.target.value)
+                            setNewInstructorUserId(event.target.value)
                           }
-                          disabled={!canEditSelectedRangeDay || availableRosterOfficers.length === 0}
+                          disabled={availableInstructorUsers.length === 0}
                           className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
                         >
-                          {availableRosterOfficers.length === 0 ? (
-                            <option value="">All officers are rostered</option>
+                          {availableInstructorUsers.length === 0 ? (
+                            <option value="">All users are assigned</option>
                           ) : (
-                            availableRosterOfficers.map((user) => (
+                            availableInstructorUsers.map((user) => (
                               <option key={user.id} value={user.id}>
                                 {user.displayName}
                               </option>
@@ -5520,1138 +5306,9 @@ export default function RangeDaysPage() {
 
                         <button
                           type="button"
-                          onClick={handleAddOfficerToRoster}
-                          disabled={!canEditSelectedRangeDay || availableRosterOfficers.length === 0}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
-                        >
-                          <Plus size={14} />
-                          Add Officer
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-                    {selectedRoster.length === 0 && (
-                      <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
-                        No officers assigned yet. Add officers above to build
-                        the range day roster.
-                      </p>
-                    )}
-
-                    {selectedRoster.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className={`rounded-2xl border px-3 py-3 transition ${
-                          selectedOfficerId === entry.officerId
-                            ? "border-blue-500/50 bg-blue-500/10"
-                            : "border-slate-800 bg-slate-950/40"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedOfficerId(entry.officerId);
-                            resetEntryForm(1);
-                          }}
-                          className="flex w-full items-center justify-between gap-3 text-left"
-                        >
-                          <div>
-                            <p className="text-[13px] font-semibold text-white">
-                              {getUserName(entry.officerId)}
-                            </p>
-                            <p className="mt-1 text-[11px] text-slate-500">
-                              {entry.assignedFirearmIds.length > 0
-                                ? entry.assignedFirearmIds
-                                    .map(getFirearmName)
-                                    .join(" · ")
-                                : "No firearms selected"}
-                            </p>
-                          </div>
-
-                          {entry.attended ? (
-                            <CheckCircle2
-                              size={14}
-                              className="text-emerald-400"
-                            />
-                          ) : (
-                            <StatusPill label="Not Present" tone="slate" />
-                          )}
-                        </button>
-
-                        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-                          <div className="rounded-xl border border-slate-700 bg-slate-950 p-2">
-                            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                              Firearms for this range day
-                            </p>
-
-                            <div className="flex flex-wrap gap-2">
-                              {firearms
-                                .filter(
-                                  (firearm) =>
-                                    firearm.active_assignment
-                                      ?.assigned_to_user_id === entry.officerId,
-                                )
-                                .map((firearm) => {
-                                  const selected =
-                                    entry.assignedFirearmIds.includes(
-                                      firearm.id,
-                                    );
-
-                                  return (
-                                    <button
-                                      key={firearm.id}
-                                      type="button"
-                                      disabled={!canEditSelectedRangeDay}
-                                      onClick={() =>
-                                        handleToggleRosterFirearm(
-                                          entry.id,
-                                          firearm.id,
-                                        )
-                                      }
-                                      className={`rounded-xl border px-3 py-2 text-left text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                        selected
-                                          ? "border-blue-500/60 bg-blue-500/15 text-blue-200"
-                                          : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-white"
-                                      }`}
-                                    >
-                                      <span className="block">
-                                        {getFirearmName(firearm.id)}
-                                      </span>
-
-                                      <span className="mt-0.5 block text-[9px] font-normal uppercase tracking-wide opacity-60">
-                                        {selected
-                                          ? "Included"
-                                          : "Add to range day"}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-
-                              {firearms.filter(
-                                (firearm) =>
-                                  firearm.active_assignment
-                                    ?.assigned_to_user_id === entry.officerId,
-                              ).length === 0 ? (
-                                <p className="px-1 py-1 text-[11px] text-amber-300">
-                                  No active firearms are assigned to this
-                                  officer.
-                                </p>
-                              ) : null}
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleToggleRosterAttendance(entry.id)
-                            }
-                            className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
-                              entry.attended
-                                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                                : "border-slate-700 text-slate-400 hover:border-slate-600"
-                            }`}
-                          >
-                            {entry.attended ? "Present" : "Mark Present"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={!canEditSelectedRangeDay}
-                            onClick={() =>
-                              handleRemoveOfficerFromRoster(entry.id)
-                            }
-                            className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeRangeDayTab === "drills" && (
-                <div className="space-y-5">
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <h2 className="text-[17px] font-bold text-white">
-                          Planned Drills
-                        </h2>
-                        <p className="mt-1 text-[12px] text-slate-500">
-                          Select the drills that make up this range day. Drill
-                          library recommendations are based on recent use.
-                        </p>
-                      </div>
-
-                      {canManageRangeDays ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setShowLibraryPanel((current) => !current)
-                          }
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
-                        >
-                          <Plus size={14} />
-                          {showLibraryPanel ? "Hide Library" : "Add Drill"}
-                        </button>
-                      ) : null}
-                    </div>
-
-                    <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-                      {selectedDrills.length === 0 ? (
-                        <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
-                          No drills added yet. Use Add Drill to build the range
-                          day.
-                        </p>
-                      ) : (
-                        selectedDrills.map((drill) => (
-                          <div
-                            key={drill.id}
-                            className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
-                              selectedDrill?.id === drill.id
-                                ? "border-blue-500/50 bg-blue-500/10"
-                                : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedDrillId(drill.id);
-                                resetEntryForm(1);
-                              }}
-                              className="w-full text-left"
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div>
-                                  <p className="text-[13px] font-semibold text-white">
-                                    {drill.name}
-                                  </p>
-                                  <p className="mt-1 text-[11px] text-slate-500">
-                                    {drill.description}
-                                  </p>
-                                </div>
-                                <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
-                                  {getEffectiveRunCount(drill)} run
-                                  {getEffectiveRunCount(drill) !== 1 ? "s" : ""}
-                                </span>
-                              </div>
-
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <StatusPill label={drill.category} />
-                                <StatusPill
-                                  label={getScoringFormat(drill)}
-                                  tone="slate"
-                                />
-                                {drill.isDepartmentStandard ? (
-                                  <StatusPill
-                                    label="Department Standard"
-                                    tone="green"
-                                  />
-                                ) : null}
-                              </div>
-                            </button>
-                            {drill.sourceTemplateId ? (
-                              <div className="mt-3">
-                                <DrillDocuments
-                                  drillTemplateId={drill.sourceTemplateId}
-                                  compact
-                                />
-                              </div>
-                            ) : null}
-                            {canEditSelectedRangeDay ? (
-                              <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
-                                <button
-                                  type="button"
-                                  disabled={Boolean(removingDrillId)}
-                                  onClick={() =>
-                                    void handleRemoveDrillFromSelectedRangeDay(
-                                      drill,
-                                    )
-                                  }
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  <Trash2 size={12} />{" "}
-                                  {removingDrillId === drill.id
-                                    ? "Removing…"
-                                    : "Remove"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {showLibraryPanel && (
-                    <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <h2 className="text-[17px] font-bold text-white">
-                            Add Drill From Library
-                          </h2>
-                          <p className="mt-1 text-[12px] text-slate-500">
-                            Recommended drills appear first based on usage
-                            history and staleness.
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (showCreateDrillForm) {
-                              resetNewDrillForm();
-                              setShowCreateDrillForm(false);
-                            } else {
-                              resetNewDrillForm();
-                              setShowCreateDrillForm(true);
-                            }
-                          }}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
-                        >
-                          <Plus size={14} />
-                          {showCreateDrillForm ? "Close Form" : "Create Drill"}
-                        </button>
-                      </div>
-
-                      {showCreateDrillForm && (
-                        <div
-                          id="drill-template-editor"
-                          className="mt-5 scroll-mt-6 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4"
-                        >
-                          <h3 className="mb-4 text-[15px] font-bold text-white">
-                            {editingDrillTemplateId
-                              ? "Edit Drill Template"
-                              : "Create New Drill Template"}
-                          </h3>
-
-                          <div className="grid gap-4 lg:grid-cols-4">
-                            <div className="lg:col-span-2">
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Drill Name
-                              </label>
-                              <input
-                                type="text"
-                                value={newDrillName}
-                                onChange={(event) =>
-                                  setNewDrillName(event.target.value)
-                                }
-                                placeholder="Example: 7 Yard Failure Drill"
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Category
-                              </label>
-                              <select
-                                value={newDrillCategory}
-                                onChange={(event) =>
-                                  setNewDrillCategory(
-                                    event.target
-                                      .value as DrillTemplate["category"],
-                                  )
-                                }
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              >
-                                {DRILL_CATEGORIES.map((category) => (
-                                  <option key={category} value={category}>
-                                    {category}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Scoring
-                              </label>
-                              <select
-                                value={newDrillScoringMode}
-                                onChange={(event) =>
-                                  setNewDrillScoringMode(
-                                    event.target.value as ScoringFormat,
-                                  )
-                                }
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              >
-                                {SCORING_FORMATS.map((format) => (
-                                  <option key={format} value={format}>
-                                    {format}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Firearm Type
-                              </label>
-                              <select
-                                value={newDrillFirearmType}
-                                onChange={(event) =>
-                                  setNewDrillFirearmType(
-                                    event.target.value as NonNullable<
-                                      DrillTemplate["firearmType"]
-                                    >,
-                                  )
-                                }
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              >
-                                {FIREARM_TYPES.map((type) => (
-                                  <option key={type} value={type}>
-                                    {type}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {newDrillScoringMode !== "Qualification" &&
-                            newDrillCategory !== "Qualification" ? (
-                              <div>
-                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                  Runs
-                                </label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={newDrillRunCount}
-                                  onChange={(event) =>
-                                    setNewDrillRunCount(event.target.value)
-                                  }
-                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                />
-                              </div>
-                            ) : null}
-
-                            <div>
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Round Count
-                              </label>
-                              <input
-                                type="number"
-                                value={newDrillRoundCount}
-                                onChange={(event) =>
-                                  setNewDrillRoundCount(event.target.value)
-                                }
-                                placeholder="Optional"
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              />
-                            </div>
-
-                            <div>
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Estimated Minutes
-                              </label>
-                              <input
-                                type="number"
-                                value={newDrillEstimatedMinutes}
-                                onChange={(event) =>
-                                  setNewDrillEstimatedMinutes(
-                                    event.target.value,
-                                  )
-                                }
-                                placeholder="Optional"
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              />
-                            </div>
-
-                            <div className="lg:col-span-4">
-                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                Description
-                              </label>
-                              <textarea
-                                value={newDrillDescription}
-                                onChange={(event) =>
-                                  setNewDrillDescription(event.target.value)
-                                }
-                                rows={2}
-                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                              />
-                            </div>
-
-                            {(newDrillScoringMode === "Qualification" ||
-                              newDrillCategory === "Qualification") && (
-                              <div className="lg:col-span-4 rounded-2xl border border-blue-500/25 bg-slate-950/50 p-4">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                  <div>
-                                    <p className="text-[13px] font-bold text-white">
-                                      Qualification Scoring Components
-                                    </p>
-                                    <p className="mt-1 text-[11px] text-slate-500">
-                                      Each component becomes its own scored run.
-                                      Keep Day and Night, remove either one, or
-                                      add an agency-defined component.
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setNewQualificationComponents(
-                                        (current) => [
-                                          ...current,
-                                          {
-                                            id: `qualification-component-${crypto.randomUUID()}`,
-                                            name: `Component ${current.length + 1}`,
-                                            scoringFormat: "Points",
-                                            maximumScore: 100,
-                                            passingScore: 80,
-                                            required: true,
-                                          },
-                                        ],
-                                      )
-                                    }
-                                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 px-3 py-2 text-[12px] font-semibold text-blue-300 hover:bg-blue-500/10"
-                                  >
-                                    <Plus size={13} />
-                                    Add Component
-                                  </button>
-                                </div>
-
-                                <div className="mt-4 space-y-3">
-                                  {newQualificationComponents.map(
-                                    (component, index) => (
-                                      <div
-                                        key={component.id}
-                                        className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-3 md:grid-cols-2 xl:grid-cols-6"
-                                      >
-                                        <label className="xl:col-span-2">
-                                          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                            Component Name
-                                          </span>
-                                          <input
-                                            value={component.name}
-                                            onChange={(event) =>
-                                              setNewQualificationComponents(
-                                                (current) =>
-                                                  current.map((item) =>
-                                                    item.id === component.id
-                                                      ? {
-                                                          ...item,
-                                                          name: event.target
-                                                            .value,
-                                                        }
-                                                      : item,
-                                                  ),
-                                              )
-                                            }
-                                            placeholder="Day, Night, Low Light..."
-                                            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                                          />
-                                        </label>
-
-                                        <label>
-                                          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                            Scoring
-                                          </span>
-                                          <select
-                                            value={component.scoringFormat}
-                                            onChange={(event) =>
-                                              setNewQualificationComponents(
-                                                (current) =>
-                                                  current.map((item) =>
-                                                    item.id === component.id
-                                                      ? {
-                                                          ...item,
-                                                          scoringFormat: event
-                                                            .target
-                                                            .value as QualificationComponentScoringFormat,
-                                                        }
-                                                      : item,
-                                                  ),
-                                              )
-                                            }
-                                            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                                          >
-                                            {[
-                                              "Points",
-                                              "Time",
-                                              "Pass/Fail",
-                                              "Completion",
-                                              "Hit Count",
-                                            ].map((format) => (
-                                              <option
-                                                key={format}
-                                                value={format}
-                                              >
-                                                {format}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </label>
-
-                                        {component.scoringFormat ===
-                                        "Points" ? (
-                                          <>
-                                            <label>
-                                              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                                Passing Score
-                                              </span>
-                                              <input
-                                                type="number"
-                                                value={
-                                                  component.passingScore ?? ""
-                                                }
-                                                onChange={(event) =>
-                                                  setNewQualificationComponents(
-                                                    (current) =>
-                                                      current.map((item) =>
-                                                        item.id === component.id
-                                                          ? {
-                                                              ...item,
-                                                              passingScore:
-                                                                parseOptionalNumber(
-                                                                  event.target
-                                                                    .value,
-                                                                ),
-                                                            }
-                                                          : item,
-                                                      ),
-                                                  )
-                                                }
-                                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                                              />
-                                            </label>
-                                            <label>
-                                              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                                Maximum Score
-                                              </span>
-                                              <input
-                                                type="number"
-                                                value={
-                                                  component.maximumScore ?? ""
-                                                }
-                                                onChange={(event) =>
-                                                  setNewQualificationComponents(
-                                                    (current) =>
-                                                      current.map((item) =>
-                                                        item.id === component.id
-                                                          ? {
-                                                              ...item,
-                                                              maximumScore:
-                                                                parseOptionalNumber(
-                                                                  event.target
-                                                                    .value,
-                                                                ),
-                                                            }
-                                                          : item,
-                                                      ),
-                                                  )
-                                                }
-                                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                                              />
-                                            </label>
-                                          </>
-                                        ) : component.scoringFormat ===
-                                          "Time" ? (
-                                          <label className="xl:col-span-2">
-                                            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                              Maximum Passing Seconds
-                                            </span>
-                                            <input
-                                              type="number"
-                                              value={
-                                                component.passingTimeSeconds ??
-                                                ""
-                                              }
-                                              onChange={(event) =>
-                                                setNewQualificationComponents(
-                                                  (current) =>
-                                                    current.map((item) =>
-                                                      item.id === component.id
-                                                        ? {
-                                                            ...item,
-                                                            passingTimeSeconds:
-                                                              parseOptionalNumber(
-                                                                event.target
-                                                                  .value,
-                                                              ),
-                                                          }
-                                                        : item,
-                                                    ),
-                                                )
-                                              }
-                                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                                            />
-                                          </label>
-                                        ) : component.scoringFormat ===
-                                          "Hit Count" ? (
-                                          <label className="xl:col-span-2">
-                                            <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                              Minimum Hits
-                                            </span>
-                                            <input
-                                              type="number"
-                                              value={
-                                                component.minimumHits ?? ""
-                                              }
-                                              onChange={(event) =>
-                                                setNewQualificationComponents(
-                                                  (current) =>
-                                                    current.map((item) =>
-                                                      item.id === component.id
-                                                        ? {
-                                                            ...item,
-                                                            minimumHits:
-                                                              parseOptionalNumber(
-                                                                event.target
-                                                                  .value,
-                                                              ),
-                                                          }
-                                                        : item,
-                                                    ),
-                                                )
-                                              }
-                                              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
-                                            />
-                                          </label>
-                                        ) : (
-                                          <div className="xl:col-span-2 flex items-end text-[11px] text-slate-500">
-                                            Instructor records the result
-                                            directly.
-                                          </div>
-                                        )}
-
-                                        <div className="flex items-end gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              setNewQualificationComponents(
-                                                (current) =>
-                                                  current.map((item) =>
-                                                    item.id === component.id
-                                                      ? {
-                                                          ...item,
-                                                          required:
-                                                            !item.required,
-                                                        }
-                                                      : item,
-                                                  ),
-                                              )
-                                            }
-                                            className={`flex-1 rounded-xl border px-3 py-2 text-[11px] font-semibold ${
-                                              component.required
-                                                ? "border-emerald-500/40 text-emerald-300"
-                                                : "border-slate-700 text-slate-500"
-                                            }`}
-                                          >
-                                            {component.required
-                                              ? "Required"
-                                              : "Optional"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              setNewQualificationComponents(
-                                                (current) =>
-                                                  current.filter(
-                                                    (item) =>
-                                                      item.id !== component.id,
-                                                  ),
-                                              )
-                                            }
-                                            disabled={
-                                              newQualificationComponents.length ===
-                                              1
-                                            }
-                                            className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
-                                            aria-label={`Remove ${component.name || `component ${index + 1}`}`}
-                                          >
-                                            Remove
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ),
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                            {newDrillIsDepartmentStandard ? (
-                              <div className="lg:col-span-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
-                                <div className="mb-3 flex items-center justify-between gap-2">
-                                  <div>
-                                    <p className="text-[13px] font-bold text-white">
-                                      Department Standard Settings
-                                    </p>
-                                    <p className="mt-1 text-[11px] text-slate-500">
-                                      This drill remains a normal drill, but
-                                      results also count against the agency
-                                      standard.
-                                    </p>
-                                  </div>
-                                  <StatusPill label="Optional" tone="green" />
-                                </div>
-
-                                <div className="grid gap-3 lg:grid-cols-4">
-                                  <div className="lg:col-span-2">
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Standard Name
-                                    </label>
-                                    <input
-                                      value={newDrillStandardName}
-                                      onChange={(event) =>
-                                        setNewDrillStandardName(
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Defaults to drill name"
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Minimum Score
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={newDrillStandardMinimumScore}
-                                      onChange={(event) =>
-                                        setNewDrillStandardMinimumScore(
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Example: 80"
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Passing Time Sec.
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={newDrillStandardPassingTimeSeconds}
-                                      onChange={(event) =>
-                                        setNewDrillStandardPassingTimeSeconds(
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Timed drills"
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Minimum Hits
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={newDrillStandardMinimumHits}
-                                      onChange={(event) =>
-                                        setNewDrillStandardMinimumHits(
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Hit-count drills"
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Applies To
-                                    </label>
-                                    <input
-                                      value={newDrillStandardAppliesTo}
-                                      onChange={(event) =>
-                                        setNewDrillStandardAppliesTo(
-                                          event.target.value,
-                                        )
-                                      }
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Effective Date
-                                    </label>
-                                    <input
-                                      type="date"
-                                      value={newDrillStandardEffectiveDate}
-                                      onChange={(event) =>
-                                        setNewDrillStandardEffectiveDate(
-                                          event.target.value,
-                                        )
-                                      }
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                                      Retire Date
-                                    </label>
-                                    <input
-                                      type="date"
-                                      value={newDrillStandardRetirementDate}
-                                      onChange={(event) =>
-                                        setNewDrillStandardRetirementDate(
-                                          event.target.value,
-                                        )
-                                      }
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setNewDrillStandardRemediationRequired(
-                                        (current) => !current,
-                                      )
-                                    }
-                                    className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
-                                      newDrillStandardRemediationRequired
-                                        ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                                        : "border-slate-700 text-slate-400"
-                                    }`}
-                                  >
-                                    Remediation{" "}
-                                    {newDrillStandardRemediationRequired
-                                      ? "Required"
-                                      : "Optional"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setNewDrillStandardRetestRequired(
-                                        (current) => !current,
-                                      )
-                                    }
-                                    className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
-                                      newDrillStandardRetestRequired
-                                        ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                                        : "border-slate-700 text-slate-400"
-                                    }`}
-                                  >
-                                    Retest{" "}
-                                    {newDrillStandardRetestRequired
-                                      ? "Required"
-                                      : "Optional"}
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setNewDrillDefaultRequired(
-                                  (current) => !current,
-                                )
-                              }
-                              className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
-                                newDrillDefaultRequired
-                                  ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
-                                  : "border-slate-700 text-slate-400"
-                              }`}
-                            >
-                              {newDrillDefaultRequired
-                                ? "Default: Required"
-                                : "Default: Optional"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setNewDrillIsDepartmentStandard(
-                                  (current) => !current,
-                                )
-                              }
-                              className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
-                                newDrillIsDepartmentStandard
-                                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                                  : "border-slate-700 text-slate-400"
-                              }`}
-                            >
-                              {newDrillIsDepartmentStandard
-                                ? "Department Standard: On"
-                                : "Department Standard: Off"}
-                            </button>
-
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  resetNewDrillForm();
-                                  setShowCreateDrillForm(false);
-                                }}
-                                className="rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200"
-                              >
-                                Cancel
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={handleCreateDrillTemplate}
-                                className="rounded-xl bg-blue-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-500"
-                              >
-                                {editingDrillTemplateId
-                                  ? "Save Drill Changes"
-                                  : "Save Drill Template"}
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        {drillLibraryWithLifecycle.map((template) => (
-                          <div
-                            key={template.id}
-                            className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4"
-                          >
-                            <div className="mb-3 flex items-start justify-between gap-3">
-                              <div>
-                                <h3 className="text-[14px] font-bold text-white">
-                                  {template.name}
-                                </h3>
-                                <p className="mt-1 text-[11px] text-slate-500">
-                                  {template.description ??
-                                    "No description entered."}
-                                </p>
-                              </div>
-
-                              <Target size={15} className="text-blue-400" />
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                              {template.lifecycle.recommended ? (
-                                <StatusPill label="Recommended" tone="amber" />
-                              ) : null}
-                              <StatusPill label={template.category} />
-                              <StatusPill
-                                label={template.defaultScoringMode}
-                                tone="slate"
-                              />
-                              <StatusPill
-                                label={`Used ${template.lifecycle.timesPerformed}x`}
-                                tone="slate"
-                              />
-                              <StatusPill
-                                label={`Last: ${template.lifecycle.lastPerformedDateLabel}`}
-                                tone={
-                                  template.lifecycle.recommended
-                                    ? "amber"
-                                    : "slate"
-                                }
-                              />
-                            </div>
-
-                            {template.lifecycle.recommendationReason ? (
-                              <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200">
-                                <AlertTriangle
-                                  size={13}
-                                  className="mt-0.5 flex-shrink-0"
-                                />
-                                <span>
-                                  Recommended:{" "}
-                                  {template.lifecycle.recommendationReason}
-                                </span>
-                              </div>
-                            ) : null}
-
-                            <div className="mt-4 grid grid-cols-3 gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleEditDrillTemplate(template)
-                                }
-                                className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-300 transition hover:border-blue-500/50 hover:text-blue-300"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleArchiveDrillTemplate(template)
-                                }
-                                className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-300"
-                              >
-                                {template.status === "Archived"
-                                  ? "Restore"
-                                  : "Archive"}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={
-                                  template.status !== "Active" ||
-                                  !canEditSelectedRangeDay ||
-                                  Boolean(addingDrillTemplateId)
-                                }
-                                onClick={() =>
-                                  void handleAddTemplateToSelectedRangeDay(
-                                    template.id,
-                                  )
-                                }
-                                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
-                                  template.status === "Active" &&
-                                  canEditSelectedRangeDay &&
-                                  !addingDrillTemplateId
-                                    ? "bg-blue-600 text-white hover:bg-blue-500"
-                                    : "cursor-not-allowed bg-slate-800 text-slate-600"
-                                }`}
-                              >
-                                <Plus size={14} />
-                                {addingDrillTemplateId === template.id
-                                  ? "Adding…"
-                                  : "Add to This Range Day"}
-                              </button>
-                            </div>
-                            <div className="mt-2">
-                              <DrillDocuments drillTemplateId={template.id} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-                </div>
-              )}
-
-              {activeRangeDayTab === "equipment" && (
-                <div
-                  aria-disabled={!canEditSelectedRangeDay}
-                  className={`grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}
-                >
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div>
-                        <h2 className="text-[17px] font-bold text-white">
-                          Range Equipment Checklist
-                        </h2>
-                        <p className="mt-1 text-[12px] text-slate-500">
-                          Track the operational items that must be ready before
-                          this range day starts.
-                        </p>
-                      </div>
-
-                      <div className="grid gap-2 sm:grid-cols-[260px_auto]">
-                        <input
-                          value={newEquipmentLabel}
-                          onChange={(event) =>
-                            setNewEquipmentLabel(event.target.value)
-                          }
-                          placeholder="Add equipment item"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddEquipmentItem}
-                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                          onClick={handleAddInstructorToRangeDay}
+                          disabled={availableInstructorUsers.length === 0}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
                         >
                           <Plus size={14} />
                           Add
@@ -6659,469 +5316,1985 @@ export default function RangeDaysPage() {
                       </div>
                     </div>
 
-                    <div className="grid gap-3 lg:grid-cols-2">
-                      {selectedEquipmentChecklist.map((item) => (
-                        <div
-                          key={item.id}
-                          className={`rounded-2xl border px-3 py-3 ${
-                            item.packed
-                              ? "border-emerald-500/30 bg-emerald-500/[0.06]"
-                              : item.required
-                                ? "border-amber-500/20 bg-amber-500/[0.05]"
-                                : "border-slate-800 bg-slate-950/40"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-[13px] font-semibold text-white">
-                                {item.label}
-                              </p>
-                              <p className="mt-1 text-[11px] text-slate-500">
-                                {item.required ? "Required" : "Optional"}
-                              </p>
+                    <div className="space-y-2">
+                      {(selectedRangeDay.instructorIds ?? []).map((instructorId) => {
+                        const isLead = instructorId === selectedRangeDay.leadInstructorId;
+
+                        return (
+                          <div
+                            key={instructorId}
+                            className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[13px] font-semibold text-white">
+                                  {getUserName(instructorId)}
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  {isLead ? "Lead instructor" : "Assigned instructor"}
+                                </p>
+                              </div>
+
+                              {isLead && <StatusPill label="Lead" tone="green" />}
                             </div>
 
-                            <div className="flex gap-2">
+                            <div className="mt-3 grid grid-cols-2 gap-2">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  handleToggleEquipmentItem(item.id)
-                                }
-                                className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
-                                  item.packed
-                                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-                                    : "border-slate-700 text-slate-400 hover:border-slate-600"
-                                }`}
+                                onClick={() => handleSetLeadInstructor(instructorId)}
+                                disabled={isLead}
+                                className="rounded-xl border border-slate-700 px-3 py-2 text-[11px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600"
                               >
-                                {item.packed ? "Ready" : "Mark Ready"}
+                                {isLead ? "Current Lead" : "Make Lead"}
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleRemoveEquipmentItem(item.id)
+                                  handleRemoveInstructorFromRangeDay(instructorId)
                                 }
-                                className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                                disabled={(selectedRangeDay.instructorIds ?? []).length <= 1}
+                                className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-600 disabled:hover:bg-transparent"
                               >
                                 Remove
                               </button>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
+                </div>
 
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                      <ClipboardList size={15} className="text-blue-400" />
-                      Equipment Readiness
-                    </h3>
-                    <div className="space-y-2 text-[12px] text-slate-400">
-                      <p>
-                        Ready:{" "}
-                        {
-                          selectedEquipmentChecklist.filter(
-                            (item) => item.packed,
-                          ).length
-                        }
-                      </p>
-                      <p>
-                        Required outstanding:{" "}
-                        {
-                          selectedEquipmentChecklist.filter(
-                            (item) => item.required && !item.packed,
-                          ).length
-                        }
-                      </p>
-                      <p>
-                        Total checklist items:{" "}
-                        {selectedEquipmentChecklist.length}
-                      </p>
-                    </div>
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 text-[14px] font-bold text-white">
+                    Quick Actions
+                  </h3>
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveRangeDayTab("roster")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Manage roster and firearm assignments
+                    </button>
                     <button
                       type="button"
                       onClick={() => setActiveRangeDayTab("readiness")}
-                      className="mt-4 rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
                     >
-                      Return to pre-range readiness
+                      Review pre-range readiness
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveRangeDayTab("drills")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Add or review planned drills
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveRangeDayTab("scoring")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                    >
+                      Open scoring board
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeRangeDayTab === "readiness" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-[17px] font-bold text-white">
+                      Pre-Range Readiness
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Surface setup gaps before the range staff discovers them on the line.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill
+                      label={`${readinessCriticalCount} critical`}
+                      tone={readinessCriticalCount > 0 ? "red" : "green"}
+                    />
+                    <StatusPill
+                      label={`${readinessWarningCount} warning`}
+                      tone={readinessWarningCount > 0 ? "amber" : "green"}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {preRangeReadinessItems.map((item) => (
+                    <div
+                      key={item.label}
+                      className={`rounded-2xl border px-3 py-3 ${
+                        item.status === "ready"
+                          ? "border-emerald-500/20 bg-emerald-500/[0.04]"
+                          : item.status === "warning"
+                            ? "border-amber-500/20 bg-amber-500/[0.06]"
+                            : "border-red-500/20 bg-red-500/[0.06]"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-semibold text-white">
+                            {item.label}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.detail}
+                          </p>
+                        </div>
+                        {item.status === "ready" ? (
+                          <CheckCircle2 size={16} className="text-emerald-400" />
+                        ) : (
+                          <AlertTriangle
+                            size={16}
+                            className={
+                              item.status === "warning"
+                                ? "text-amber-300"
+                                : "text-red-300"
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Shield size={15} className="text-blue-400" />
+                    Department Standards Included
+                  </h3>
+
+                  <div className="space-y-2">
+                    {selectedDepartmentStandardDrills.length === 0 ? (
+                      <p className="text-[12px] text-slate-500">
+                        No department-standard drills are attached to this range day.
+                      </p>
+                    ) : (
+                      selectedDepartmentStandardDrills.map((drill) => (
+                        <div
+                          key={drill.id}
+                          className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.06] px-3 py-3"
+                        >
+                          <p className="text-[12px] font-semibold text-white">
+                            {drill.departmentStandardName || drill.name}
+                          </p>
+                          <p className="mt-1 text-[11px] text-blue-200">
+                            {getDepartmentStandardRequirementLabel(drill)} · {drill.departmentStandardAppliesTo || "Agency configured"}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Wrench size={15} className="text-blue-400" />
+                    Equipment Snapshot
+                  </h3>
+                  <p className="text-[12px] text-slate-500">
+                    {selectedEquipmentChecklist.filter((item) => item.packed).length}/{selectedEquipmentChecklist.length} checklist items marked ready.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveRangeDayTab("equipment")}
+                    className="mt-3 rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                  >
+                    Open equipment checklist
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeRangeDayTab === "roster" && (
+            <div aria-disabled={!canTakeSelectedRangeDayAttendance} className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canTakeSelectedRangeDayAttendance ? "pointer-events-none opacity-70" : ""}`}>
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-[17px] font-bold text-white">
+                    {isOpenAttendance ? "Attendance / Manage" : "Roster & Firearms"}
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    {isOpenAttendance
+                      ? "Live arrivals are added from Scoring. Use this area for attendance corrections and range-day history."
+                      : "Add officers, mark attendance, and assign firearms without scrolling through the entire range day."}
+                    {" "}
+                    <span className="text-blue-300">{personnelMessage}</span>
+                  </p>
+                </div>
+
+                {!isOpenAttendance ? <div className="grid gap-2 sm:grid-cols-[260px_auto]">
+                  <select
+                    value={newRosterOfficerId}
+                    onChange={(event) => setNewRosterOfficerId(event.target.value)}
+                    disabled={!canEditSelectedRangeDay || availableRosterOfficers.length === 0}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                  >
+                    {availableRosterOfficers.length === 0 ? (
+                      <option value="">All officers are rostered</option>
+                    ) : (
+                      availableRosterOfficers.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.displayName}
+                        </option>
+                      ))
+                    )}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={handleAddOfficerToRoster}
+                    disabled={!canEditSelectedRangeDay || availableRosterOfficers.length === 0}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                  >
+                    <Plus size={14} />
+                    Add Officer
+                  </button>
+                </div> : null}
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                {selectedRoster.length === 0 && (
+                  <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
+                    No officers assigned yet. Add officers above to build the range day roster.
+                  </p>
+                )}
+
+                {selectedRoster.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className={`rounded-2xl border px-3 py-3 transition ${
+                      selectedOfficerId === entry.officerId
+                        ? "border-blue-500/50 bg-blue-500/10"
+                        : "border-slate-800 bg-slate-950/40"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedOfficerId(entry.officerId);
+                        resetEntryForm(1);
+                      }}
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                    >
+                      <div>
+                        <p className="text-[13px] font-semibold text-white">
+                          {getUserName(entry.officerId)}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {entry.assignedFirearmIds.length > 0
+                            ? entry.assignedFirearmIds
+                                .map(getFirearmName)
+                                .join(" · ")
+                            : "No firearms selected"}
+                        </p>
+                      </div>
+
+                      {entry.attended ? (
+                        <CheckCircle2 size={14} className="text-emerald-400" />
+                      ) : (
+                        <StatusPill label="Not Present" tone="slate" />
+                      )}
+                    </button>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                      <div className="rounded-xl border border-slate-700 bg-slate-950 p-2">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                          Firearms for this range day
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+                          {firearms
+                            .filter(
+                              (firearm) =>
+                                firearm.active_assignment
+                                  ?.assigned_to_user_id ===
+                                entry.officerId,
+                            )
+                            .map((firearm) => {
+                              const selected =
+                                entry.assignedFirearmIds.includes(
+                                  firearm.id,
+                                );
+
+                              return (
+                                <button
+                                  key={firearm.id}
+                                  type="button"
+                                  disabled={!canEditSelectedRangeDay}
+                                  onClick={() =>
+                                    handleToggleRosterFirearm(
+                                      entry.id,
+                                      firearm.id,
+                                    )
+                                  }
+                                  className={`rounded-xl border px-3 py-2 text-left text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                    selected
+                                      ? "border-blue-500/60 bg-blue-500/15 text-blue-200"
+                                      : "border-slate-700 bg-slate-900 text-slate-400 hover:border-slate-600 hover:text-white"
+                                  }`}
+                                >
+                                  <span className="block">
+                                    {getFirearmName(firearm.id)}
+                                  </span>
+
+                                  <span className="mt-0.5 block text-[9px] font-normal uppercase tracking-wide opacity-60">
+                                    {selected
+                                      ? "Included"
+                                      : "Add to range day"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+
+                          {firearms.filter(
+                            (firearm) =>
+                              firearm.active_assignment
+                                ?.assigned_to_user_id ===
+                              entry.officerId,
+                          ).length === 0 ? (
+                            <p className="px-1 py-1 text-[11px] text-amber-300">
+                              No active firearms are assigned to this
+                              officer.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleRosterAttendance(entry.id)}
+                        className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                          entry.attended
+                            ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                            : "border-slate-700 text-slate-400 hover:border-slate-600"
+                        }`}
+                      >
+                        {entry.attended ? "Present" : "Mark Present"}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!canEditSelectedRangeDay}
+                        onClick={() => handleRemoveOfficerFromRoster(entry.id)}
+                        className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeRangeDayTab === "drills" && (
+            <div className="space-y-5">
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-[17px] font-bold text-white">
+                      Planned Drills
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Select the drills that make up this range day. Drill library recommendations are based on recent use.
+                    </p>
+                  </div>
+
+                  {canManageRangeDays ? <button
+                    type="button"
+                    onClick={() => setShowLibraryPanel((current) => !current)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 px-4 py-2 text-[13px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                  >
+                    <Plus size={14} />
+                    {showLibraryPanel ? "Hide Library" : "Add Drill"}
+                  </button> : null}
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+                  {selectedDrills.length === 0 ? (
+                    <p className="rounded-2xl border border-slate-800 bg-slate-950/40 px-3 py-3 text-[12px] text-slate-500">
+                      No drills added yet. Use Add Drill to build the range day.
+                    </p>
+                  ) : (
+                    selectedDrills.map((drill) => (
+                      <div
+                        key={drill.id}
+                        className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                          selectedDrill?.id === drill.id
+                            ? "border-blue-500/50 bg-blue-500/10"
+                            : "border-slate-800 bg-slate-950/40 hover:border-slate-700"
+                        }`}
+                      >
+                        <button type="button" onClick={() => { setSelectedDrillId(drill.id); resetEntryForm(1); }} className="w-full text-left">
+                          <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[13px] font-semibold text-white">
+                              {drill.name}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {drill.description}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-400">
+                            {getEffectiveRunCount(drill)} run{getEffectiveRunCount(drill) !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+
+                          <div className="mt-2 flex flex-wrap gap-2">
+                          <StatusPill label={drill.category} />
+                          <StatusPill label={getScoringFormat(drill)} tone="slate" />
+                          {drill.isDepartmentStandard ? (
+                            <StatusPill label="Department Standard" tone="green" />
+                          ) : null}
+                          </div>
+                        </button>
+                        {drill.sourceTemplateId ? <div className="mt-3"><DrillDocuments drillTemplateId={drill.sourceTemplateId} compact /></div> : null}
+                        {canEditSelectedRangeDay ? (
+                          <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
+                            <button
+                              type="button"
+                              disabled={Boolean(removingDrillId)}
+                              onClick={() => void handleRemoveDrillFromSelectedRangeDay(drill)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-2.5 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Trash2 size={12} /> {removingDrillId === drill.id ? "Removing…" : "Remove"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {showLibraryPanel && (
+                <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-[17px] font-bold text-white">
+                        Add Drill From Library
+                      </h2>
+                      <p className="mt-1 text-[12px] text-slate-500">
+                        Recommended drills appear first based on usage history and staleness.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (showCreateDrillForm) {
+                          resetNewDrillForm();
+                          setShowCreateDrillForm(false);
+                        } else {
+                          resetNewDrillForm();
+                          setShowCreateDrillForm(true);
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                    >
+                      <Plus size={14} />
+                      {showCreateDrillForm ? "Close Form" : "Create Drill"}
+                    </button>
+                  </div>
+
+                  {showCreateDrillForm && (
+                    <div
+                      id="drill-template-editor"
+                      className="mt-5 scroll-mt-6 rounded-3xl border border-blue-500/30 bg-blue-500/[0.06] p-4"
+                    >
+                      <h3 className="mb-4 text-[15px] font-bold text-white">
+                        {editingDrillTemplateId
+                          ? "Edit Drill Template"
+                          : "Create New Drill Template"}
+                      </h3>
+
+                      <div className="grid gap-4 lg:grid-cols-4">
+                        <div className="lg:col-span-2">
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Drill Name
+                          </label>
+                          <input
+                            type="text"
+                            value={newDrillName}
+                            onChange={(event) =>
+                              setNewDrillName(event.target.value)
+                            }
+                            placeholder="Example: 7 Yard Failure Drill"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Category
+                          </label>
+                          <select
+                            value={newDrillCategory}
+                            onChange={(event) =>
+                              setNewDrillCategory(
+                                event.target.value as DrillTemplate["category"],
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          >
+                            {DRILL_CATEGORIES.map((category) => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Scoring
+                          </label>
+                          <select
+                            value={newDrillScoringMode}
+                            onChange={(event) =>
+                              setNewDrillScoringMode(
+                                event.target.value as ScoringFormat,
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          >
+                            {SCORING_FORMATS.map((format) => (
+                              <option key={format} value={format}>
+                                {format}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Firearm Type
+                          </label>
+                          <select
+                            value={newDrillFirearmType}
+                            onChange={(event) =>
+                              setNewDrillFirearmType(
+                                event.target.value as NonNullable<
+                                  DrillTemplate["firearmType"]
+                                >,
+                              )
+                            }
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          >
+                            {FIREARM_TYPES.map((type) => (
+                              <option key={type} value={type}>
+                                {type}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {newDrillScoringMode !== "Qualification" &&
+                        newDrillCategory !== "Qualification" ? (
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                              Runs
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={newDrillRunCount}
+                              onChange={(event) =>
+                                setNewDrillRunCount(event.target.value)
+                              }
+                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                            />
+                          </div>
+                        ) : null}
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Round Count
+                          </label>
+                          <input
+                            type="number"
+                            value={newDrillRoundCount}
+                            onChange={(event) =>
+                              setNewDrillRoundCount(event.target.value)
+                            }
+                            placeholder="Optional"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Estimated Minutes
+                          </label>
+                          <input
+                            type="number"
+                            value={newDrillEstimatedMinutes}
+                            onChange={(event) =>
+                              setNewDrillEstimatedMinutes(event.target.value)
+                            }
+                            placeholder="Optional"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        <div className="lg:col-span-4">
+                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                            Description
+                          </label>
+                          <textarea
+                            value={newDrillDescription}
+                            onChange={(event) =>
+                              setNewDrillDescription(event.target.value)
+                            }
+                            rows={2}
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                          />
+                        </div>
+
+                        {(newDrillScoringMode === "Qualification" ||
+                          newDrillCategory === "Qualification") && (
+                          <div className="lg:col-span-4 rounded-2xl border border-blue-500/25 bg-slate-950/50 p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-[13px] font-bold text-white">
+                                  Qualification Scoring Components
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  Each component becomes its own scored run. Keep Day and Night, remove either one, or add an agency-defined component.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewQualificationComponents((current) => [
+                                    ...current,
+                                    {
+                                      id: `qualification-component-${crypto.randomUUID()}`,
+                                      name: `Component ${current.length + 1}`,
+                                      scoringFormat: "Points",
+                                      maximumScore: 100,
+                                      passingScore: 80,
+                                      required: true,
+                                    },
+                                  ])
+                                }
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-500/40 px-3 py-2 text-[12px] font-semibold text-blue-300 hover:bg-blue-500/10"
+                              >
+                                <Plus size={13} />
+                                Add Component
+                              </button>
+                            </div>
+
+                            <div className="mt-4 space-y-3">
+                              {newQualificationComponents.map((component, index) => (
+                                <div
+                                  key={component.id}
+                                  className="grid gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-3 md:grid-cols-2 xl:grid-cols-6"
+                                >
+                                  <label className="xl:col-span-2">
+                                    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                      Component Name
+                                    </span>
+                                    <input
+                                      value={component.name}
+                                      onChange={(event) =>
+                                        setNewQualificationComponents((current) =>
+                                          current.map((item) =>
+                                            item.id === component.id
+                                              ? { ...item, name: event.target.value }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      placeholder="Day, Night, Low Light..."
+                                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                    />
+                                  </label>
+
+                                  <label>
+                                    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                      Scoring
+                                    </span>
+                                    <select
+                                      value={component.scoringFormat}
+                                      onChange={(event) =>
+                                        setNewQualificationComponents((current) =>
+                                          current.map((item) =>
+                                            item.id === component.id
+                                              ? {
+                                                  ...item,
+                                                  scoringFormat: event.target.value as QualificationComponentScoringFormat,
+                                                }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                    >
+                                      {[
+                                        "Points",
+                                        "Time",
+                                        "Pass/Fail",
+                                        "Completion",
+                                        "Hit Count",
+                                      ].map((format) => (
+                                        <option key={format} value={format}>
+                                          {format}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+
+                                  {component.scoringFormat === "Points" ? (
+                                    <>
+                                      <label>
+                                        <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                          Passing Score
+                                        </span>
+                                        <input
+                                          type="number"
+                                          value={component.passingScore ?? ""}
+                                          onChange={(event) =>
+                                            setNewQualificationComponents((current) =>
+                                              current.map((item) =>
+                                                item.id === component.id
+                                                  ? {
+                                                      ...item,
+                                                      passingScore: parseOptionalNumber(event.target.value),
+                                                    }
+                                                  : item,
+                                              ),
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                        />
+                                      </label>
+                                      <label>
+                                        <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                          Maximum Score
+                                        </span>
+                                        <input
+                                          type="number"
+                                          value={component.maximumScore ?? ""}
+                                          onChange={(event) =>
+                                            setNewQualificationComponents((current) =>
+                                              current.map((item) =>
+                                                item.id === component.id
+                                                  ? {
+                                                      ...item,
+                                                      maximumScore: parseOptionalNumber(event.target.value),
+                                                    }
+                                                  : item,
+                                              ),
+                                            )
+                                          }
+                                          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                        />
+                                      </label>
+                                    </>
+                                  ) : component.scoringFormat === "Time" ? (
+                                    <label className="xl:col-span-2">
+                                      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                        Maximum Passing Seconds
+                                      </span>
+                                      <input
+                                        type="number"
+                                        value={component.passingTimeSeconds ?? ""}
+                                        onChange={(event) =>
+                                          setNewQualificationComponents((current) =>
+                                            current.map((item) =>
+                                              item.id === component.id
+                                                ? {
+                                                    ...item,
+                                                    passingTimeSeconds: parseOptionalNumber(event.target.value),
+                                                  }
+                                                : item,
+                                            ),
+                                          )
+                                        }
+                                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                      />
+                                    </label>
+                                  ) : component.scoringFormat === "Hit Count" ? (
+                                    <label className="xl:col-span-2">
+                                      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                        Minimum Hits
+                                      </span>
+                                      <input
+                                        type="number"
+                                        value={component.minimumHits ?? ""}
+                                        onChange={(event) =>
+                                          setNewQualificationComponents((current) =>
+                                            current.map((item) =>
+                                              item.id === component.id
+                                                ? {
+                                                    ...item,
+                                                    minimumHits: parseOptionalNumber(event.target.value),
+                                                  }
+                                                : item,
+                                            ),
+                                          )
+                                        }
+                                        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-[12px] text-white outline-none focus:border-blue-500"
+                                      />
+                                    </label>
+                                  ) : (
+                                    <div className="xl:col-span-2 flex items-end text-[11px] text-slate-500">
+                                      Instructor records the result directly.
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setNewQualificationComponents((current) =>
+                                          current.map((item) =>
+                                            item.id === component.id
+                                              ? { ...item, required: !item.required }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                      className={`flex-1 rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                                        component.required
+                                          ? "border-emerald-500/40 text-emerald-300"
+                                          : "border-slate-700 text-slate-500"
+                                      }`}
+                                    >
+                                      {component.required ? "Required" : "Optional"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setNewQualificationComponents((current) =>
+                                          current.filter((item) => item.id !== component.id),
+                                        )
+                                      }
+                                      disabled={newQualificationComponents.length === 1}
+                                      className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-30"
+                                      aria-label={`Remove ${component.name || `component ${index + 1}`}`}
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {newDrillIsDepartmentStandard ? (
+                          <div className="lg:col-span-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[13px] font-bold text-white">
+                                  Department Standard Settings
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  This drill remains a normal drill, but results also count against the agency standard.
+                                </p>
+                              </div>
+                              <StatusPill label="Optional" tone="green" />
+                            </div>
+
+                            <div className="grid gap-3 lg:grid-cols-4">
+                              <div className="lg:col-span-2">
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Standard Name
+                                </label>
+                                <input
+                                  value={newDrillStandardName}
+                                  onChange={(event) =>
+                                    setNewDrillStandardName(event.target.value)
+                                  }
+                                  placeholder="Defaults to drill name"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Minimum Score
+                                </label>
+                                <input
+                                  type="number"
+                                  value={newDrillStandardMinimumScore}
+                                  onChange={(event) =>
+                                    setNewDrillStandardMinimumScore(event.target.value)
+                                  }
+                                  placeholder="Example: 80"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Passing Time Sec.
+                                </label>
+                                <input
+                                  type="number"
+                                  value={newDrillStandardPassingTimeSeconds}
+                                  onChange={(event) =>
+                                    setNewDrillStandardPassingTimeSeconds(event.target.value)
+                                  }
+                                  placeholder="Timed drills"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Minimum Hits
+                                </label>
+                                <input
+                                  type="number"
+                                  value={newDrillStandardMinimumHits}
+                                  onChange={(event) =>
+                                    setNewDrillStandardMinimumHits(event.target.value)
+                                  }
+                                  placeholder="Hit-count drills"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Applies To
+                                </label>
+                                <input
+                                  value={newDrillStandardAppliesTo}
+                                  onChange={(event) =>
+                                    setNewDrillStandardAppliesTo(event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Effective Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={newDrillStandardEffectiveDate}
+                                  onChange={(event) =>
+                                    setNewDrillStandardEffectiveDate(event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                                  Retire Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={newDrillStandardRetirementDate}
+                                  onChange={(event) =>
+                                    setNewDrillStandardRetirementDate(event.target.value)
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewDrillStandardRemediationRequired((current) => !current)
+                                }
+                                className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                                  newDrillStandardRemediationRequired
+                                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                    : "border-slate-700 text-slate-400"
+                                }`}
+                              >
+                                Remediation {newDrillStandardRemediationRequired ? "Required" : "Optional"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setNewDrillStandardRetestRequired((current) => !current)
+                                }
+                                className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                                  newDrillStandardRetestRequired
+                                    ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                    : "border-slate-700 text-slate-400"
+                                }`}
+                              >
+                                Retest {newDrillStandardRetestRequired ? "Required" : "Optional"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewDrillDefaultRequired((current) => !current)
+                          }
+                          className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                            newDrillDefaultRequired
+                              ? "border-blue-500/50 bg-blue-500/10 text-blue-300"
+                              : "border-slate-700 text-slate-400"
+                          }`}
+                        >
+                          {newDrillDefaultRequired
+                            ? "Default: Required"
+                            : "Default: Optional"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNewDrillIsDepartmentStandard((current) => !current)
+                          }
+                          className={`rounded-xl border px-3 py-2 text-[12px] font-semibold ${
+                            newDrillIsDepartmentStandard
+                              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                              : "border-slate-700 text-slate-400"
+                          }`}
+                        >
+                          {newDrillIsDepartmentStandard
+                            ? "Department Standard: On"
+                            : "Department Standard: Off"}
+                        </button>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetNewDrillForm();
+                              setShowCreateDrillForm(false);
+                            }}
+                            className="rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-400 hover:border-slate-600 hover:text-slate-200"
+                          >
+                            Cancel
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleCreateDrillTemplate}
+                            className="rounded-xl bg-blue-600 px-4 py-2 text-[12px] font-semibold text-white hover:bg-blue-500"
+                          >
+                            {editingDrillTemplateId
+                              ? "Save Drill Changes"
+                              : "Save Drill Template"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {drillLibraryWithLifecycle.map((template) => (
+                      <div
+                        key={template.id}
+                        className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4"
+                      >
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-[14px] font-bold text-white">
+                              {template.name}
+                            </h3>
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              {template.description ?? "No description entered."}
+                            </p>
+                          </div>
+
+                          <Target size={15} className="text-blue-400" />
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {template.lifecycle.recommended ? (
+                            <StatusPill label="Recommended" tone="amber" />
+                          ) : null}
+                          <StatusPill label={template.category} />
+                          <StatusPill
+                            label={template.defaultScoringMode}
+                            tone="slate"
+                          />
+                          <StatusPill
+                            label={`Used ${template.lifecycle.timesPerformed}x`}
+                            tone="slate"
+                          />
+                          <StatusPill
+                            label={`Last: ${template.lifecycle.lastPerformedDateLabel}`}
+                            tone={
+                              template.lifecycle.recommended ? "amber" : "slate"
+                            }
+                          />
+                        </div>
+
+                        {template.lifecycle.recommendationReason ? (
+                          <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[11px] text-amber-200">
+                            <AlertTriangle
+                              size={13}
+                              className="mt-0.5 flex-shrink-0"
+                            />
+                            <span>
+                              Recommended: {template.lifecycle.recommendationReason}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleEditDrillTemplate(template)}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-300 transition hover:border-blue-500/50 hover:text-blue-300"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleArchiveDrillTemplate(template)}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-700 px-3 py-2 text-[12px] font-semibold text-slate-300 transition hover:border-amber-500/50 hover:text-amber-300"
+                          >
+                            {template.status === "Archived" ? "Restore" : "Archive"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={template.status !== "Active" || !canEditSelectedRangeDay}
+                            onClick={() =>
+                              handleAddTemplateToSelectedRangeDay(template.id)
+                            }
+                            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-[12px] font-semibold transition ${
+                              template.status === "Active" && canEditSelectedRangeDay
+                                ? "bg-blue-600 text-white hover:bg-blue-500"
+                                : "cursor-not-allowed bg-slate-800 text-slate-600"
+                            }`}
+                          >
+                            <Plus size={14} />
+                            Add to This Range Day
+                          </button>
+                        </div>
+                        <div className="mt-2"><DrillDocuments drillTemplateId={template.id} /></div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {activeRangeDayTab === "equipment" && (
+            <div aria-disabled={!canEditSelectedRangeDay} className={`grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-[17px] font-bold text-white">
+                      Range Equipment Checklist
+                    </h2>
+                    <p className="mt-1 text-[12px] text-slate-500">
+                      Track the operational items that must be ready before this range day starts.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-[260px_auto]">
+                    <input
+                      value={newEquipmentLabel}
+                      onChange={(event) => setNewEquipmentLabel(event.target.value)}
+                      placeholder="Add equipment item"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddEquipmentItem}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500"
+                    >
+                      <Plus size={14} />
+                      Add
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {selectedEquipmentChecklist.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`rounded-2xl border px-3 py-3 ${
+                        item.packed
+                          ? "border-emerald-500/30 bg-emerald-500/[0.06]"
+                          : item.required
+                            ? "border-amber-500/20 bg-amber-500/[0.05]"
+                            : "border-slate-800 bg-slate-950/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[13px] font-semibold text-white">
+                            {item.label}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {item.required ? "Required" : "Optional"}
+                          </p>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEquipmentItem(item.id)}
+                            className={`rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                              item.packed
+                                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                                : "border-slate-700 text-slate-400 hover:border-slate-600"
+                            }`}
+                          >
+                            {item.packed ? "Ready" : "Mark Ready"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEquipmentItem(item.id)}
+                            className="rounded-xl border border-red-500/30 px-3 py-2 text-[11px] font-semibold text-red-300 hover:bg-red-500/10"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                  <ClipboardList size={15} className="text-blue-400" />
+                  Equipment Readiness
+                </h3>
+                <div className="space-y-2 text-[12px] text-slate-400">
+                  <p>Ready: {selectedEquipmentChecklist.filter((item) => item.packed).length}</p>
+                  <p>Required outstanding: {selectedEquipmentChecklist.filter((item) => item.required && !item.packed).length}</p>
+                  <p>Total checklist items: {selectedEquipmentChecklist.length}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveRangeDayTab("readiness")}
+                  className="mt-4 rounded-xl border border-slate-700 px-3 py-2 text-left text-[12px] font-semibold text-slate-300 hover:border-blue-500/40 hover:text-white"
+                >
+                  Return to pre-range readiness
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeRangeDayTab === "scoring" && (
+            <div aria-disabled={!canScoreRangeDays || selectedRangeDayFinalized} className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canScoreRangeDays || selectedRangeDayFinalized ? "pointer-events-none opacity-70" : ""}`}>
+              <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="text-[17px] font-bold text-white">
+                    Range-Day Scoring Board
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
+                    Keep every attending officer on one screen. Select the drill and run once, enter the full line, then save the group.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
+                  <UserCheck size={14} className="text-blue-400" />
+                  {isOpenAttendance
+                    ? `${attendingRoster.length} current shooter${attendingRoster.length === 1 ? "" : "s"}`
+                    : `${attendingRoster.length} attending officer${attendingRoster.length === 1 ? "" : "s"}`}
+                  {isOpenAttendance ? (
+                    <StatusPill label="Open / Rolling" tone="blue" />
+                  ) : null}
+                </div>
+              </div>
+
+              {openAttendanceScoringState === "empty" && canManageOpenAttendance ? (
+                <div className="mb-4 rounded-2xl border border-dashed border-blue-500/40 bg-blue-500/[0.04] px-4 py-5 text-center">
+                  <p className="text-sm font-semibold text-blue-100">No shooters yet</p>
+                  <p className="mt-1 text-[12px] text-slate-400">
+                    Add officers as they arrive.
+                  </p>
+                </div>
+              ) : null}
+
+              {canManageOpenAttendance && (
+                <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] p-3">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(280px,1.65fr)_minmax(220px,1fr)_auto] xl:items-end">
+                    <div className="relative min-w-0">
+                      <label
+                        htmlFor="open-attendance-officer"
+                        className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70"
+                      >
+                        Officer
+                      </label>
+                      <input
+                        id="open-attendance-officer"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-controls="open-attendance-officer-options"
+                        aria-expanded={openAttendanceOfficerPickerOpen}
+                        value={getOpenAttendanceOfficerInputValue({
+                          isOpen: openAttendanceOfficerPickerOpen,
+                          searchQuery: openAttendanceOfficerSearchQuery,
+                          selectedOfficer: selectedOpenAttendanceOfficer,
+                        })}
+                        onChange={(event) => {
+                          setOpenAttendanceOfficerSearchQuery(event.target.value);
+                          setOpenAttendanceOfficerPickerOpen(true);
+                        }}
+                        onFocus={() => {
+                          setOpenAttendanceOfficerPickerOpen(true);
+                          setOpenAttendanceOfficerSearchQuery("");
+                        }}
+                        onClick={() => {
+                          if (!openAttendanceOfficerPickerOpen) {
+                            setOpenAttendanceOfficerPickerOpen(true);
+                            setOpenAttendanceOfficerSearchQuery("");
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setOpenAttendanceOfficerPickerOpen(false);
+                            setOpenAttendanceOfficerSearchQuery("");
+                          }
+                        }}
+                        placeholder="Name, badge, rank, or unit"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
+                      />
+                      {openAttendanceOfficerPickerOpen &&
+                      selectedOpenAttendanceOfficerLabel ? (
+                        <p className="mt-1 text-[10px] text-blue-200/70">
+                          Selected: {selectedOpenAttendanceOfficerLabel}
+                        </p>
+                      ) : null}
+                      {openAttendanceOfficerPickerOpen ? (
+                        <div
+                          id="open-attendance-officer-options"
+                          role="listbox"
+                          className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-1 shadow-2xl"
+                        >
+                          {openAttendanceOfficers.length > 0 ? (
+                            openAttendanceOfficers.slice(0, 12).map((officer) => (
+                              <button
+                                key={officer.id}
+                                type="button"
+                                role="option"
+                                aria-selected={openAttendanceOfficerId === officer.id}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => {
+                                  setOpenAttendanceOfficerId(officer.id);
+                                  setOpenAttendanceFirearmId("");
+                                  setOpenAttendanceOfficerSearchQuery("");
+                                  setOpenAttendanceOfficerPickerOpen(false);
+                                }}
+                                className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-800 focus:bg-slate-800 focus:outline-none"
+                              >
+                                <span className="block text-[12px] font-semibold text-white">
+                                  {getOpenAttendanceOfficerLabel(officer)}
+                                </span>
+                                <span className="mt-0.5 block text-[10px] text-slate-400">
+                                  {officer.rankTitle || "Officer"}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <p className="px-3 py-2 text-[11px] text-slate-500">
+                              No available officers match this search.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="min-w-0">
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
+                        Firearm
+                      </label>
+                      <select
+                        value={openAttendanceFirearmId}
+                        onChange={(event) => setOpenAttendanceFirearmId(event.target.value)}
+                        disabled={!openAttendanceOfficerId || selectableOpenAttendanceFirearms.length === 0}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                      >
+                        <option value="">
+                          {!openAttendanceOfficerId
+                            ? "Select an officer first"
+                            : selectableOpenAttendanceFirearms.length === 0
+                              ? "No eligible firearms found"
+                              : "Select firearm"}
+                        </option>
+                        {openAttendanceFirearmOptions.source === "assigned" ? (
+                          <optgroup label="Assigned to selected officer">
+                            {selectableOpenAttendanceFirearms.map((firearm) => (
+                              <option key={firearm.id} value={firearm.id}>
+                                {getOpenAttendanceFirearmLabel(firearm)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : selectableOpenAttendanceFirearms.length > 0 ? (
+                          <optgroup label="Available firearms">
+                            {selectableOpenAttendanceFirearms.map((firearm) => (
+                              <option key={firearm.id} value={firearm.id}>
+                                {getOpenAttendanceFirearmLabel(firearm)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
+                      </select>
+                      {openAttendanceOfficerId ? (
+                        <p className="mt-1 text-[10px] text-blue-200/70">
+                          {openAttendanceFirearmOptions.source === "assigned"
+                            ? "Firearm is required before adding the shooter."
+                            : selectableOpenAttendanceFirearms.length > 0
+                              ? "Firearm selection is for this Range Day only; permanent Armory custody is unchanged."
+                              : "No eligible firearms found."}
+                        </p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddOpenAttendanceShooter}
+                      disabled={
+                        !canManageOpenAttendance ||
+                        !openAttendanceOfficerId ||
+                        !openAttendanceFirearmId
+                      }
+                      className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                    >
+                      <Plus size={15} />
+                      Add Shooter
                     </button>
                   </div>
                 </div>
               )}
 
-              {activeRangeDayTab === "scoring" && (
-                <div
-                  aria-disabled={
-                    !canScoreRangeDays || selectedRangeDayFinalized
-                  }
-                  className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5 ${!canScoreRangeDays || selectedRangeDayFinalized ? "pointer-events-none opacity-70" : ""}`}
-                >
-                  <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <h2 className="text-[17px] font-bold text-white">
-                        Range-Day Scoring Board
-                      </h2>
-                      <p className="mt-1 max-w-3xl text-[12px] text-slate-500">
-                        Keep every attending officer on one screen. Select the
-                        drill and run once, enter the full line, then save the
-                        group.
-                      </p>
-                    </div>
+              <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                    Drill
+                  </label>
+                  <select
+                    value={selectedDrill?.id ?? ""}
+                    onChange={(event) => {
+                      setSelectedDrillId(event.target.value);
+                      setSelectedRunNumber(1);
+                    }}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                  >
+                    {selectedDrills.map((drill) => (
+                      <option key={drill.id} value={drill.id}>
+                        {drill.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/50 px-3 py-2 text-[12px] text-slate-400">
-                      <UserCheck size={14} className="text-blue-400" />
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                    Run / Course
+                  </label>
+                  <select
+                    value={selectedRunNumber}
+                    onChange={(event) =>
+                      setSelectedRunNumber(Number(event.target.value))
+                    }
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                  >
+                    {Array.from(
+                      { length: selectedEffectiveRunCount },
+                      (_, index) => index + 1,
+                    ).map((run) => (
+                      <option key={run} value={run}>
+                        {getRunLabel(selectedDrill, run)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedDrill && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <StatusPill
+                    label={getRunScoringFormat(
+                      selectedDrill,
+                      selectedRunNumber,
+                    )}
+                  />
+                  <StatusPill label={selectedDrill.category} tone="slate" />
+                  <StatusPill label={getRunLabel(selectedDrill, selectedRunNumber)} tone="green" />
+                </div>
+              )}
+
+              {selectedDrill && (
+                <div className="mt-4 space-y-3 lg:hidden">
+                  {attendingRoster.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-[12px] text-slate-500">
                       {isOpenAttendance
-                        ? `${attendingRoster.length} current shooter${attendingRoster.length === 1 ? "" : "s"}`
-                        : `${attendingRoster.length} attending officer${attendingRoster.length === 1 ? "" : "s"}`}
-                      {isOpenAttendance ? (
-                        <StatusPill label="Open / Rolling" tone="blue" />
-                      ) : null}
+                        ? "No shooters yet. Add officers as they arrive."
+                        : "Mark at least one rostered officer present before scoring."}
                     </div>
-                  </div>
+                  ) : (
+                    attendingRoster.map((entry) => {
+                      const row = batchScoreRows[entry.officerId] ?? {
+                        officerId: entry.officerId,
+                        firearmId: entry.assignedFirearmIds[0] ?? "",
+                        metricValue: "",
+                        notes: "",
+                        malfunctionOccurred: false,
+                        malfunctionType: "Failure to Feed" as MalfunctionType,
+                        malfunctionNotes: "",
+                      };
 
-                  {openAttendanceScoringState === "empty" &&
-                  canManageOpenAttendance ? (
-                    <div className="mb-4 rounded-2xl border border-dashed border-blue-500/40 bg-blue-500/[0.04] px-4 py-5 text-center">
-                      <p className="text-sm font-semibold text-blue-100">
-                        No shooters yet
-                      </p>
-                      <p className="mt-1 text-[12px] text-slate-400">
-                        Add officers as they arrive.
-                      </p>
-                    </div>
-                  ) : null}
+                      const scoringFormat = getRunScoringFormat(
+                        selectedDrill,
+                        selectedRunNumber,
+                      );
+                      const selectedFirearmId =
+                        row.firearmId ||
+                        entry.assignedFirearmIds[0] ||
+                        "";
+                      const selectedFirearm = activeFirearmDirectory.find(
+                        (firearm) => firearm.id === selectedFirearmId,
+                      );
+                      const expectedFirearmType = normalizeFirearmType(
+                        selectedDrill.firearmType,
+                      );
+                      const selectedFirearmType = normalizeFirearmType(
+                        selectedFirearm?.firearm_type,
+                      );
+                      const firearmMismatch =
+                        Boolean(selectedFirearmId) &&
+                        Boolean(expectedFirearmType) &&
+                        expectedFirearmType !== "any" &&
+                        selectedFirearmType !== expectedFirearmType;
 
-                  {canManageOpenAttendance && (
-                    <div className="mb-4 rounded-2xl border border-blue-500/30 bg-blue-500/[0.06] p-3">
-                      <div className="grid gap-3 xl:grid-cols-[minmax(280px,1.65fr)_minmax(220px,1fr)_auto] xl:items-end">
-                        <div className="relative min-w-0">
-                          <label
-                            htmlFor="open-attendance-officer"
-                            className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70"
-                          >
-                            Officer
-                          </label>
-                          <input
-                            id="open-attendance-officer"
-                            role="combobox"
-                            aria-autocomplete="list"
-                            aria-controls="open-attendance-officer-options"
-                            aria-expanded={openAttendanceOfficerPickerOpen}
-                            value={getOpenAttendanceOfficerInputValue({
-                              isOpen: openAttendanceOfficerPickerOpen,
-                              searchQuery: openAttendanceOfficerSearchQuery,
-                              selectedOfficer: selectedOpenAttendanceOfficer,
-                            })}
-                            onChange={(event) => {
-                              setOpenAttendanceOfficerSearchQuery(
-                                event.target.value,
-                              );
-                              setOpenAttendanceOfficerPickerOpen(true);
-                            }}
-                            onFocus={() => {
-                              setOpenAttendanceOfficerPickerOpen(true);
-                              setOpenAttendanceOfficerSearchQuery("");
-                            }}
-                            onClick={() => {
-                              if (!openAttendanceOfficerPickerOpen) {
-                                setOpenAttendanceOfficerPickerOpen(true);
-                                setOpenAttendanceOfficerSearchQuery("");
-                              }
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Escape") {
-                                setOpenAttendanceOfficerPickerOpen(false);
-                                setOpenAttendanceOfficerSearchQuery("");
-                              }
-                            }}
-                            placeholder="Name, badge, rank, or unit"
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none placeholder:text-slate-600 focus:border-blue-500"
-                          />
-                          {openAttendanceOfficerPickerOpen &&
-                          selectedOpenAttendanceOfficerLabel ? (
-                            <p className="mt-1 text-[10px] text-blue-200/70">
-                              Selected: {selectedOpenAttendanceOfficerLabel}
-                            </p>
-                          ) : null}
-                          {openAttendanceOfficerPickerOpen ? (
-                            <div
-                              id="open-attendance-officer-options"
-                              role="listbox"
-                              className="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-950 p-1 shadow-2xl"
-                            >
-                              {openAttendanceOfficers.length > 0 ? (
-                                openAttendanceOfficers
-                                  .slice(0, 12)
-                                  .map((officer) => (
-                                    <button
-                                      key={officer.id}
-                                      type="button"
-                                      role="option"
-                                      aria-selected={
-                                        openAttendanceOfficerId === officer.id
-                                      }
-                                      onMouseDown={(event) =>
-                                        event.preventDefault()
-                                      }
-                                      onClick={() => {
-                                        setOpenAttendanceOfficerId(officer.id);
-                                        setOpenAttendanceFirearmId("");
-                                        setOpenAttendanceOfficerSearchQuery("");
-                                        setOpenAttendanceOfficerPickerOpen(
-                                          false,
-                                        );
-                                      }}
-                                      className="block w-full rounded-lg px-3 py-2 text-left hover:bg-slate-800 focus:bg-slate-800 focus:outline-none"
-                                    >
-                                      <span className="block text-[12px] font-semibold text-white">
-                                        {getOpenAttendanceOfficerLabel(officer)}
-                                      </span>
-                                      <span className="mt-0.5 block text-[10px] text-slate-400">
-                                        {officer.rankTitle || "Officer"}
-                                      </span>
-                                    </button>
-                                  ))
+                      const existingResult = selectedRangeResults.find(
+                        (result) =>
+                          result.officerId === entry.officerId &&
+                          result.drillId === selectedDrill.id &&
+                          result.runNumber === selectedRunNumber,
+                      );
+
+                      return (
+                        <div
+                          key={entry.officerId}
+                          className={`rounded-2xl border p-4 ${
+                            firearmMismatch
+                              ? "border-amber-500/30 bg-amber-500/[0.05]"
+                              : "border-slate-800 bg-slate-950/35"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-[15px] font-bold text-white">
+                                {getUserName(entry.officerId)}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                {getRunLabel(selectedDrill, selectedRunNumber)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {existingResult ? (
+                                conflictedResultIds.has(existingResult.id) ? (
+                                  <StatusPill label="Conflict" tone="amber" />
+                                ) : unsyncedResultIds.has(existingResult.id) ? (
+                                  <StatusPill label="Not synced" tone="amber" />
+                                ) : (
+                                  <StatusPill label="Saved" tone="green" />
+                                )
                               ) : (
-                                <p className="px-3 py-2 text-[11px] text-slate-500">
-                                  No available officers match this search.
+                                <StatusPill label="Not Saved" tone="slate" />
+                              )}
+
+                              <QuickQualificationCamera
+                                qualificationResultId={existingResult?.id}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                              Firearm
+                            </label>
+                            {entry.assignedFirearmIds.length > 0 ? (
+                              <select
+                                value={selectedFirearmId}
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    firearmId: event.target.value,
+                                  })
+                                }
+                                className={`w-full rounded-xl border bg-slate-950 px-3 py-3 text-[13px] text-white outline-none ${
+                                  firearmMismatch
+                                    ? "border-amber-500/60 focus:border-amber-400"
+                                    : "border-slate-700 focus:border-blue-500"
+                                }`}
+                              >
+                                {entry.assignedFirearmIds.map((firearmId) => (
+                                  <option key={firearmId} value={firearmId}>
+                                    {getFirearmName(firearmId)}
+                                  </option>
+                                ))}
+                              </select>
+                          ) : (
+                              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3 py-3 text-[12px] text-red-300">
+                                <AlertTriangle size={14} />
+                                <span>
+                                  {isOpenAttendance
+                                    ? "Firearm required before scoring."
+                                    : "No firearm selected for this officer."}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                {scoringFormat === "Time"
+                                  ? "Seconds"
+                                  : scoringFormat === "Hit Count"
+                                    ? "Hits"
+                                    : "Score"}
+                              </label>
+                              <input
+                                inputMode="decimal"
+                                value={row.metricValue}
+                                onChange={(event) =>
+                                  handleMetricChange(
+                                    entry.officerId,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={
+                                  scoringFormat === "Time"
+                                    ? "Seconds"
+                                    : scoringFormat === "Hit Count"
+                                      ? "Hits"
+                                      : scoringFormat === "Completion" ||
+                                          scoringFormat === "Pass/Fail" ||
+                                          scoringFormat === "Notes Only"
+                                        ? "—"
+                                        : "Score"
+                                }
+                                disabled={
+                                  scoringFormat === "Completion" ||
+                                  scoringFormat === "Pass/Fail" ||
+                                  scoringFormat === "Notes Only"
+                                }
+                                aria-label={`Measurement for ${getUserName(entry.officerId)}`}
+                                aria-invalid={Boolean(batchRowMeasurementError(row, selectedDrill, selectedRunNumber))}
+                                className={`w-full rounded-xl border bg-slate-950 px-3 py-3 text-[16px] font-semibold text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500 ${
+                                  batchRowMeasurementError(row, selectedDrill, selectedRunNumber) ? "border-red-500" : "border-slate-700"
+                                }`}
+                              />
+                              {batchRowMeasurementError(row, selectedDrill, selectedRunNumber) ? (
+                                <p className="mt-1 text-[12px] text-red-300">
+                                  {batchRowMeasurementError(row, selectedDrill, selectedRunNumber)}
                                 </p>
+                              ) : null}
+                            </div>
+
+                            <div>
+                              <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                                Result
+                              </label>
+                              <select
+                                value={
+                                  typeof row.passed === "boolean"
+                                    ? row.passed
+                                      ? "pass"
+                                      : "fail"
+                                    : ""
+                                }
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    passed:
+                                      event.target.value === ""
+                                        ? undefined
+                                        : event.target.value === "pass",
+                                  })
+                                }
+                                disabled={scoringFormat === "Notes Only"}
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[13px] text-white outline-none disabled:text-slate-600 focus:border-blue-500"
+                              >
+                                <option value="">Auto</option>
+                                <option value="pass">Pass</option>
+                                <option value="fail">Fail</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 grid grid-cols-2 gap-3">
+                            <CompletionChoiceControl
+                              scoringFormat={scoringFormat}
+                              completed={row.completed}
+                              officerName={getUserName(entry.officerId)}
+                              onChange={(completed) =>
+                                updateBatchScoreRow(entry.officerId, { completed })
+                              }
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  malfunctionOccurred:
+                                    !row.malfunctionOccurred,
+                                })
+                              }
+                              className={`rounded-xl border px-3 py-3 text-[12px] font-semibold ${
+                                row.malfunctionOccurred
+                                  ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                  : "border-slate-700 text-slate-400"
+                              }`}
+                            >
+                              {row.malfunctionOccurred
+                                ? "Malfunction Logged"
+                                : "No Malfunction"}
+                            </button>
+                          </div>
+
+                          <div className="mt-3">
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                              Instructor Notes
+                            </label>
+                            <input
+                              value={row.notes}
+                              onChange={(event) =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  notes: event.target.value,
+                                })
+                              }
+                              placeholder="Optional notes"
+                              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[13px] text-white outline-none focus:border-blue-500"
+                            />
+                          </div>
+
+                          {row.malfunctionOccurred ? (
+                            <div className="mt-3 space-y-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
+                              <select
+                                value={row.malfunctionType}
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    malfunctionType:
+                                      event.target.value as MalfunctionType,
+                                  })
+                                }
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[12px] text-white outline-none focus:border-blue-500"
+                              >
+                                {MALFUNCTION_TYPES.map((type) => (
+                                  <option key={type} value={type}>
+                                    {type}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                value={row.malfunctionNotes}
+                                onChange={(event) =>
+                                  updateBatchScoreRow(entry.officerId, {
+                                    malfunctionNotes: event.target.value,
+                                  })
+                                }
+                                placeholder="Malfunction notes"
+                                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[12px] text-white outline-none focus:border-blue-500"
+                              />
+                            </div>
+                          ) : null}
+
+                          {isQualificationDrill(selectedDrill) ? (
+                            <div className="mt-4 border-t border-slate-800 pt-3">
+                              {existingResult ? (
+                                <QualificationEvidence
+                                  qualificationResultId={existingResult.id}
+                                />
+                              ) : (
+                                <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-3">
+                                  <p className="text-[11px] font-semibold text-slate-300">
+                                    Target photo
+                                  </p>
+                                  <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                                    Save this scoring batch first, then take or upload the Q-target photo here.
+                                  </p>
+                                </div>
                               )}
                             </div>
                           ) : null}
                         </div>
-                        <div className="min-w-0">
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-blue-200/70">
-                            Firearm
-                          </label>
-                          <select
-                            value={openAttendanceFirearmId}
-                            onChange={(event) =>
-                              setOpenAttendanceFirearmId(event.target.value)
-                            }
-                            disabled={
-                              !openAttendanceOfficerId ||
-                              selectableOpenAttendanceFirearms.length === 0
-                            }
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                          >
-                            <option value="">
-                              {!openAttendanceOfficerId
-                                ? "Select an officer first"
-                                : selectableOpenAttendanceFirearms.length === 0
-                                  ? "No eligible firearms found"
-                                  : "Select firearm"}
-                            </option>
-                            {openAttendanceFirearmOptions.source ===
-                            "assigned" ? (
-                              <optgroup label="Assigned to selected officer">
-                                {selectableOpenAttendanceFirearms.map(
-                                  (firearm) => (
-                                    <option key={firearm.id} value={firearm.id}>
-                                      {getOpenAttendanceFirearmLabel(firearm)}
-                                    </option>
-                                  ),
-                                )}
-                              </optgroup>
-                            ) : selectableOpenAttendanceFirearms.length > 0 ? (
-                              <optgroup label="Available firearms">
-                                {selectableOpenAttendanceFirearms.map(
-                                  (firearm) => (
-                                    <option key={firearm.id} value={firearm.id}>
-                                      {getOpenAttendanceFirearmLabel(firearm)}
-                                    </option>
-                                  ),
-                                )}
-                              </optgroup>
-                            ) : null}
-                          </select>
-                          {openAttendanceOfficerId ? (
-                            <p className="mt-1 text-[10px] text-blue-200/70">
-                              {openAttendanceFirearmOptions.source ===
-                              "assigned"
-                                ? "Firearm is required before adding the shooter."
-                                : selectableOpenAttendanceFirearms.length > 0
-                                  ? "Firearm selection is for this Range Day only; permanent Armory custody is unchanged."
-                                  : "No eligible firearms found."}
-                            </p>
-                          ) : null}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleAddOpenAttendanceShooter}
-                          disabled={
-                            !canManageOpenAttendance ||
-                            !openAttendanceOfficerId ||
-                            !openAttendanceFirearmId
-                          }
-                          className="inline-flex min-h-10 min-w-32 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
-                        >
-                          <Plus size={15} />
-                          Add Shooter
-                        </button>
-                      </div>
-                    </div>
+                      );
+                    })
                   )}
 
-                  <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
-                    <div>
-                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                        Drill
-                      </label>
-                      <select
-                        value={selectedDrill?.id ?? ""}
-                        onChange={(event) => {
-                          setSelectedDrillId(event.target.value);
-                          setSelectedRunNumber(1);
-                        }}
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                  {attendingRoster.length > 0 ? (
+                    <div className="sticky bottom-3 z-20 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveBatchResults}
+                        className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3.5 text-[14px] font-bold text-white shadow-xl shadow-black/30 hover:bg-blue-500"
                       >
-                        {selectedDrills.map((drill) => (
-                          <option key={drill.id} value={drill.id}>
-                            {drill.name}
-                          </option>
-                        ))}
-                      </select>
+                        <Save size={16} />
+                        Save {getRunLabel(selectedDrill, selectedRunNumber)}
+                      </button>
+                      {renderWorkspaceSaveStatus(false)}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {selectedDrill && (
+                <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-slate-800 lg:block">
+                  <div className="min-w-[1040px] divide-y divide-slate-800">
+                    <div className="grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      <span>Officer</span>
+                      <span>Metric</span>
+                      <span>Status</span>
+                      <span>Completed</span>
+                      <span>Standard</span>
+                      <span>Notes</span>
+                      <span>Malfunction</span>
                     </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                        Run / Course
-                      </label>
-                      <select
-                        value={selectedRunNumber}
-                        onChange={(event) =>
-                          setSelectedRunNumber(Number(event.target.value))
-                        }
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                      >
-                        {Array.from(
-                          { length: selectedEffectiveRunCount },
-                          (_, index) => index + 1,
-                        ).map((run) => (
-                          <option key={run} value={run}>
-                            {getRunLabel(selectedDrill, run)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                    {attendingRoster.length === 0 ? (
+                      <div className="px-3 py-6 text-center text-[12px] text-slate-500">
+                        {isOpenAttendance
+                          ? "No shooters yet. Add officers as they arrive."
+                          : "Mark at least one rostered officer present before scoring."}
+                      </div>
+                    ) : (
+                      attendingRoster.map((entry) => {
+                        const row = batchScoreRows[entry.officerId] ?? {
+                          officerId: entry.officerId,
+                          firearmId: entry.assignedFirearmIds[0] ?? "",
+                          metricValue: "",
+                          notes: "",
+                          malfunctionOccurred: false,
+                          malfunctionType: "Failure to Feed" as MalfunctionType,
+                          malfunctionNotes: "",
+                        };
 
-                  {selectedDrill && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <StatusPill
-                        label={getRunScoringFormat(
+                        const scoringFormat = getRunScoringFormat(
                           selectedDrill,
                           selectedRunNumber,
-                        )}
-                      />
-                      <StatusPill label={selectedDrill.category} tone="slate" />
-                      <StatusPill
-                        label={getRunLabel(selectedDrill, selectedRunNumber)}
-                        tone="green"
-                      />
-                    </div>
-                  )}
-
-                  {selectedDrill && (
-                    <div className="mt-4 space-y-3 lg:hidden">
-                      {attendingRoster.length === 0 ? (
-                        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-6 text-center text-[12px] text-slate-500">
-                          {isOpenAttendance
-                            ? "No shooters yet. Add officers as they arrive."
-                            : "Mark at least one rostered officer present before scoring."}
-                        </div>
-                      ) : (
-                        attendingRoster.map((entry) => {
-                          const row = batchScoreRows[entry.officerId] ?? {
-                            officerId: entry.officerId,
-                            firearmId: entry.assignedFirearmIds[0] ?? "",
-                            metricValue: "",
-                            notes: "",
-                            malfunctionOccurred: false,
-                            malfunctionType:
-                              "Failure to Feed" as MalfunctionType,
-                            malfunctionNotes: "",
-                          };
-
-                          const scoringFormat = getRunScoringFormat(
+                        );
+                        const qualificationStandardMatch =
+                          getQualificationStandardMatch(
+                            qualificationStandards,
                             selectedDrill,
                             selectedRunNumber,
+                            row.firearmId || entry.assignedFirearmIds[0],
                           );
-                          const selectedFirearmId =
-                            row.firearmId || entry.assignedFirearmIds[0] || "";
-                          const selectedFirearm = activeFirearmDirectory.find(
-                            (firearm) => firearm.id === selectedFirearmId,
+
+                        const departmentStandardStatus =
+                          getQualificationStandardPass({
+                            standards: qualificationStandards,
+                            drill: selectedDrill,
+                            runNumber: selectedRunNumber,
+                            metricValue: row.metricValue,
+                            firearmId: row.firearmId || entry.assignedFirearmIds[0],
+                          }) ??
+                          getDepartmentStandardStatus({
+                            drill: selectedDrill,
+                            scoringFormat,
+                            metricValue: row.metricValue,
+                            completed: row.completed,
+                            passed: row.passed,
+                          });
+
+                        const selectedFirearmId =
+                          row.firearmId ||
+                          entry.assignedFirearmIds[0] ||
+                          "";
+
+                        const selectedFirearm =
+                          activeFirearmDirectory.find(
+                            (firearm) =>
+                              firearm.id === selectedFirearmId,
                           );
-                          const expectedFirearmType = normalizeFirearmType(
+
+                        const expectedFirearmType =
+                          normalizeFirearmType(
                             selectedDrill.firearmType,
                           );
-                          const selectedFirearmType = normalizeFirearmType(
+
+                        const selectedFirearmType =
+                          normalizeFirearmType(
                             selectedFirearm?.firearm_type,
                           );
-                          const firearmMismatch =
-                            Boolean(selectedFirearmId) &&
-                            Boolean(expectedFirearmType) &&
-                            expectedFirearmType !== "any" &&
-                            selectedFirearmType !== expectedFirearmType;
 
-                          const existingResult = selectedRangeResults.find(
+                        const metricEntered =
+                          row.metricValue.trim().length > 0;
+
+                        const hasEnteredResult =
+                          metricEntered ||
+                          typeof row.passed === "boolean" ||
+                          typeof row.completed === "boolean" ||
+                          Boolean(row.notes.trim()) ||
+                          row.malfunctionOccurred;
+
+                        const firearmMissing =
+                          hasEnteredResult &&
+                          !selectedFirearmId;
+
+                        const firearmMismatch =
+                          Boolean(selectedFirearmId) &&
+                          Boolean(expectedFirearmType) &&
+                          expectedFirearmType !== "any" &&
+                          selectedFirearmType !==
+                            expectedFirearmType;
+
+                        return (
+                          <div
+                            key={entry.officerId}
+                            className={`grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 px-3 py-3 text-[12px] transition ${
+                              firearmMissing
+                                ? "bg-red-500/[0.08] ring-1 ring-inset ring-red-500/30"
+                                : firearmMismatch
+                                  ? "bg-amber-500/[0.06] ring-1 ring-inset ring-amber-500/20"
+                                  : ""
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-white">
+                        {getUserName(entry.officerId)}
+                      </p>
+
+                      <QuickQualificationCamera
+                        qualificationResultId={
+                          selectedRangeResults.find(
                             (result) =>
                               result.officerId === entry.officerId &&
                               result.drillId === selectedDrill.id &&
                               result.runNumber === selectedRunNumber,
-                          );
+                          )?.id
+                        }
+                      />
+                    </div>
 
-                          return (
-                            <div
-                              key={entry.officerId}
-                              className={`rounded-2xl border p-4 ${
-                                firearmMismatch
-                                  ? "border-amber-500/30 bg-amber-500/[0.05]"
-                                  : "border-slate-800 bg-slate-950/35"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="truncate text-[15px] font-bold text-white">
-                                    {getUserName(entry.officerId)}
-                                  </p>
-                                  <p className="mt-0.5 text-[11px] text-slate-500">
-                                    {getRunLabel(
-                                      selectedDrill,
-                                      selectedRunNumber,
-                                    )}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {existingResult ? (
-                                    <StatusPill label="Saved" tone="green" />
-                                  ) : (
-                                    <StatusPill
-                                      label="Not Saved"
-                                      tone="slate"
-                                    />
-                                  )}
-
-                                  <QuickQualificationCamera
-                                    qualificationResultId={existingResult?.id}
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="mt-4">
-                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                  Firearm
-                                </label>
-                                {entry.assignedFirearmIds.length > 0 ? (
+                              {entry.assignedFirearmIds.length > 0 ? (
+                                <>
                                   <select
                                     value={selectedFirearmId}
                                     onChange={(event) =>
-                                      updateBatchScoreRow(entry.officerId, {
-                                        firearmId: event.target.value,
-                                      })
+                                      updateBatchScoreRow(
+                                        entry.officerId,
+                                        {
+                                          firearmId:
+                                            event.target.value,
+                                        },
+                                      )
                                     }
-                                    className={`w-full rounded-xl border bg-slate-950 px-3 py-3 text-[13px] text-white outline-none ${
+                                    className={`mt-1 w-full rounded-lg border bg-slate-950 px-2 py-1 text-[10px] text-slate-300 outline-none ${
                                       firearmMismatch
                                         ? "border-amber-500/60 focus:border-amber-400"
                                         : "border-slate-700 focus:border-blue-500"
@@ -7133,982 +7306,610 @@ export default function RangeDaysPage() {
                                           key={firearmId}
                                           value={firearmId}
                                         >
-                                          {getFirearmName(firearmId)}
+                                          {getFirearmName(
+                                            firearmId,
+                                          )}
                                         </option>
                                       ),
                                     )}
                                   </select>
-                                ) : (
-                                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-3 py-3 text-[12px] text-red-300">
-                                    <AlertTriangle size={14} />
-                                    <span>
-                                      {isOpenAttendance
-                                        ? "Firearm required before scoring."
-                                        : "No firearm selected for this officer."}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
 
-                              <div className="mt-3 grid grid-cols-2 gap-3">
-                                <div>
-                                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                    {scoringFormat === "Time"
-                                      ? "Seconds"
-                                      : scoringFormat === "Hit Count"
-                                        ? "Hits"
-                                        : "Score"}
-                                  </label>
-                                  <input
-                                    inputMode="decimal"
-                                    value={row.metricValue}
-                                    onChange={(event) =>
-                                      handleMetricChange(
-                                        entry.officerId,
-                                        event.target.value,
-                                      )
-                                    }
-                                    placeholder={
-                                      scoringFormat === "Time"
-                                        ? "Seconds"
-                                        : scoringFormat === "Hit Count"
-                                          ? "Hits"
-                                          : scoringFormat === "Completion" ||
-                                              scoringFormat === "Pass/Fail" ||
-                                              scoringFormat === "Notes Only"
-                                            ? "—"
-                                            : "Score"
-                                    }
-                                    disabled={
-                                      scoringFormat === "Completion" ||
-                                      scoringFormat === "Pass/Fail" ||
-                                      scoringFormat === "Notes Only"
-                                    }
-                                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[16px] font-semibold text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                    Result
-                                  </label>
-                                  <select
-                                    value={
-                                      typeof row.passed === "boolean"
-                                        ? row.passed
-                                          ? "pass"
-                                          : "fail"
-                                        : ""
-                                    }
-                                    onChange={(event) =>
-                                      updateBatchScoreRow(entry.officerId, {
-                                        passed:
-                                          event.target.value === ""
-                                            ? undefined
-                                            : event.target.value === "pass",
-                                      })
-                                    }
-                                    disabled={scoringFormat === "Notes Only"}
-                                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[13px] text-white outline-none disabled:text-slate-600 focus:border-blue-500"
-                                  >
-                                    <option value="">Auto</option>
-                                    <option value="pass">Pass</option>
-                                    <option value="fail">Fail</option>
-                                  </select>
-                                </div>
-                              </div>
-
-                              <div className="mt-3 grid grid-cols-2 gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      completed: !(row.completed ?? true),
-                                    })
-                                  }
-                                  className={`rounded-xl border px-3 py-3 text-[12px] font-semibold ${
-                                    (row.completed ?? true)
-                                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                      : "border-slate-700 text-slate-400"
-                                  }`}
-                                >
-                                  {(row.completed ?? true)
-                                    ? "Complete"
-                                    : "Incomplete"}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      malfunctionOccurred:
-                                        !row.malfunctionOccurred,
-                                    })
-                                  }
-                                  className={`rounded-xl border px-3 py-3 text-[12px] font-semibold ${
-                                    row.malfunctionOccurred
-                                      ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                                      : "border-slate-700 text-slate-400"
-                                  }`}
-                                >
-                                  {row.malfunctionOccurred
-                                    ? "Malfunction Logged"
-                                    : "No Malfunction"}
-                                </button>
-                              </div>
-
-                              <div className="mt-3">
-                                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                                  Instructor Notes
-                                </label>
-                                <input
-                                  value={row.notes}
-                                  onChange={(event) =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      notes: event.target.value,
-                                    })
-                                  }
-                                  placeholder="Optional notes"
-                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[13px] text-white outline-none focus:border-blue-500"
-                                />
-                              </div>
-
-                              {row.malfunctionOccurred ? (
-                                <div className="mt-3 space-y-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3">
-                                  <select
-                                    value={row.malfunctionType}
-                                    onChange={(event) =>
-                                      updateBatchScoreRow(entry.officerId, {
-                                        malfunctionType: event.target
-                                          .value as MalfunctionType,
-                                      })
-                                    }
-                                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[12px] text-white outline-none focus:border-blue-500"
-                                  >
-                                    {MALFUNCTION_TYPES.map((type) => (
-                                      <option key={type} value={type}>
-                                        {type}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <input
-                                    value={row.malfunctionNotes}
-                                    onChange={(event) =>
-                                      updateBatchScoreRow(entry.officerId, {
-                                        malfunctionNotes: event.target.value,
-                                      })
-                                    }
-                                    placeholder="Malfunction notes"
-                                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-[12px] text-white outline-none focus:border-blue-500"
-                                  />
-                                </div>
-                              ) : null}
-
-                              {isQualificationDrill(selectedDrill) ? (
-                                <div className="mt-4 border-t border-slate-800 pt-3">
-                                  {existingResult ? (
-                                    <QualificationEvidence
-                                      qualificationResultId={existingResult.id}
-                                    />
-                                  ) : (
-                                    <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-3">
-                                      <p className="text-[11px] font-semibold text-slate-300">
-                                        Target photo
-                                      </p>
-                                      <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                                        Save this scoring batch first, then take
-                                        or upload the Q-target photo here.
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })
-                      )}
-
-                      {attendingRoster.length > 0 ? (
-                        <div className="sticky bottom-3 z-20 pt-1">
-                          <button
-                            type="button"
-                            onClick={handleSaveBatchResults}
-                            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3.5 text-[14px] font-bold text-white shadow-xl shadow-black/30 hover:bg-blue-500"
-                          >
-                            <Save size={16} />
-                            Save {getRunLabel(selectedDrill, selectedRunNumber)}
-                          </button>
-                          {renderWorkspaceSaveStatus(false)}
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  {selectedDrill && (
-                    <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-slate-800 lg:block">
-                      <div className="min-w-[1040px] divide-y divide-slate-800">
-                        <div className="grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 bg-slate-950/60 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          <span>Officer</span>
-                          <span>Metric</span>
-                          <span>Status</span>
-                          <span>Completed</span>
-                          <span>Standard</span>
-                          <span>Notes</span>
-                          <span>Malfunction</span>
-                        </div>
-
-                        {attendingRoster.length === 0 ? (
-                          <div className="px-3 py-6 text-center text-[12px] text-slate-500">
-                            {isOpenAttendance
-                              ? "No shooters yet. Add officers as they arrive."
-                              : "Mark at least one rostered officer present before scoring."}
-                          </div>
-                        ) : (
-                          attendingRoster.map((entry) => {
-                            const row = batchScoreRows[entry.officerId] ?? {
-                              officerId: entry.officerId,
-                              firearmId: entry.assignedFirearmIds[0] ?? "",
-                              metricValue: "",
-                              notes: "",
-                              malfunctionOccurred: false,
-                              malfunctionType:
-                                "Failure to Feed" as MalfunctionType,
-                              malfunctionNotes: "",
-                            };
-
-                            const scoringFormat = getRunScoringFormat(
-                              selectedDrill,
-                              selectedRunNumber,
-                            );
-                            const qualificationStandardMatch =
-                              getQualificationStandardMatch(
-                                qualificationStandards,
-                                selectedDrill,
-                                selectedRunNumber,
-                                row.firearmId || entry.assignedFirearmIds[0],
-                              );
-
-                            const departmentStandardStatus =
-                              getQualificationStandardPass({
-                                standards: qualificationStandards,
-                                drill: selectedDrill,
-                                runNumber: selectedRunNumber,
-                                metricValue: row.metricValue,
-                                firearmId: row.firearmId || entry.assignedFirearmIds[0],
-                              }) ??
-                              getDepartmentStandardStatus({
-                                drill: selectedDrill,
-                                scoringFormat,
-                                metricValue: row.metricValue,
-                                completed: row.completed,
-                                passed: row.passed,
-                              });
-
-                            const selectedFirearmId =
-                              row.firearmId ||
-                              entry.assignedFirearmIds[0] ||
-                              "";
-
-                            const selectedFirearm = activeFirearmDirectory.find(
-                              (firearm) => firearm.id === selectedFirearmId,
-                            );
-
-                            const expectedFirearmType = normalizeFirearmType(
-                              selectedDrill.firearmType,
-                            );
-
-                            const selectedFirearmType = normalizeFirearmType(
-                              selectedFirearm?.firearm_type,
-                            );
-
-                            const metricEntered =
-                              row.metricValue.trim().length > 0;
-
-                            const hasEnteredResult =
-                              metricEntered ||
-                              typeof row.passed === "boolean" ||
-                              typeof row.completed === "boolean" ||
-                              Boolean(row.notes.trim()) ||
-                              row.malfunctionOccurred;
-
-                            const firearmMissing =
-                              hasEnteredResult && !selectedFirearmId;
-
-                            const firearmMismatch =
-                              Boolean(selectedFirearmId) &&
-                              Boolean(expectedFirearmType) &&
-                              expectedFirearmType !== "any" &&
-                              selectedFirearmType !== expectedFirearmType;
-
-                            return (
-                              <div
-                                key={entry.officerId}
-                                className={`grid grid-cols-[210px_130px_120px_120px_150px_1fr_150px] gap-3 px-3 py-3 text-[12px] transition ${
-                                  firearmMissing
-                                    ? "bg-red-500/[0.08] ring-1 ring-inset ring-red-500/30"
-                                    : firearmMismatch
-                                      ? "bg-amber-500/[0.06] ring-1 ring-inset ring-amber-500/20"
-                                      : ""
-                                }`}
-                              >
-                                <div>
-                                  <div className="flex items-start justify-between gap-2">
-                                    <p className="font-semibold text-white">
-                                      {getUserName(entry.officerId)}
-                                    </p>
-
-                                    <QuickQualificationCamera
-                                      qualificationResultId={
-                                        selectedRangeResults.find(
-                                          (result) =>
-                                            result.officerId ===
-                                              entry.officerId &&
-                                            result.drillId ===
-                                              selectedDrill.id &&
-                                            result.runNumber ===
-                                              selectedRunNumber,
-                                        )?.id
-                                      }
-                                    />
-                                  </div>
-
-                                  {entry.assignedFirearmIds.length > 0 ? (
-                                    <>
-                                      <select
-                                        value={selectedFirearmId}
-                                        onChange={(event) =>
-                                          updateBatchScoreRow(entry.officerId, {
-                                            firearmId: event.target.value,
-                                          })
-                                        }
-                                        className={`mt-1 w-full rounded-lg border bg-slate-950 px-2 py-1 text-[10px] text-slate-300 outline-none ${
-                                          firearmMismatch
-                                            ? "border-amber-500/60 focus:border-amber-400"
-                                            : "border-slate-700 focus:border-blue-500"
-                                        }`}
-                                      >
-                                        {entry.assignedFirearmIds.map(
-                                          (firearmId) => (
-                                            <option
-                                              key={firearmId}
-                                              value={firearmId}
-                                            >
-                                              {getFirearmName(firearmId)}
-                                            </option>
-                                          ),
-                                        )}
-                                      </select>
-
-                                      {firearmMismatch ? (
-                                        <div className="mt-1.5 flex items-start gap-1.5 text-[10px] leading-4 text-amber-300">
-                                          <AlertTriangle
-                                            size={11}
-                                            className="mt-0.5 flex-shrink-0"
-                                          />
-                                          <span>
-                                            Expected{" "}
-                                            {formatRangeFirearmType(
-                                              selectedDrill.firearmType,
-                                            )}
-                                            {" / "}
-                                            selected{" "}
-                                            {formatRangeFirearmType(
-                                              selectedFirearm?.firearm_type,
-                                            )}
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <p className="mt-1 text-[10px] text-emerald-400/80">
-                                          Firearm matches activity
-                                        </p>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <div className="mt-1.5 flex flex-wrap items-start gap-1.5 text-[10px] font-medium leading-4 text-red-300">
+                                  {firearmMismatch ? (
+                                    <div className="mt-1.5 flex items-start gap-1.5 text-[10px] leading-4 text-amber-300">
                                       <AlertTriangle
                                         size={11}
                                         className="mt-0.5 flex-shrink-0"
                                       />
                                       <span>
-                                        {isOpenAttendance
-                                          ? "Firearm required before scoring."
-                                          : "No firearm selected for this officer."}
+                                        Expected{" "}
+                                        {formatRangeFirearmType(
+                                          selectedDrill.firearmType,
+                                        )}
+                                        {" / "}
+                                        selected{" "}
+                                        {formatRangeFirearmType(
+                                          selectedFirearm?.firearm_type,
+                                        )}
                                       </span>
                                     </div>
-                                  )}
-                                </div>
-
-                                <input
-                                  value={row.metricValue}
-                                  onChange={(event) =>
-                                    handleMetricChange(
-                                      entry.officerId,
-                                      event.target.value,
-                                    )
-                                  }
-                                  placeholder={
-                                    scoringFormat === "Time"
-                                      ? "Seconds"
-                                      : scoringFormat === "Hit Count"
-                                        ? "Hits"
-                                        : scoringFormat === "Completion" ||
-                                            scoringFormat === "Pass/Fail" ||
-                                            scoringFormat === "Notes Only"
-                                          ? "—"
-                                          : "Score"
-                                  }
-                                  disabled={
-                                    scoringFormat === "Completion" ||
-                                    scoringFormat === "Pass/Fail" ||
-                                    scoringFormat === "Notes Only"
-                                  }
-                                  className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                                />
-
-                                <select
-                                  value={
-                                    typeof row.passed === "boolean"
-                                      ? row.passed
-                                        ? "pass"
-                                        : "fail"
-                                      : ""
-                                  }
-                                  onChange={(event) =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      passed:
-                                        event.target.value === ""
-                                          ? undefined
-                                          : event.target.value === "pass",
-                                    })
-                                  }
-                                  disabled={scoringFormat === "Notes Only"}
-                                  className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
-                                >
-                                  <option value="">Auto</option>
-                                  <option value="pass">Pass</option>
-                                  <option value="fail">Fail</option>
-                                </select>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      completed: !(row.completed ?? true),
-                                    })
-                                  }
-                                  className={`rounded-xl border px-2 py-2 text-[11px] font-semibold ${
-                                    (row.completed ?? true)
-                                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                                      : "border-slate-700 text-slate-400"
-                                  }`}
-                                >
-                                  {(row.completed ?? true)
-                                    ? "Complete"
-                                    : "Incomplete"}
-                                </button>
-
-                                <div>
-                                  {selectedDrill.isDepartmentStandard ||
-                                  qualificationStandardMatch ? (
-                                    <span
-                                      className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${
-                                        departmentStandardStatus === true
-                                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                                          : departmentStandardStatus === false
-                                            ? "border-red-500/30 bg-red-500/10 text-red-300"
-                                            : "border-slate-700 bg-slate-800/60 text-slate-400"
-                                      }`}
-                                    >
-                                      {departmentStandardStatus === true
-                                        ? isQualificationDrill(selectedDrill)
-                                          ? "Pass"
-                                          : "Met"
-                                        : departmentStandardStatus === false
-                                          ? isQualificationDrill(selectedDrill)
-                                            ? "Fail"
-                                            : "Failed"
-                                          : "Pending"}
-                                    </span>
                                   ) : (
-                                    <span className="text-[11px] text-slate-600">
-                                      —
-                                    </span>
+                                    <p className="mt-1 text-[10px] text-emerald-400/80">
+                                      Firearm matches activity
+                                    </p>
                                   )}
+                                </>
+                              ) : (
+                                <div className="mt-1.5 flex flex-wrap items-start gap-1.5 text-[10px] font-medium leading-4 text-red-300">
+                                  <AlertTriangle
+                                    size={11}
+                                    className="mt-0.5 flex-shrink-0"
+                                  />
+                                  <span>
+                                    {isOpenAttendance
+                                      ? "Firearm required before scoring."
+                                      : "No firearm selected for this officer."}
+                                  </span>
                                 </div>
+                              )}
+                            </div>
 
-                                <input
-                                  value={row.notes}
-                                  onChange={(event) =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      notes: event.target.value,
-                                    })
-                                  }
-                                  placeholder="Instructor notes"
-                                  className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
-                                />
+                            <input
+                              inputMode="decimal"
+                              aria-label={`Measurement for ${getUserName(entry.officerId)}`}
+                              aria-invalid={Boolean(batchRowMeasurementError(row, selectedDrill, selectedRunNumber))}
+                              title={batchRowMeasurementError(row, selectedDrill, selectedRunNumber) || undefined}
+                              value={row.metricValue}
+                              onChange={(event) =>
+                                handleMetricChange(entry.officerId, event.target.value)
+                              }
+                              placeholder={
+                                scoringFormat === "Time"
+                                  ? "Seconds"
+                                  : scoringFormat === "Hit Count"
+                                    ? "Hits"
+                                    : scoringFormat === "Completion" ||
+                                        scoringFormat === "Pass/Fail" ||
+                                        scoringFormat === "Notes Only"
+                                      ? "—"
+                                      : "Score"
+                              }
+                              disabled={
+                                scoringFormat === "Completion" ||
+                                scoringFormat === "Pass/Fail" ||
+                                scoringFormat === "Notes Only"
+                              }
+                              className={`rounded-xl border bg-slate-950 px-2 py-2 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500 ${
+                                batchRowMeasurementError(row, selectedDrill, selectedRunNumber) ? "border-red-500" : "border-slate-700"
+                              }`}
+                            />
 
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    updateBatchScoreRow(entry.officerId, {
-                                      malfunctionOccurred:
-                                        !row.malfunctionOccurred,
-                                    })
-                                  }
-                                  className={`rounded-xl border px-2 py-2 text-[11px] font-semibold ${
-                                    row.malfunctionOccurred
-                                      ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
-                                      : "border-slate-700 text-slate-400"
+                            <select
+                              value={
+                                typeof row.passed === "boolean"
+                                  ? row.passed
+                                    ? "pass"
+                                    : "fail"
+                                  : ""
+                              }
+                              onChange={(event) =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  passed:
+                                    event.target.value === ""
+                                      ? undefined
+                                      : event.target.value === "pass",
+                                })
+                              }
+                              disabled={scoringFormat === "Notes Only"}
+                              className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none disabled:cursor-not-allowed disabled:text-slate-600 focus:border-blue-500"
+                            >
+                              <option value="">Auto</option>
+                              <option value="pass">Pass</option>
+                              <option value="fail">Fail</option>
+                            </select>
+
+                            <CompletionChoiceControl
+                              compact
+                              scoringFormat={scoringFormat}
+                              completed={row.completed}
+                              officerName={getUserName(entry.officerId)}
+                              onChange={(completed) =>
+                                updateBatchScoreRow(entry.officerId, { completed })
+                              }
+                            />
+
+                            <div>
+                              {selectedDrill.isDepartmentStandard || qualificationStandardMatch ? (
+                                <span
+                                  className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                                    departmentStandardStatus === true
+                                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                                      : departmentStandardStatus === false
+                                        ? "border-red-500/30 bg-red-500/10 text-red-300"
+                                        : "border-slate-700 bg-slate-800/60 text-slate-400"
                                   }`}
                                 >
-                                  {row.malfunctionOccurred ? "Logged" : "No"}
-                                </button>
+                                  {departmentStandardStatus === true
+       ? isQualificationDrill(selectedDrill)
+         ? "Pass"
+         : "Met"
+       : departmentStandardStatus === false
+         ? isQualificationDrill(selectedDrill)
+           ? "Fail"
+           : "Failed"
+         : "Pending"}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-600">—</span>
+                              )}
+                            </div>
 
-                                {row.malfunctionOccurred ? (
-                                  <div className="col-span-7 grid gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 sm:grid-cols-[220px_1fr]">
-                                    <select
-                                      value={row.malfunctionType}
-                                      onChange={(event) =>
-                                        updateBatchScoreRow(entry.officerId, {
-                                          malfunctionType: event.target
-                                            .value as MalfunctionType,
-                                        })
-                                      }
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
-                                    >
-                                      {MALFUNCTION_TYPES.map((type) => (
-                                        <option key={type} value={type}>
-                                          {type}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <input
-                                      value={row.malfunctionNotes}
-                                      onChange={(event) =>
-                                        updateBatchScoreRow(entry.officerId, {
-                                          malfunctionNotes: event.target.value,
-                                        })
-                                      }
-                                      placeholder="Malfunction notes"
-                                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
-                                    />
-                                  </div>
-                                ) : null}
+                            <input
+                              value={row.notes}
+                              onChange={(event) =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  notes: event.target.value,
+                                })
+                              }
+                              placeholder="Instructor notes"
+                              className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateBatchScoreRow(entry.officerId, {
+                                  malfunctionOccurred: !row.malfunctionOccurred,
+                                })
+                              }
+                              className={`rounded-xl border px-2 py-2 text-[11px] font-semibold ${
+                                row.malfunctionOccurred
+                                  ? "border-amber-500/50 bg-amber-500/10 text-amber-300"
+                                  : "border-slate-700 text-slate-400"
+                              }`}
+                            >
+                              {row.malfunctionOccurred ? "Logged" : "No"}
+                            </button>
+
+                            {row.malfunctionOccurred ? (
+                              <div className="col-span-7 grid gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-3 sm:grid-cols-[220px_1fr]">
+                                <select
+                                  value={row.malfunctionType}
+                                  onChange={(event) =>
+                                    updateBatchScoreRow(entry.officerId, {
+                                      malfunctionType:
+                                        event.target.value as MalfunctionType,
+                                    })
+                                  }
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
+                                >
+                                  {MALFUNCTION_TYPES.map((type) => (
+                                    <option key={type} value={type}>
+                                      {type}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  value={row.malfunctionNotes}
+                                  onChange={(event) =>
+                                    updateBatchScoreRow(entry.officerId, {
+                                      malfunctionNotes: event.target.value,
+                                    })
+                                  }
+                                  placeholder="Malfunction notes"
+                                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2 py-2 text-[11px] text-white outline-none focus:border-blue-500"
+                                />
                               </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {(() => {
-                    const scoredRowsWithoutFirearms = attendingRoster.filter(
-                      (entry) => {
-                        const row = batchScoreRows[entry.officerId];
-
-                        if (!row) return false;
-
-                        const metricEntered = row.metricValue.trim().length > 0;
-
-                        const hasEnteredResult =
-                          metricEntered ||
-                          typeof row.passed === "boolean" ||
-                          typeof row.completed === "boolean" ||
-                          Boolean(row.notes.trim()) ||
-                          row.malfunctionOccurred;
-
-                        const firearmId =
-                          row.firearmId || entry.assignedFirearmIds[0];
-
-                        return hasEnteredResult && !firearmId;
-                      },
-                    );
-
-                    const saveBlockedByMissingFirearms =
-                      scoredRowsWithoutFirearms.length > 0;
-
-                    return (
-                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-[11px] text-slate-500">
-                            Scores are saved as one drill/run batch while
-                            retaining individual officer records.
-                          </p>
-
-                          {saveBlockedByMissingFirearms ? (
-                            <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-red-300">
-                              <AlertTriangle size={12} />
-                              Select a firearm for{" "}
-                              {scoredRowsWithoutFirearms
-                                .map((entry) => getUserName(entry.officerId))
-                                .join(", ")}{" "}
-                              before saving.
-                            </p>
-                          ) : null}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleSaveBatchResults}
-                          disabled={
-                            !selectedDrill ||
-                            attendingRoster.length === 0 ||
-                            saveBlockedByMissingFirearms
-                          }
-                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
-                        >
-                          <Save size={14} />
-                          Save All -{" "}
-                          {getRunLabel(selectedDrill, selectedRunNumber)}
-                        </button>
-                        {renderWorkspaceSaveStatus(false)}
-                      </div>
-                    );
-                  })()}
+                            ) : null}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               )}
 
-              {activeRangeDayTab === "results" && (
-                <div className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                  <div className="space-y-5">
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                        <ClipboardList size={15} className="text-blue-400" />
-                        Officer Performance Summary
-                      </h3>
+              {(() => {
+                const scoredRowsWithoutFirearms =
+                  attendingRoster.filter((entry) => {
+                    const row =
+                      batchScoreRows[entry.officerId];
 
-                      <div className="space-y-2 text-[12px] text-slate-400">
-                        <p>Officer: {getUserName(selectedOfficerId)}</p>
-                        <p>
-                          Average Score:{" "}
-                          {getAverageScore(selectedOfficerResults) ??
-                            "No scored runs"}
-                        </p>
-                        <p>
-                          Pass Rate:{" "}
-                          {typeof getPassRate(selectedOfficerResults) ===
-                          "number"
-                            ? `${getPassRate(selectedOfficerResults)}%`
-                            : "No pass/fail runs"}
-                        </p>
-                        <p>
-                          Trend: {getPerformanceTrend(selectedOfficerResults)}
-                        </p>
-                      </div>
-                    </div>
+                    if (!row) return false;
 
-                    {malfunctions.filter(
-                      (malfunction) =>
-                        malfunction.rangeDayId === selectedRangeDay.id,
-                    ).length > 0 ? (
-                      <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
-                        <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-amber-300">
-                          <Wrench size={15} />
-                          Firearm Malfunctions Logged
-                        </h3>
+                    const metricEntered =
+                      row.metricValue.trim().length > 0;
 
-                        <div className="space-y-2">
-                          {malfunctions
-                            .filter(
-                              (malfunction) =>
-                                malfunction.rangeDayId === selectedRangeDay.id,
-                            )
-                            .map((malfunction) => (
-                              <div
-                                key={malfunction.id}
-                                className="rounded-2xl border border-amber-500/20 bg-slate-950/40 px-3 py-3"
-                              >
-                                <p className="text-[12px] font-semibold text-white">
-                                  {getFirearmName(malfunction.firearmId)}
-                                </p>
-                                <p className="text-[11px] text-amber-300">
-                                  {malfunction.type} · Armorer inspection
-                                  required
-                                </p>
-                                {malfunction.notes && (
-                                  <p className="mt-1 text-[11px] text-slate-400">
-                                    {malfunction.notes}
-                                  </p>
-                                )}
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 text-[12px] text-slate-500">
-                        No firearm malfunctions logged for this range day.
-                      </div>
-                    )}
+                    const hasEnteredResult =
+                      metricEntered ||
+                      typeof row.passed === "boolean" ||
+                      typeof row.completed === "boolean" ||
+                      Boolean(row.notes.trim()) ||
+                      row.malfunctionOccurred;
+
+                    const firearmId =
+                      row.firearmId ||
+                      entry.assignedFirearmIds[0];
+
+                    return hasEnteredResult && !firearmId;
+                  });
+
+                const saveBlockedByMissingFirearms =
+                  scoredRowsWithoutFirearms.length > 0;
+
+                return (
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[11px] text-slate-500">
+                    Scores are saved as one drill/run batch while retaining individual officer records.
+                  </p>
+
+                  {saveBlockedByMissingFirearms ? (
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-red-300">
+                      <AlertTriangle size={12} />
+                      Select a firearm for{" "}
+                      {scoredRowsWithoutFirearms
+                        .map((entry) =>
+                          getUserName(entry.officerId),
+                        )
+                        .join(", ")}
+                      {" "}before saving.
+                    </p>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveBatchResults}
+                  disabled={
+                    !selectedDrill ||
+                    attendingRoster.length === 0 ||
+                    saveBlockedByMissingFirearms
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-600"
+                >
+                  <Save size={14} />
+                  Save All - {getRunLabel(selectedDrill, selectedRunNumber)}
+                </button>
+                {renderWorkspaceSaveStatus(false)}
+              </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {activeRangeDayTab === "results" && (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <ClipboardList size={15} className="text-blue-400" />
+                    Officer Performance Summary
+                  </h3>
+
+                  <div className="space-y-2 text-[12px] text-slate-400">
+                    <p>Officer: {getUserName(selectedOfficerId)}</p>
+                    <p>
+                      Average Score: {getAverageScore(selectedOfficerResults) ?? "No scored runs"}
+                    </p>
+                    <p>
+                      Pass Rate: {typeof getPassRate(selectedOfficerResults) === "number" ? `${getPassRate(selectedOfficerResults)}%` : "No pass/fail runs"}
+                    </p>
+                    <p>Trend: {getPerformanceTrend(selectedOfficerResults)}</p>
                   </div>
+                </div>
 
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                      <FileText size={15} className="text-blue-400" />
-                      Saved Drill Runs
+                {malfunctions.filter(
+                  (malfunction) => malfunction.rangeDayId === selectedRangeDay.id,
+                ).length > 0 ? (
+                  <div className="rounded-3xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
+                    <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-amber-300">
+                      <Wrench size={15} />
+                      Firearm Malfunctions Logged
                     </h3>
 
-                    <div className="max-h-[720px] space-y-4 overflow-y-auto pr-1">
-                      {selectedActivitySummaries.length === 0 ? (
-                        <p className="text-[12px] text-slate-500">
-                          No drill runs entered yet.
-                        </p>
-                      ) : (
-                        selectedActivitySummaries.map((activity) => {
-                          const passedCount = activity.results.filter(
-                            (result) =>
-                              result.finalPassed === true ||
-                              result.passed === true,
-                          ).length;
+                    <div className="space-y-2">
+                      {malfunctions
+                        .filter(
+                          (malfunction) =>
+                            malfunction.rangeDayId === selectedRangeDay.id,
+                        )
+                        .map((malfunction) => (
+                          <div
+                            key={malfunction.id}
+                            className="rounded-2xl border border-amber-500/20 bg-slate-950/40 px-3 py-3"
+                          >
+                            <p className="text-[12px] font-semibold text-white">
+                              {getFirearmName(malfunction.firearmId)}
+                            </p>
+                            <p className="text-[11px] text-amber-300">
+                              {malfunction.type} · Armorer inspection required
+                            </p>
+                            {malfunction.notes && (
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                {malfunction.notes}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 text-[12px] text-slate-500">
+                    No firearm malfunctions logged for this range day.
+                  </div>
+                )}
+              </div>
 
-                          const failedCount = activity.results.filter(
-                            (result) =>
-                              result.finalPassed === false ||
-                              result.passed === false,
-                          ).length;
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                  <FileText size={15} className="text-blue-400" />
+                  Saved Drill Runs
+                </h3>
 
-                          const malfunctionCount = activity.results.filter(
-                            (result) => Boolean(result.malfunctionIds?.length),
-                          ).length;
+                <div className="max-h-[720px] space-y-4 overflow-y-auto pr-1">
+                  {selectedActivitySummaries.length === 0 ? (
+                    <p className="text-[12px] text-slate-500">
+                      No drill runs entered yet.
+                    </p>
+                  ) : (
+                    selectedActivitySummaries.map((activity) => {
+                      const passedCount =
+                        activity.results.filter(
+                          (result) =>
+                            result.finalPassed === true ||
+                            result.passed === true,
+                        ).length;
 
-                          return (
-                            <section
-                              key={activity.key}
-                              className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40"
-                            >
-                              <header className="border-b border-slate-800 bg-slate-950/70 px-4 py-3">
+                      const failedCount =
+                        activity.results.filter(
+                          (result) =>
+                            result.finalPassed === false ||
+                            result.passed === false,
+                        ).length;
+
+                      const malfunctionCount =
+                        activity.results.filter(
+                          (result) =>
+                            Boolean(
+                              result.malfunctionIds?.length,
+                            ),
+                        ).length;
+
+                      return (
+                        <section
+                          key={activity.key}
+                          className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/40"
+                        >
+                          <header className="border-b border-slate-800 bg-slate-950/70 px-4 py-3">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div>
+                                <p className="text-[13px] font-semibold text-white">
+                                  {activity.drill.name}
+                                </p>
+
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  {getRunLabel(
+                                    activity.drill,
+                                    activity.runNumber,
+                                  )}{" "}
+                                  ·{" "}
+                                  {activity.drill.firearmType ||
+                                    "Any firearm"}{" "}
+                                  ·{" "}
+                                  {getScoringFormat(
+                                    activity.drill,
+                                  )}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5">
+                                <StatusPill
+                                  label={`${activity.results.length} result${activity.results.length === 1 ? "" : "s"}`}
+                                  tone="slate"
+                                />
+
+                                {passedCount > 0 ? (
+                                  <StatusPill
+                                    label={`${passedCount} passed`}
+                                    tone="green"
+                                  />
+                                ) : null}
+
+                                {failedCount > 0 ? (
+                                  <StatusPill
+                                    label={`${failedCount} failed`}
+                                    tone="red"
+                                  />
+                                ) : null}
+
+                                {malfunctionCount > 0 ? (
+                                  <StatusPill
+                                    label={`${malfunctionCount} malfunction${malfunctionCount === 1 ? "" : "s"}`}
+                                    tone="amber"
+                                  />
+                                ) : null}
+                              </div>
+                            </div>
+                          </header>
+
+                          <div className="divide-y divide-slate-800">
+                            {activity.results.map((result) => (
+                              <div
+                                key={result.id}
+                                className="px-4 py-3"
+                              >
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                   <div>
-                                    <p className="text-[13px] font-semibold text-white">
-                                      {activity.drill.name}
+                                    <p className="text-[12px] font-semibold text-white">
+                                      {getUserName(
+                                        result.officerId,
+                                      )}
                                     </p>
 
                                     <p className="mt-1 text-[11px] text-slate-500">
-                                      {getRunLabel(
-                                        activity.drill,
-                                        activity.runNumber,
-                                      )}{" "}
-                                      ·{" "}
-                                      {activity.drill.firearmType ||
-                                        "Any firearm"}{" "}
-                                      · {getScoringFormat(activity.drill)}
+                                      {getFirearmName(
+                                        result.firearmId,
+                                      )}
                                     </p>
                                   </div>
 
-                                  <div className="flex flex-wrap gap-1.5">
-                                    <StatusPill
-                                      label={`${activity.results.length} result${activity.results.length === 1 ? "" : "s"}`}
-                                      tone="slate"
-                                    />
-
-                                    {passedCount > 0 ? (
-                                      <StatusPill
-                                        label={`${passedCount} passed`}
-                                        tone="green"
-                                      />
-                                    ) : null}
-
-                                    {failedCount > 0 ? (
-                                      <StatusPill
-                                        label={`${failedCount} failed`}
-                                        tone="red"
-                                      />
-                                    ) : null}
-
-                                    {malfunctionCount > 0 ? (
-                                      <StatusPill
-                                        label={`${malfunctionCount} malfunction${malfunctionCount === 1 ? "" : "s"}`}
-                                        tone="amber"
-                                      />
-                                    ) : null}
-                                  </div>
+                                  {result.malfunctionIds?.length ? (
+                                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
+                                      Malfunction
+                                    </span>
+                                  ) : null}
                                 </div>
-                              </header>
 
-                              <div className="divide-y divide-slate-800">
-                                {activity.results.map((result) => (
-                                  <div key={result.id} className="px-4 py-3">
-                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                      <div>
-                                        <p className="text-[12px] font-semibold text-white">
-                                          {getUserName(result.officerId)}
-                                        </p>
+                                <p className="mt-2 text-[11px] text-slate-400">
+                                  Result:{" "}
+                                  {formatResultMetric(
+                                    result,
+                                    activity.drill,
+                                  ) || "—"}{" "}
+                                  · Passed:{" "}
+                                  {typeof result.passed ===
+                                  "boolean"
+                                    ? result.passed
+                                      ? "Yes"
+                                      : "No"
+                                    : "—"}{" "}
+                                  · Completed:{" "}
+                                  {result.completed
+                                    ? "Yes"
+                                    : "No"}{" "}
+                                  · Standard:{" "}
+                                  {typeof result.departmentStandardPassed === "boolean"
+       ? result.departmentStandardPassed
+         ? isQualificationDrill(selectedDrill)
+           ? "Pass"
+           : "Met"
+         : isQualificationDrill(selectedDrill)
+           ? "Fail"
+           : "Failed"
+       : "—"}
+                                </p>
 
-                                        <p className="mt-1 text-[11px] text-slate-500">
-                                          {getFirearmName(result.firearmId)}
-                                        </p>
-                                      </div>
-
-                                      {result.malfunctionIds?.length ? (
-                                        <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-300">
-                                          Malfunction
-                                        </span>
-                                      ) : null}
-                                    </div>
-
-                                    <p className="mt-2 text-[11px] text-slate-400">
-                                      Result:{" "}
-                                      {formatResultMetric(
-                                        result,
-                                        activity.drill,
-                                      ) || "—"}{" "}
-                                      · Passed:{" "}
-                                      {typeof result.passed === "boolean"
-                                        ? result.passed
-                                          ? "Yes"
-                                          : "No"
-                                        : "—"}{" "}
-                                      · Completed:{" "}
-                                      {result.completed ? "Yes" : "No"} ·
-                                      Standard:{" "}
-                                      {typeof result.departmentStandardPassed ===
-                                      "boolean"
-                                        ? result.departmentStandardPassed
-                                          ? isQualificationDrill(selectedDrill)
-                                            ? "Pass"
-                                            : "Met"
-                                          : isQualificationDrill(selectedDrill)
-                                            ? "Fail"
-                                            : "Failed"
-                                        : "—"}
-                                    </p>
-
-                                    {result.notes ? (
-                                      <p className="mt-1 text-[11px] text-slate-500">
-                                        {result.notes}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                ))}
+                                {result.notes ? (
+                                  <p className="mt-1 text-[11px] text-slate-500">
+                                    {result.notes}
+                                  </p>
+                                ) : null}
                               </div>
-                            </section>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })
+                  )}
                 </div>
-              )}
+              </div>
+            </div>
+          )}
 
-              {activeRangeDayTab === "aar" && (
-                <div
-                  aria-disabled={!canEditSelectedRangeDay}
-                  className={`grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}
-                >
-                  <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                    <div className="mb-4">
-                      <h2 className="text-[17px] font-bold text-white">
-                        After Action Review
-                      </h2>
-                      <p className="mt-1 text-[12px] text-slate-500">
-                        Capture lessons learned while they are still fresh and
-                        turn them into future training intelligence.
-                      </p>
-                    </div>
 
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Overall Rating
-                        </label>
-                        <select
-                          value={selectedAar.overallRating ?? ""}
-                          onChange={(event) =>
-                            handleUpdateAar("overallRating", event.target.value)
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          <option value="">Not rated</option>
-                          <option value="Excellent">Excellent</option>
-                          <option value="Good">Good</option>
-                          <option value="Needs Improvement">
-                            Needs Improvement
-                          </option>
-                          <option value="Serious Concerns">
-                            Serious Concerns
-                          </option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                          Objectives Achieved
-                        </label>
-                        <select
-                          value={selectedAar.objectivesAchieved ?? ""}
-                          onChange={(event) =>
-                            handleUpdateAar(
-                              "objectivesAchieved",
-                              event.target
-                                .value as RangeDayAAR["objectivesAchieved"],
-                            )
-                          }
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                        >
-                          <option value="">Not selected</option>
-                          <option value="Yes">Yes</option>
-                          <option value="Partial">Partial</option>
-                          <option value="No">No</option>
-                        </select>
-                      </div>
-
-                      {[
-                        ["wentWell", "What Went Well"],
-                        ["improveNextTime", "Improve Next Time"],
-                        ["safetyConcerns", "Safety Concerns"],
-                        ["trainingObservations", "Training Observations"],
-                        ["followUpActions", "Follow-Up Actions"],
-                      ].map(([key, label]) => (
-                        <div key={key} className="lg:col-span-2">
-                          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
-                            {label}
-                          </label>
-                          <textarea
-                            value={String(
-                              selectedAar[key as keyof RangeDayAAR] ?? "",
-                            )}
-                            onChange={(event) =>
-                              handleUpdateAar(
-                                key as keyof RangeDayAAR,
-                                event.target.value as never,
-                              )
-                            }
-                            rows={3}
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-5">
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                        <Target size={15} className="text-blue-400" />
-                        Training Intelligence
-                      </h3>
-                      <p className="text-[12px] leading-5 text-slate-500">
-                        Later, TracePoint can mine AARs for repeated
-                        deficiencies, facility problems, equipment issues, and
-                        drills that should be scheduled again.
-                      </p>
-                    </div>
-
-                    <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
-                      <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
-                        <ClipboardList size={15} className="text-blue-400" />
-                        Training Follow-Up
-                      </h3>
-                      <p className="whitespace-pre-line text-[12px] leading-5 text-slate-400">
-                        {selectedAar.followUpActions ||
-                          "No follow-up actions entered yet."}
-                      </p>
-                    </div>
-                  </div>
+          {activeRangeDayTab === "aar" && (
+            <div aria-disabled={!canEditSelectedRangeDay} className={`grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.8fr)] ${!canEditSelectedRangeDay ? "pointer-events-none opacity-70" : ""}`}>
+              <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                <div className="mb-4">
+                  <h2 className="text-[17px] font-bold text-white">
+                    After Action Review
+                  </h2>
+                  <p className="mt-1 text-[12px] text-slate-500">
+                    Capture lessons learned while they are still fresh and turn them into future training intelligence.
+                  </p>
                 </div>
-              )}
-            </section>
-          </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Overall Rating
+                    </label>
+                    <select
+                      value={selectedAar.overallRating ?? ""}
+                      onChange={(event) => handleUpdateAar("overallRating", event.target.value)}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="">Not rated</option>
+                      <option value="Excellent">Excellent</option>
+                      <option value="Good">Good</option>
+                      <option value="Needs Improvement">Needs Improvement</option>
+                      <option value="Serious Concerns">Serious Concerns</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                      Objectives Achieved
+                    </label>
+                    <select
+                      value={selectedAar.objectivesAchieved ?? ""}
+                      onChange={(event) =>
+                        handleUpdateAar(
+                          "objectivesAchieved",
+                          event.target.value as RangeDayAAR["objectivesAchieved"],
+                        )
+                      }
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="">Not selected</option>
+                      <option value="Yes">Yes</option>
+                      <option value="Partial">Partial</option>
+                      <option value="No">No</option>
+                    </select>
+                  </div>
+
+                  {[
+                    ["wentWell", "What Went Well"],
+                    ["improveNextTime", "Improve Next Time"],
+                    ["safetyConcerns", "Safety Concerns"],
+                    ["trainingObservations", "Training Observations"],
+                    ["followUpActions", "Follow-Up Actions"],
+                  ].map(([key, label]) => (
+                    <div key={key} className="lg:col-span-2">
+                      <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+                        {label}
+                      </label>
+                      <textarea
+                        value={String(selectedAar[key as keyof RangeDayAAR] ?? "")}
+                        onChange={(event) =>
+                          handleUpdateAar(
+                            key as keyof RangeDayAAR,
+                            event.target.value as never,
+                          )
+                        }
+                        rows={3}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-[13px] text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <Target size={15} className="text-blue-400" />
+                    Training Intelligence
+                  </h3>
+                  <p className="text-[12px] leading-5 text-slate-500">
+                    Later, TracePoint can mine AARs for repeated deficiencies, facility problems, equipment issues, and drills that should be scheduled again.
+                  </p>
+                </div>
+
+                <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
+                  <h3 className="mb-3 flex items-center gap-2 text-[14px] font-bold text-white">
+                    <ClipboardList size={15} className="text-blue-400" />
+                    Training Follow-Up
+                  </h3>
+                  <p className="whitespace-pre-line text-[12px] leading-5 text-slate-400">
+                    {selectedAar.followUpActions || "No follow-up actions entered yet."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
         </TracePointShell>
       </div>
 
@@ -8122,3 +7923,12 @@ export default function RangeDaysPage() {
     </>
   );
 }
+
+
+
+
+
+
+
+
+

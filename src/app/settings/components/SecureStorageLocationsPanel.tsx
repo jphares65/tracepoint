@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { STORAGE_LOCATION_MANAGEMENT_PERMISSION } from "@/lib/armory/storage-location-link";
 
 type Location = {
   id: string;
@@ -12,9 +13,8 @@ type Location = {
 export default function SecureStorageLocationsPanel() {
   const { hasPermission } = useTracePointAccess();
 
-  const canManage =
-    hasPermission("firearm_custody.manage_storage_locations") ||
-    hasPermission("manage_firearms");
+  // The same permission the API and the database functions (028/034) require.
+  const canManage = hasPermission(STORAGE_LOCATION_MANAGEMENT_PERMISSION);
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [name, setName] = useState("");
@@ -227,6 +227,12 @@ export default function SecureStorageLocationsPanel() {
           )}
         </div>
       )}
+
+      {!canManage ? (
+        <p className="text-xs text-slate-500">
+          Adding or changing locations needs the Manage Firearm Storage Locations permission, granted to roles in Settings.
+        </p>
+      ) : null}
 
       {canManage && (
         <div className="grid gap-2 sm:grid-cols-2">

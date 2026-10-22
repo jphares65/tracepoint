@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type FormEvent,
@@ -275,7 +276,8 @@ function RequestDrawer({
   initialRecord,
 }: {
   onClose: () => void;
-  onSubmit: (data: RequestFormData) => void;
+  // Resolves to the refusal to show in the drawer, or null once recorded.
+  onSubmit: (data: RequestFormData) => Promise<string | null>;
   initialRecord?: OffDutyFirearm | null;
 }) {
   const [make, setMake] = useState(initialRecord?.make ?? "");
@@ -307,14 +309,18 @@ function RequestDrawer({
     initialRecord?.officerNotes ?? "",
   );
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const inputClass =
     "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-blue-500";
   const selectClass =
     "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-[13px] text-slate-200 outline-none focus:border-blue-500";
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // C-48: one tap is one request, even before the button re-renders.
+    if (submittingRef.current) return;
 
     if (
       !make.trim() ||
@@ -336,7 +342,10 @@ function RequestDrawer({
       return;
     }
 
-    onSubmit({
+    submittingRef.current = true;
+    setSubmitting(true);
+    setError("");
+    const failure = await onSubmit({
       make: make.trim(),
       model: model.trim(),
       firearmType: firearmType.trim(),
@@ -352,11 +361,17 @@ function RequestDrawer({
       policyAcknowledged,
       officerNotes: officerNotes.trim(),
     });
+    submittingRef.current = false;
+    setSubmitting(false);
+    if (failure) setError(failure);
   }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 p-0 backdrop-blur-sm sm:p-4">
       <form
+        role="dialog"
+        aria-modal="true"
+        aria-label={initialRecord ? "Correct & Resubmit Request" : "Submit Off-Duty Firearm Request"}
         onSubmit={handleSubmit}
         className="flex h-full w-full max-w-2xl flex-col overflow-hidden border-slate-800 bg-slate-950 shadow-2xl sm:rounded-2xl sm:border"
       >
@@ -540,7 +555,10 @@ function RequestDrawer({
           </section>
 
           {error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300">
+            <div
+              role="alert"
+              className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-300"
+            >
               {error}
             </div>
           )}
@@ -557,10 +575,15 @@ function RequestDrawer({
 
           <button
             type="submit"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500"
+            disabled={submitting}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Send size={15} />
-            {initialRecord ? "Resubmit for Review" : "Submit to Chief"}
+            {submitting
+              ? "Submitting…"
+              : initialRecord
+                ? "Resubmit for Review"
+                : "Submit to Chief"}
           </button>
         </div>
       </form>
@@ -575,6 +598,7 @@ function RequestDrawer({
 function ReviewDrawer({
   record,
   reviewMode,
+  isOwnRequest,
   canManageInspections,
   onClose,
   onDecision,
@@ -582,8 +606,10 @@ function ReviewDrawer({
 }: {
   record: OffDutyFirearm;
   reviewMode: boolean;
+  isOwnRequest: boolean;
   canManageInspections: boolean;
   onClose: () => void;
+  // Resolves to the refusal to show in the drawer, or null once recorded.
   onDecision: (
     action: "Approve" | "Deny" | "Return",
     notes: string,
@@ -591,7 +617,7 @@ function ReviewDrawer({
     expirationDate: string,
     qualificationOverride: boolean,
     qualificationOverrideReason: string,
-  ) => void;
+  ) => Promise<string | null>;
   onInspectionRecorded: () => Promise<void>;
 }) {
   const [notes, setNotes] = useState(record.decisionNotes ?? "");
@@ -603,6 +629,8 @@ function ReviewDrawer({
   );
   const [error, setError] = useState("");
   const [qualificationOverride, setQualificationOverride] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const decidingRef = useRef(false);
   const [qualificationOverrideReason, setQualificationOverrideReason] =
     useState("");
 
@@ -709,7 +737,9 @@ function ReviewDrawer({
     }
   }
 
-  function submitDecision(action: "Approve" | "Deny" | "Return") {
+  async function submitDecision(action: "Approve" | "Deny" | "Return") {
+    // C-48: one tap is one decision, even before the buttons re-render.
+    if (decidingRef.current) return;
     if (action === "Approve" && (!effectiveDate || !expirationDate)) {
       setError("Effective and expiration dates are required for approval.");
       return;
@@ -734,8 +764,9 @@ function ReviewDrawer({
     }
 
     setError("");
-
-    onDecision(
+    decidingRef.current = true;
+    setDeciding(true);
+    const failure = await onDecision(
       action,
       notes.trim(),
       effectiveDate,
@@ -743,11 +774,19 @@ function ReviewDrawer({
       qualificationOverride,
       qualificationOverrideReason.trim(),
     );
+    decidingRef.current = false;
+    setDeciding(false);
+    if (failure) setError(failure);
   }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60 p-0 backdrop-blur-sm sm:p-4">
-      <div className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-slate-800 bg-slate-950 shadow-2xl sm:rounded-2xl sm:border">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={reviewMode ? "Chief Review" : "Request Details"}
+        className="flex h-full w-full max-w-3xl flex-col overflow-hidden border-slate-800 bg-slate-950 shadow-2xl sm:rounded-2xl sm:border"
+      >
         <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-4 py-4 sm:px-6">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">
@@ -997,7 +1036,16 @@ function ReviewDrawer({
               </div>
             )}
           </section>
-          {reviewMode && record.requestStatus === "Pending Command Review" && (
+
+          {reviewMode &&
+            record.requestStatus === "Pending Command Review" &&
+            isOwnRequest && (
+              <section className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4 text-[12px] text-amber-200">
+                You submitted this request, so another reviewer must decide it.
+              </section>
+            )}
+
+          {reviewMode && record.requestStatus === "Pending Command Review" && !isOwnRequest && (
             <section className="rounded-2xl border border-blue-500/30 bg-blue-500/[0.05] p-4">
               <h3 className="mb-3 flex items-center gap-2 text-[14px] font-semibold text-white">
                 <UserCheck size={15} className="text-blue-400" />
@@ -1116,14 +1164,17 @@ function ReviewDrawer({
               />
 
               {error && (
-                <p className="mt-2 text-[11px] text-red-300">{error}</p>
+                <p role="alert" className="mt-2 text-[11px] text-red-300">
+                  {error}
+                </p>
               )}
 
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
-                  onClick={() => submitDecision("Return")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[12px] font-semibold text-amber-300"
+                  onClick={() => void submitDecision("Return")}
+                  disabled={deciding}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-[12px] font-semibold text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RotateCcw size={14} />
                   Return
@@ -1131,8 +1182,9 @@ function ReviewDrawer({
 
                 <button
                   type="button"
-                  onClick={() => submitDecision("Deny")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-[12px] font-semibold text-red-300"
+                  onClick={() => void submitDecision("Deny")}
+                  disabled={deciding}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-2.5 text-[12px] font-semibold text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <XCircle size={14} />
                   Deny
@@ -1140,8 +1192,9 @@ function ReviewDrawer({
 
                 <button
                   type="button"
-                  onClick={() => submitDecision("Approve")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-[12px] font-semibold text-white hover:bg-emerald-500"
+                  onClick={() => void submitDecision("Approve")}
+                  disabled={deciding}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-[12px] font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <CheckCircle2 size={14} />
                   Approve
@@ -1257,6 +1310,7 @@ export default function OffDutyFirearmsPage() {
   const [canManageInspections, setCanManageInspections] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
+  const [pageNotice, setPageNotice] = useState("");
   const [portalMode, setPortalMode] = useState<PortalMode>("Officer Portal");
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<OffDutyTab>("All Records");
@@ -1438,8 +1492,11 @@ export default function OffDutyFirearmsPage() {
           },
         ];
 
-  async function handleSubmitRequest(data: RequestFormData) {
+  // C-48: the drawer shows a refusal where the user acted; success closes it
+  // and is confirmed on the page. Never window.alert.
+  async function handleSubmitRequest(data: RequestFormData): Promise<string | null> {
     setPageError("");
+    setPageNotice("");
 
     try {
       const isResubmission = Boolean(editingRecord);
@@ -1480,16 +1537,18 @@ export default function OffDutyFirearmsPage() {
       setEditingRecord(null);
       setRequestDrawerOpen(false);
       setActiveTab("All Records");
+      setPageNotice(
+        isResubmission
+          ? "Request resubmitted for command review."
+          : "Request submitted for command review.",
+      );
 
       await loadOffDutyRequests();
+      return null;
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "The off-duty firearm request could not be saved.";
-
-      setPageError(message);
-      window.alert(message);
+      return error instanceof Error
+        ? error.message
+        : "The off-duty firearm request could not be saved.";
     }
   }
 
@@ -1500,10 +1559,11 @@ export default function OffDutyFirearmsPage() {
     expirationDate: string,
     qualificationOverride: boolean,
     qualificationOverrideReason: string,
-  ) {
-    if (!selectedRecord) return;
+  ): Promise<string | null> {
+    if (!selectedRecord) return "Select a request first.";
 
     setPageError("");
+    setPageNotice("");
 
     try {
       const response = await fetch(
@@ -1535,16 +1595,20 @@ export default function OffDutyFirearmsPage() {
       }
 
       setSelectedRecordId(null);
+      setPageNotice(
+        action === "Approve"
+          ? "Request approved."
+          : action === "Deny"
+            ? "Request denied."
+            : "Request returned for correction.",
+      );
 
       await loadOffDutyRequests();
+      return null;
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "The command decision could not be saved.";
-
-      setPageError(message);
-      window.alert(message);
+      return error instanceof Error
+        ? error.message
+        : "The command decision could not be saved.";
     }
   }
 
@@ -1570,6 +1634,7 @@ export default function OffDutyFirearmsPage() {
         <ReviewDrawer
           record={selectedRecord}
           reviewMode={portalMode === "Department View" && canReview}
+          isOwnRequest={selectedRecord.officerId === currentUserId}
           canManageInspections={canManageInspections}
           onClose={() => setSelectedRecordId(null)}
           onDecision={handleDecision}
@@ -1586,6 +1651,15 @@ export default function OffDutyFirearmsPage() {
       {pageError && (
         <div className="mb-4 rounded-xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-300">
           {pageError}
+        </div>
+      )}
+
+      {pageNotice && (
+        <div
+          role="status"
+          className="mb-4 rounded-xl border border-emerald-900/60 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200"
+        >
+          {pageNotice}
         </div>
       )}
 

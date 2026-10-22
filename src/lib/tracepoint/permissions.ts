@@ -46,7 +46,7 @@ export const PERMISSION_COVERAGE: readonly PermissionCoverage[] = [
   { code: "firearm_custody.approve_restricted_checkout", displayName: "Approve Restricted Firearm Checkout", description: "Approve a restricted firearm checkout.", actions: ["Approve"], modules: ["Armory Custody"], routes: ["/api/armory/firearms/*/custody"], tables: ["firearm_possession_restrictions"] },
   { code: "firearm_custody.manage_restrictions", displayName: "Manage Firearm Possession Restrictions", description: "Manage firearm possession restrictions.", actions: ["Create", "Edit"], modules: ["Armory Custody"], routes: ["/api/armory/firearms/*/custody"], tables: ["firearm_possession_restrictions"] },
   { code: "firearm_custody.override", displayName: "Override Firearm Custody", description: "Correct custody with an audited administrative reason.", actions: ["Administer"], modules: ["Armory Custody"], routes: ["/api/armory/firearms/*/custody"], tables: ["firearm_current_custody", "firearm_custody_events"] },
-  { code: "firearm_custody.manage_storage_locations", displayName: "Manage Firearm Storage Locations", description: "Manage secure firearm storage locations.", actions: ["Configure"], modules: ["Armory Custody"], routes: ["/api/armory/storage-locations"], tables: ["firearm_storage_locations"] },
+  { code: "firearm_custody.manage_storage_locations", displayName: "Manage Firearm Storage Locations", description: "Manage secure firearm storage locations.", actions: ["Configure"], modules: ["Armory Custody"], routes: ["/firearms/storage-locations", "/api/armory/storage-locations"], tables: ["firearm_storage_locations"] },
   { code: "firearm_custody.generate_qr", displayName: "Generate Firearm Custody QR Codes", description: "Reserved for a later QR workflow.", actions: ["Configure"], modules: ["Armory Custody"], routes: ["/api/armory/storage-locations"], tables: ["firearm_storage_locations"] },
   { code: "firearm_custody.view_history", displayName: "View Firearm Custody History", description: "View custody timeline.", actions: ["View"], modules: ["Armory Custody"], routes: ["/api/armory/firearms/*/custody"], tables: ["firearm_custody_events"] },
   { code: "manage_firearm_restrictions", displayName: "Manage Firearm Restrictions", description: "Create, change, and remove No Carry and Duty Only restrictions without changing assignment.", actions: ["Create", "Edit", "Delete/Archive"], modules: ["Firearms"], routes: ["/api/armory/firearms/*/custody"], tables: ["firearm_possession_restrictions", "audit_events"] },
@@ -81,6 +81,8 @@ const ROUTE_PERMISSION_RULES: readonly RoutePermissionRule[] = [
   { prefix: "/firearms/ammunition/reconciliation", requirement: { anyOf: ["manage_firearms", "view_command_dashboard"] } },
   { prefix: "/firearms/ammunition", requirement: { anyOf: ["manage_firearms", "view_command_dashboard"] } },
   { prefix: "/firearms/inspections", requirement: { anyOf: ["manage_inspections", "manage_firearms", "view_command_dashboard"] } },
+  // SV-31: storage-location management, for the permission the database checks (034).
+  { prefix: "/firearms/storage-locations", requirement: { anyOf: ["firearm_custody.manage_storage_locations"] } },
   { prefix: "/command-dashboard", requirement: { anyOf: ["view_command_dashboard"] } },
   { prefix: "/analytics", requirement: { anyOf: ["view_analytics"] } },
   { prefix: "/agency-training", requirement: {} },

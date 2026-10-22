@@ -4,6 +4,7 @@ import { withPostgresAuthorization } from "./postgres-authorization-core.ts";
 type Operation = "select" | "insert" | "update" | "delete" | "upsert";
 type Filter = { column: string; operator: string; value: unknown };
 type Result<T = unknown> = { data: T | null; error: null | { message: string; code?: string }; count: number | null; status: number; statusText: string };
+export type PostgresTransaction = { query(text: string, values?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> };
 type Relation = { alias: string; table: string; local: string; foreign: string; cardinality: "one" | "many" };
 
 const identifier = /^[a-z][a-z0-9_]*$/;
@@ -161,6 +162,13 @@ export class PostgresDataClient {
   async execute(text: string, values: readonly unknown[]) {
     if (this.systemTables) return this.pool.query(text, [...values]) as unknown as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
     return withPostgresAuthorization(this.pool, { subjectId: this.subjectId, departmentId: this.departmentId, supportMode: this.supportMode }, async client => client.query(text, values) as Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>);
+  }
+
+  /** Several statements in one authorized transaction; row locks taken inside hold until it ends. */
+  async transaction<T>(operation: (client: PostgresTransaction) => Promise<T>): Promise<T> {
+    if (this.systemTables) throw new Error("Notification dispatcher transactions are not supported.");
+    return withPostgresAuthorization(this.pool, { subjectId: this.subjectId, departmentId: this.departmentId, supportMode: this.supportMode },
+      async client => operation(client as unknown as PostgresTransaction));
   }
 
   async rpc(name: string, args: Record<string, unknown> = {}): Promise<Result> {

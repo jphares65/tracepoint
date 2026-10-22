@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -38,7 +39,17 @@ import {
 import { formatDateTime } from "@/lib/format/date";
 
 import TracePointShell from "@/app/components/TracePointShell";
-import OffDutyRulesPanel from "@/app/settings/components/OffDutyRulesPanel";
+import OffDutyRulesPanel, { type OffDutyRules } from "@/app/settings/components/OffDutyRulesPanel";
+import SaveStatus, { type SaveResult } from "@/app/settings/components/SaveStatus";
+import {
+  headerSaveApplies,
+  RULES_SAVE_SCOPES,
+  revertRulesScope,
+  rulesScopeDirty,
+  rulesScopePayload,
+  type RulesSaveScope,
+} from "@/lib/settings/rules-save";
+import { useDirtyGuard } from "@/lib/ui/use-dirty-guard";
 import CertificationRulesPanel from "@/app/settings/components/CertificationRulesPanel";
 import EquipmentRulesPanel from "@/app/settings/components/EquipmentRulesPanel";
 import NotificationPreferencesPanel from "@/app/settings/components/NotificationPreferencesPanel";
@@ -324,7 +335,8 @@ function Notice({
 
   return (
     <div
-      className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm ${styles[tone]}`}
+      role={tone === "error" ? "alert" : "status"}
+      className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm shadow-lg shadow-black/30 ${styles[tone]}`}
     >
       <div className="flex min-w-0 items-start gap-2">
         {tone === "success" ? (
@@ -467,6 +479,7 @@ function NumberInput({
       <FieldLabel label={label} hint={hint} />
       <input
         type="number"
+        aria-label={label}
         value={value}
         min={min}
         max={max}
@@ -558,15 +571,75 @@ function ToggleRow({
   );
 }
 
+// The settings data client reports failures as plain { message } objects.
+function errorText(error: unknown, fallback: string) {
+  const message =
+    error && typeof error === "object" && "message" in error
+      ? (error as { message?: unknown }).message
+      : null;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
+// SV-29 / E-04: the Save for one Rules sub-tab, named for what it saves, with
+// its result beside it. Sticky so it stays in reach on a long sub-tab.
+function RulesSaveBar({
+  scope,
+  description,
+  dirty,
+  saving,
+  result,
+  canSave,
+  onSave,
+}: {
+  scope: RulesSaveScope;
+  description: string;
+  dirty: boolean;
+  saving: boolean;
+  result: SaveResult;
+  canSave: boolean;
+  onSave: () => void;
+}) {
+  const label = RULES_SAVE_SCOPES[scope].label;
+
+  return (
+    <div className="sticky bottom-3 z-10 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/90 p-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between xl:col-span-2">
+      <div className="min-w-0 space-y-1.5">
+        <p className="text-xs leading-5 text-slate-500">{description}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <SaveStatus name={label} result={result} dirty={dirty} />
+        </div>
+      </div>
+      {canSave ? (
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? (
+            <LoaderCircle size={15} className="animate-spin" />
+          ) : (
+            <Save size={15} />
+          )}
+          {saving ? `Saving ${label}...` : `Save ${label}`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function Modal({
   title,
   description,
   onClose,
+  error,
   children,
 }: {
   title: string;
   description?: string;
   onClose: () => void;
+  // UX-RB2-7 (E-01): a failure from this dialog is shown here, not behind it.
+  error?: string | null;
   children: ReactNode;
 }) {
   return (
@@ -599,7 +672,14 @@ function Modal({
           </button>
         </header>
 
-        <div className="p-5">{children}</div>
+        <div className="p-5">
+          {error ? (
+            <div role="alert" className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {error}
+            </div>
+          ) : null}
+          {children}
+        </div>
       </section>
     </div>
   );
@@ -734,6 +814,10 @@ export default function AdminSettingsPage() {
 
   const [activeTab, setActiveTab] = useState<TabId>("agency");
   const [loading, setLoading] = useState(true);
+  // E-07: after the first load, refreshes run in the background and keep the
+  // open tab (and its save confirmation) on screen.
+  const [refreshing, setRefreshing] = useState(false);
+  const loadedDepartment = useRef<string | null>(null);
   const [savingSection, setSavingSection] = useState<string | null>(null);
   const [savedSection, setSavedSection] = useState<string | null>(null);
 
@@ -751,10 +835,23 @@ export default function AdminSettingsPage() {
     tone: NoticeTone;
     message: string;
   } | null>(null);
+  // The open dialog's own failure message (UX-RB2-7, E-01).
+  const [dialogError, setDialogError] = useState("");
 
   const [department, setDepartment] =
     useState<DepartmentForm>(EMPTY_DEPARTMENT);
   const [rules, setRules] = useState<RulesForm>(EMPTY_RULES);
+  // The rules as last loaded from the server: the baseline for unsaved changes.
+  const [savedRules, setSavedRules] = useState<RulesForm>(EMPTY_RULES);
+  // Each Rules sub-tab's last save result, shown beside its Save button.
+  const [rulesSaveResult, setRulesSaveResult] = useState<
+    Partial<Record<RulesSaveScope, SaveResult>>
+  >({});
+  const [offDutyDirty, setOffDutyDirty] = useState(false);
+  // A tab change or refresh waiting on "Discard unsaved changes?" (E-06).
+  const [pendingLeave, setPendingLeave] = useState<(() => void) | null>(null);
+  // Remounting the rules panels makes them re-read the server.
+  const [rulesPanelsKey, setRulesPanelsKey] = useState(0);
   const [security, setSecurity] = useState<SecurityForm>(EMPTY_SECURITY);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [permissions, setPermissions] = useState<PermissionRow[]>([]);
@@ -767,6 +864,12 @@ export default function AdminSettingsPage() {
   const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
   const [memberDraft, setMemberDraft] = useState<MemberDraft | null>(null);
   const [memberGroupIds, setMemberGroupIds] = useState<string[]>([]);
+  // E-02: Save Access waits for the member's current groups. A failed load
+  // saves without a group list, which leaves the memberships unchanged.
+  const [memberGroupsState, setMemberGroupsState] = useState<
+    "loading" | "loaded" | "failed"
+  >("loading");
+  const memberGroupsRequest = useRef(0);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteDraft, setInviteDraft] = useState<InviteDraft>(EMPTY_INVITE);
 
@@ -944,8 +1047,10 @@ export default function AdminSettingsPage() {
   const loadSettings = useCallback(async () => {
     if (!departmentId) return;
 
-    setLoading(true);
-    setNotice(null);
+    // AE-R1: a refresh never clears the notice a save has just shown.
+    const background = loadedDepartment.current === departmentId;
+    if (background) setRefreshing(true);
+    else setLoading(true);
 
     try {
       const response = await fetch("/api/settings/overview", {
@@ -1044,7 +1149,7 @@ export default function AdminSettingsPage() {
         unknown
       > | null;
 
-      setRules(
+      const loadedRules: RulesForm =
         rulesData
           ? {
               spring_cycle_start: String(
@@ -1120,8 +1225,9 @@ export default function AdminSettingsPage() {
                       rulesData.require_personal_rifle_spec_acknowledgment,
                     ),
             }
-          : EMPTY_RULES,
-      );
+          : EMPTY_RULES;
+      setRules(loadedRules);
+      setSavedRules(loadedRules);
 
       const securityData = securityResult.data as unknown as Record<
         string,
@@ -1232,7 +1338,9 @@ export default function AdminSettingsPage() {
           : "Settings could not be loaded.",
       );
     } finally {
+      loadedDepartment.current = departmentId;
       setLoading(false);
+      setRefreshing(false);
     }
   }, [canViewAudit, departmentId, showNotice]);
 
@@ -1298,17 +1406,19 @@ export default function AdminSettingsPage() {
     }
   }
 
-  async function saveRules() {
+  // SV-29 / E-04: each Rules sub-tab saves only the rules it shows, and the
+  // result is reported beside its Save button.
+  async function saveRules(scope: RulesSaveScope) {
     if (!canAdminister || !departmentId) return;
 
-    setSavingSection("rules");
-    setNotice(null);
+    setSavingSection(`rules:${scope}`);
+    setRulesSaveResult((current) => ({ ...current, [scope]: null }));
 
     try {
       const { error } = await dataClient.from("department_rules").upsert(
         {
           department_id: departmentId,
-          ...rules,
+          ...rulesScopePayload(scope, rules),
           updated_by: userId,
         },
         { onConflict: "department_id" },
@@ -1316,18 +1426,82 @@ export default function AdminSettingsPage() {
 
       if (error) throw error;
 
-      showNotice("success", "Operational rules saved.");
+      setRulesSaveResult((current) => ({
+        ...current,
+        [scope]: { tone: "success", message: RULES_SAVE_SCOPES[scope].saved },
+      }));
+      // Re-read the stored rules so the form shows what the server kept.
       await loadSettings();
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
-          ? error.message
-          : "Operational rules could not be saved.",
-      );
+      const message = `${errorText(
+        error,
+        `${RULES_SAVE_SCOPES[scope].label} could not be saved.`,
+      )} Your changes are still on this form.`;
+      setRulesSaveResult((current) => ({
+        ...current,
+        [scope]: { tone: "error", message },
+      }));
     } finally {
       setSavingSection(null);
     }
+  }
+
+  function editRules(scope: RulesSaveScope, patch: Partial<RulesForm>) {
+    setRulesSaveResult((current) => ({ ...current, [scope]: null }));
+    setRules((current) => ({ ...current, ...patch }));
+  }
+
+  // The Off-Duty panel shares inspection_interval_days with the Armory
+  // sub-tab and owns off_duty_renewal_days; keep the page's copy current so
+  // a later Armory save never writes a stale value back.
+  const syncOffDutyRules = useCallback((saved: OffDutyRules) => {
+    const patch = {
+      inspection_interval_days: saved.inspectionIntervalDays,
+      off_duty_renewal_days: saved.renewalDays,
+    };
+    setRules((current) => ({ ...current, ...patch }));
+    setSavedRules((current) => ({ ...current, ...patch }));
+  }, []);
+
+  const unsavedRules = [
+    ...(Object.keys(RULES_SAVE_SCOPES) as RulesSaveScope[])
+      .filter((scope) => rulesScopeDirty(scope, rules, savedRules))
+      .map((scope) => RULES_SAVE_SCOPES[scope].label),
+    ...(offDutyDirty ? ["Off-Duty Firearm Rules"] : []),
+  ];
+  const hasUnsavedChanges = unsavedRules.length > 0;
+  useDirtyGuard(hasUnsavedChanges);
+
+  // E-06: switching tab or sub-tab, or refreshing, asks before discarding.
+  function leaveRules(action: () => void) {
+    if (!hasUnsavedChanges) {
+      action();
+      return;
+    }
+    setPendingLeave(() => action);
+  }
+
+  function discardAndLeave() {
+    const action = pendingLeave;
+    setPendingLeave(null);
+    setRules((current) =>
+      (Object.keys(RULES_SAVE_SCOPES) as RulesSaveScope[]).reduce(
+        (draft, scope) => revertRulesScope(scope, draft, savedRules),
+        current,
+      ),
+    );
+    setOffDutyDirty(false);
+    setRulesPanelsKey((key) => key + 1);
+    action?.();
+  }
+
+  function refreshSettings() {
+    leaveRules(() => {
+      setNotice(null);
+      setRulesSaveResult({});
+      setRulesPanelsKey((key) => key + 1);
+      void loadSettings();
+    });
   }
 
   async function saveBranding() {
@@ -1405,6 +1579,7 @@ export default function AdminSettingsPage() {
 
   async function beginEditMember(member: MemberRow) {
     setEditingMember(member);
+    setDialogError("");
     setMemberDraft({
       badge_number: member.badge_number ?? "",
       rank_title: member.rank_title ?? "",
@@ -1415,6 +1590,9 @@ export default function AdminSettingsPage() {
     });
 
     setMemberGroupIds([]);
+    setMemberGroupsState("loading");
+    memberGroupsRequest.current += 1;
+    const request = memberGroupsRequest.current;
 
     const { data: groupMembershipRows, error: groupMembershipError } =
       await dataClient
@@ -1423,12 +1601,12 @@ export default function AdminSettingsPage() {
         .eq("department_id", departmentId)
         .eq("user_id", member.user_id);
 
+    // A later Edit Access (or a closed dialog) supersedes this response.
+    if (request !== memberGroupsRequest.current) return;
+
     if (groupMembershipError) {
-      showNotice(
-        "error",
-        groupMembershipError.message ||
-          "Group assignments could not be loaded.",
-      );
+      // Shown in the dialog beside the groups; Save then keeps the current groups.
+      setMemberGroupsState("failed");
       return;
     }
 
@@ -1442,6 +1620,7 @@ export default function AdminSettingsPage() {
           Boolean(groupId),
         ),
     );
+    setMemberGroupsState("loaded");
   }
 
   const loadQualificationStandards = useCallback(async () => {
@@ -1895,12 +2074,13 @@ export default function AdminSettingsPage() {
     }
 
     if (memberDraft.is_active && memberDraft.role_codes.length === 0) {
-      showNotice("error", "An active member must have at least one role.");
+      setDialogError("An active member must have at least one role.");
       return;
     }
 
     setSavingSection("member");
     setNotice(null);
+    setDialogError("");
 
     try {
       // One command: details, roles and groups are saved together or not at all.
@@ -1915,7 +2095,11 @@ export default function AdminSettingsPage() {
           p_employee_number: memberDraft.employee_number,
           p_is_active: memberDraft.is_active,
           p_role_codes: memberDraft.role_codes,
-          p_group_ids: memberGroupIds,
+          // E-02: without the member's loaded groups, send no group list so
+          // the server keeps the current memberships.
+          ...(memberGroupsState === "loaded"
+            ? { p_group_ids: memberGroupIds }
+            : {}),
         },
       );
 
@@ -1931,9 +2115,7 @@ export default function AdminSettingsPage() {
         await refreshAccess();
       }
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
+      setDialogError(error instanceof Error
           ? error.message
           : "The membership could not be updated.",
       );
@@ -1946,6 +2128,7 @@ export default function AdminSettingsPage() {
     if (!canAdminister) return;
 
     setEditingRoleCode(roleCode);
+    setDialogError("");
     setRolePermissionDraft([...(rolePermissionMap.get(roleCode) ?? [])]);
   }
 
@@ -1953,23 +2136,20 @@ export default function AdminSettingsPage() {
     if (!departmentId || !editingRoleCode || !canAdminister) return;
 
     if (editingRoleCode === "administrator") {
-      showNotice(
-        "error",
-        "The Administrator permission matrix is locked to prevent department lockout.",
+      setDialogError("The Administrator permission matrix is locked to prevent department lockout.",
       );
       return;
     }
 
     if (rolePermissionDraft.includes("administer_department")) {
-      showNotice(
-        "error",
-        "The Administer Department permission is reserved for the Administrator role.",
+      setDialogError("The Administer Department permission is reserved for the Administrator role.",
       );
       return;
     }
 
     setSavingSection("role-permissions");
     setNotice(null);
+    setDialogError("");
 
     try {
       const response = await fetch("/api/settings/role-permissions", {
@@ -2000,9 +2180,7 @@ export default function AdminSettingsPage() {
       setRolePermissionDraft([]);
       showNotice("success", `${roleLabel} permissions were updated.`);
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
+      setDialogError(error instanceof Error
           ? error.message
           : "The role permission matrix could not be updated.",
       );
@@ -2019,15 +2197,14 @@ export default function AdminSettingsPage() {
       !inviteDraft.fullName.trim() ||
       inviteDraft.roleCodes.length === 0
     ) {
-      showNotice(
-        "error",
-        "Email, full name, and at least one role are required.",
+      setDialogError("Email, full name, and at least one role are required.",
       );
       return;
     }
 
     setSavingSection("invite");
     setNotice(null);
+    setDialogError("");
 
     try {
       const response = await fetch("/api/settings/users/invite", {
@@ -2048,7 +2225,7 @@ export default function AdminSettingsPage() {
         }),
       });
 
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         message?: string;
       };
@@ -2067,9 +2244,7 @@ export default function AdminSettingsPage() {
       );
       await loadSettings();
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error ? error.message : "The user could not be added.",
+      setDialogError(error instanceof Error ? error.message : "The user could not be added.",
       );
     } finally {
       setSavingSection(null);
@@ -2350,7 +2525,6 @@ export default function AdminSettingsPage() {
 
   function saveCurrentTab() {
     if (activeTab === "agency") void saveAgency();
-    if (activeTab === "rules") void saveRules();
     if (activeTab === "branding") void saveBranding();
     if (activeTab === "audit") void saveSecurity();
   }
@@ -2373,11 +2547,9 @@ export default function AdminSettingsPage() {
       .length,
   }));
 
-  const currentTabCanSave =
-    activeTab === "agency" ||
-    activeTab === "rules" ||
-    activeTab === "branding" ||
-    activeTab === "audit";
+  // E-04: the header Save saves the open tab's page-level form. On Rules
+  // Engine each sub-tab has its own Save beside its fields.
+  const currentTabCanSave = headerSaveApplies(activeTab);
 
   return (
     <TracePointShell activePage="Settings">
@@ -2404,11 +2576,11 @@ export default function AdminSettingsPage() {
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
-              onClick={() => void loadSettings()}
-              disabled={loading}
+              onClick={refreshSettings}
+              disabled={loading || refreshing}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-slate-600 hover:text-white disabled:opacity-50"
             >
-              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+              <RefreshCw size={15} className={loading || refreshing ? "animate-spin" : ""} />
               Refresh
             </button>
 
@@ -2440,9 +2612,12 @@ export default function AdminSettingsPage() {
         </header>
 
         {notice ? (
-          <Notice tone={notice.tone} onClose={() => setNotice(null)}>
-            {notice.message}
-          </Notice>
+          // Sticky so the result stays in view wherever the page is scrolled.
+          <div className="sticky top-3 z-40">
+            <Notice tone={notice.tone} onClose={() => setNotice(null)}>
+              {notice.message}
+            </Notice>
+          </div>
         ) : null}
 
         <div className="overflow-x-auto rounded-3xl border border-slate-800 bg-slate-900 p-1.5">
@@ -2455,7 +2630,11 @@ export default function AdminSettingsPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() =>
+                    tab.id === activeTab
+                      ? undefined
+                      : leaveRules(() => setActiveTab(tab.id))
+                  }
                   className={`flex min-w-[150px] items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
                     active
                       ? "bg-blue-600/20 text-blue-300"
@@ -3089,6 +3268,7 @@ export default function AdminSettingsPage() {
                     setInviteGroupIds([]);
                     setInviteGroupIds([]);
                     setInviteOpen(true);
+                    setDialogError("");
                   }}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
                 >
@@ -3399,7 +3579,9 @@ export default function AdminSettingsPage() {
                     key={id}
                     type="button"
                     onClick={() =>
-                      setRulesModule(
+                      id === rulesModule
+                        ? undefined
+                        : leaveRules(() => setRulesModule(
                         id as
                           | "overview"
                           | "armory"
@@ -3409,7 +3591,7 @@ export default function AdminSettingsPage() {
                           | "offDuty"
                           | "agencyTraining"
                           | "fleet",
-                      )
+                      ))
                     }
                     className={`rounded-xl px-3.5 py-2 text-xs font-semibold transition ${
                       rulesModule === id
@@ -3473,7 +3655,7 @@ export default function AdminSettingsPage() {
                     key={module.id}
                     type="button"
                     onClick={() =>
-                      setRulesModule(
+                      leaveRules(() => setRulesModule(
                         module.id as
                           | "armory"
                           | "range"
@@ -3482,7 +3664,7 @@ export default function AdminSettingsPage() {
                           | "offDuty"
                           | "agencyTraining"
                           | "fleet",
-                      )
+                      ))
                     }
                     className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-left transition hover:border-blue-500/40 hover:bg-slate-900"
                   >
@@ -3514,10 +3696,7 @@ export default function AdminSettingsPage() {
                       value={rules.spring_cycle_start}
                       placeholder="04-01"
                       onChange={(value) =>
-                        setRules((current) => ({
-                          ...current,
-                          spring_cycle_start: value,
-                        }))
+                        editRules("range", { spring_cycle_start: value })
                       }
                     />
 
@@ -3526,10 +3705,7 @@ export default function AdminSettingsPage() {
                       value={rules.spring_cycle_end}
                       placeholder="06-30"
                       onChange={(value) =>
-                        setRules((current) => ({
-                          ...current,
-                          spring_cycle_end: value,
-                        }))
+                        editRules("range", { spring_cycle_end: value })
                       }
                     />
 
@@ -3538,10 +3714,7 @@ export default function AdminSettingsPage() {
                       value={rules.fall_cycle_start}
                       placeholder="09-01"
                       onChange={(value) =>
-                        setRules((current) => ({
-                          ...current,
-                          fall_cycle_start: value,
-                        }))
+                        editRules("range", { fall_cycle_start: value })
                       }
                     />
 
@@ -3550,10 +3723,7 @@ export default function AdminSettingsPage() {
                       value={rules.fall_cycle_end}
                       placeholder="11-30"
                       onChange={(value) =>
-                        setRules((current) => ({
-                          ...current,
-                          fall_cycle_end: value,
-                        }))
+                        editRules("range", { fall_cycle_end: value })
                       }
                     />
                   </div>
@@ -3572,10 +3742,7 @@ export default function AdminSettingsPage() {
                         max={3650}
                         hint="Days"
                         onChange={(value) =>
-                          setRules((current) => ({
-                            ...current,
-                            qualification_valid_days: value,
-                          }))
+                          editRules("range", { qualification_valid_days: value })
                         }
                       />
 
@@ -3586,19 +3753,28 @@ export default function AdminSettingsPage() {
                         max={Math.max(0, rules.qualification_valid_days - 1)}
                         hint="Days before expiration"
                         onChange={(value) =>
-                          setRules((current) => ({
-                            ...current,
+                          editRules("range", {
                             qualification_due_soon_days: Math.min(
                               value,
-                              Math.max(0, current.qualification_valid_days - 1),
+                              Math.max(0, rules.qualification_valid_days - 1),
                             ),
-                          }))
+                          })
                         }
                       />
                     </div>
                   </div>
                 </SettingsCard>
+                <RulesSaveBar
+                  scope="range"
+                  description="Saves the qualification cycles, validity and due-soon warning above. The Range rules below have their own Save."
+                  dirty={rulesScopeDirty("range", rules, savedRules)}
+                  saving={savingSection === "rules:range"}
+                  result={rulesSaveResult.range ?? null}
+                  canSave={canAdminister}
+                  onSave={() => void saveRules("range")}
+                />
                 <RangeQualificationRulesPanel
+                  key={`range-${rulesPanelsKey}`}
                   departmentId={departmentId}
                   canAdminister={canAdminister}
                 />
@@ -4084,12 +4260,9 @@ export default function AdminSettingsPage() {
                       value={rules.inspection_interval_days}
                       min={1}
                       max={3650}
-                      hint="Days"
+                      hint="Days · also the Off-Duty inspection validity"
                       onChange={(value) =>
-                        setRules((current) => ({
-                          ...current,
-                          inspection_interval_days: value,
-                        }))
+                        editRules("armory", { inspection_interval_days: value })
                       }
                     />
 
@@ -4100,19 +4273,13 @@ export default function AdminSettingsPage() {
                       max={3650}
                       hint="Days"
                       onChange={(value) =>
-                        setRules((current) => ({
-                          ...current,
-                          battery_check_interval_days: value,
-                        }))
+                        editRules("armory", { battery_check_interval_days: value })
                       }
                     />
                   </div>
                 </SettingsCard>
-                <SettingsCard
-                  title="Secure Storage"
-                  description="Manage agency locations available to firearm custody workflows."
-                >
-                  <SecureStorageLocationsPanel />
+                <SettingsCard title="Secure Storage" description="Manage agency locations available to firearm custody workflows. Location changes save immediately and are not part of Save Armory Rules.">
+                  <SecureStorageLocationsPanel key={`storage-${rulesPanelsKey}`} />
                 </SettingsCard>
                 <SettingsCard
                   title="Personally Owned Rifle Program"
@@ -4124,10 +4291,7 @@ export default function AdminSettingsPage() {
                       description="Enables officer submission and agency review of personally owned rifles for duty use."
                       checked={rules.allow_personally_owned_rifles}
                       onChange={(checked) =>
-                        setRules((current) => ({
-                          ...current,
-                          allow_personally_owned_rifles: checked,
-                        }))
+                        editRules("armory", { allow_personally_owned_rifles: checked })
                       }
                     />
 
@@ -4146,10 +4310,7 @@ export default function AdminSettingsPage() {
                         }
                         disabled={!rules.allow_personally_owned_rifles}
                         onChange={(checked) =>
-                          setRules((current) => ({
-                            ...current,
-                            require_personal_rifle_armorer_inspection: checked,
-                          }))
+                          editRules("armory", { require_personal_rifle_armorer_inspection: checked })
                         }
                       />
                       <ToggleRow
@@ -4158,10 +4319,7 @@ export default function AdminSettingsPage() {
                         checked={rules.require_personal_rifle_chief_approval}
                         disabled={!rules.allow_personally_owned_rifles}
                         onChange={(checked) =>
-                          setRules((current) => ({
-                            ...current,
-                            require_personal_rifle_chief_approval: checked,
-                          }))
+                          editRules("armory", { require_personal_rifle_chief_approval: checked })
                         }
                       />
                       <ToggleRow
@@ -4170,10 +4328,7 @@ export default function AdminSettingsPage() {
                         checked={rules.require_personal_rifle_qualification}
                         disabled={!rules.allow_personally_owned_rifles}
                         onChange={(checked) =>
-                          setRules((current) => ({
-                            ...current,
-                            require_personal_rifle_qualification: checked,
-                          }))
+                          editRules("armory", { require_personal_rifle_qualification: checked })
                         }
                       />
                       <ToggleRow
@@ -4184,10 +4339,7 @@ export default function AdminSettingsPage() {
                         }
                         disabled={!rules.allow_personally_owned_rifles}
                         onChange={(checked) =>
-                          setRules((current) => ({
-                            ...current,
-                            require_personal_rifle_annual_reinspection: checked,
-                          }))
+                          editRules("armory", { require_personal_rifle_annual_reinspection: checked })
                         }
                       />
                       <ToggleRow
@@ -4198,15 +4350,23 @@ export default function AdminSettingsPage() {
                         }
                         disabled={!rules.allow_personally_owned_rifles}
                         onChange={(checked) =>
-                          setRules((current) => ({
-                            ...current,
-                            require_personal_rifle_spec_acknowledgment: checked,
-                          }))
+                          editRules("armory", { require_personal_rifle_spec_acknowledgment: checked })
                         }
                       />
                     </div>
                   </div>
                 </SettingsCard>
+                <div className="xl:col-span-2">
+                  <RulesSaveBar
+                    scope="armory"
+                    description="Saves the inspection and battery-check intervals and the personally owned rifle program."
+                    dirty={rulesScopeDirty("armory", rules, savedRules)}
+                    saving={savingSection === "rules:armory"}
+                    result={rulesSaveResult.armory ?? null}
+                    canSave={canAdminister}
+                    onSave={() => void saveRules("armory")}
+                  />
+                </div>
               </div>
             ) : null}
 
@@ -4215,7 +4375,11 @@ export default function AdminSettingsPage() {
                 title="Off-Duty Firearm Rules"
                 description="Configure department inspection requirements and recurring authorization policy for personally owned off-duty firearms."
               >
-                <OffDutyRulesPanel />
+                <OffDutyRulesPanel
+                  key={`off-duty-${rulesPanelsKey}`}
+                  onSaved={syncOffDutyRules}
+                  onDirtyChange={setOffDutyDirty}
+                />
               </SettingsCard>
             ) : null}
 
@@ -4224,7 +4388,7 @@ export default function AdminSettingsPage() {
                 title="Certification Rules"
                 description="Define certification requirements, validity periods, readiness expectations, and operational capabilities that require a current credential."
               >
-                <CertificationRulesPanel />
+                <CertificationRulesPanel key={`certifications-${rulesPanelsKey}`} />
               </SettingsCard>
             ) : null}
 
@@ -4233,7 +4397,7 @@ export default function AdminSettingsPage() {
                 title="Equipment Readiness Rules"
                 description="Define required equipment by personnel group, validity and inspection cycles, warning periods, and readiness consequences."
               >
-                <EquipmentRulesPanel />
+                <EquipmentRulesPanel key={`equipment-${rulesPanelsKey}`} />
               </SettingsCard>
             ) : null}
 
@@ -4242,7 +4406,7 @@ export default function AdminSettingsPage() {
                 title="Agency Training Rules"
                 description="Configure recurring course requirements, personnel scope, due intervals, grace periods, and notification delivery."
               >
-                <AgencyTrainingRulesPanel />
+                <AgencyTrainingRulesPanel key={`agency-training-${rulesPanelsKey}`} />
               </SettingsCard>
             ) : null}
             {rulesModule === "fleet" ? (
@@ -4256,7 +4420,7 @@ export default function AdminSettingsPage() {
                   </p>
                 </div>
 
-                <FleetRulesPanel />
+                <FleetRulesPanel key={`fleet-${rulesPanelsKey}`} />
               </div>
             ) : null}
           </div>
@@ -4576,10 +4740,12 @@ export default function AdminSettingsPage() {
         <Modal
           title="Invite Department User"
           description="Invite a new TracePoint account or add an existing TracePoint user to this department."
+          error={dialogError}
           onClose={() => {
             if (savingSection !== "invite") {
               setInviteOpen(false);
               setInviteGroupIds([]);
+              setDialogError("");
             }
           }}
         >
@@ -4809,10 +4975,12 @@ export default function AdminSettingsPage() {
             humanize(editingRoleCode)
           } Permissions`}
           description="Changes apply to every department member assigned this role."
+          error={dialogError}
           onClose={() => {
             if (savingSection !== "role-permissions") {
               setEditingRoleCode(null);
               setRolePermissionDraft([]);
+              setDialogError("");
             }
           }}
         >
@@ -4893,15 +5061,64 @@ export default function AdminSettingsPage() {
         </Modal>
       ) : null}
 
+      {pendingLeave ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-discard-title"
+          className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6"
+        >
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            onClick={() => setPendingLeave(null)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+          />
+          <section className="relative z-10 w-full max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl shadow-black/50">
+            <h2 id="settings-discard-title" className="text-lg font-semibold text-white">
+              Discard unsaved changes?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              These rules have changes that are not saved:{" "}
+              <span className="font-semibold text-slate-200">
+                {unsavedRules.join(", ")}
+              </span>
+              . Leaving now discards them.
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setPendingLeave(null)}
+                className="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:text-white"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={discardAndLeave}
+                className="rounded-2xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-500"
+              >
+                Discard changes
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {editingMember && memberDraft ? (
         <Modal
           title={`Edit ${editingMember.full_name}`}
           description="Update membership details, status, roles, and effective access."
+          error={dialogError}
           onClose={() => {
             if (savingSection !== "member") {
               setEditingMember(null);
               setMemberDraft(null);
               setMemberGroupIds([]);
+              memberGroupsRequest.current += 1;
+              setDialogError("");
             }
           }}
         >
@@ -4989,6 +5206,18 @@ export default function AdminSettingsPage() {
                 permissions.
               </p>
 
+              {memberGroupsState === "loading" ? (
+                <p className="mt-3 text-xs text-slate-500">
+                  Loading this member&apos;s groups...
+                </p>
+              ) : null}
+              {memberGroupsState === "failed" ? (
+                <p role="alert" className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-200">
+                  Group assignments could not be loaded. Saving keeps this
+                  member&apos;s current groups.
+                </p>
+              ) : null}
+              {memberGroupsState === "loaded" ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {organizationGroups
                   .filter((group) => group.is_active)
@@ -5028,6 +5257,7 @@ export default function AdminSettingsPage() {
                   </span>
                 ) : null}
               </div>
+              ) : null}
             </div>
           </div>
 
@@ -5054,6 +5284,7 @@ export default function AdminSettingsPage() {
                 setEditingMember(null);
                 setMemberDraft(null);
                 setMemberGroupIds([]);
+                memberGroupsRequest.current += 1;
               }}
               className="rounded-2xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:text-white disabled:opacity-50"
             >
@@ -5061,7 +5292,9 @@ export default function AdminSettingsPage() {
             </button>
             <button
               type="button"
-              disabled={savingSection === "member"}
+              disabled={
+                savingSection === "member" || memberGroupsState === "loading"
+              }
               onClick={() => void saveMember()}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
             >

@@ -12,6 +12,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { initialSuperAdminDepartment } from "@/lib/platform/super-admin-selection";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
+import { moduleDisableConfirmation, moduleSwitchNotice } from "@/lib/platform/module-switch";
 
 type Department = {
   id: string;
@@ -76,6 +77,7 @@ export default function SuperAdminPage() {
     useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     // Non-administrators get the access-required view, which does not depend on this page's loading state.
@@ -162,11 +164,16 @@ export default function SuperAdminPage() {
   async function setFeatureEnabled(
     featureCode: string,
     isEnabled: boolean,
+    moduleName: string,
   ) {
     if (!departmentId) return;
+    const agencyName = selectedDepartment?.name || "this agency";
+    // UX-RB2-6 (E-52): turning a module off takes effect for the whole agency.
+    if (!isEnabled && !window.confirm(moduleDisableConfirmation(moduleName, agencyName))) return;
 
     setSavingFeature(featureCode);
     setError(null);
+    setNotice(null);
 
     try {
       const response = await fetch("/api/super-admin", {
@@ -219,6 +226,8 @@ export default function SuperAdminPage() {
           entitlements,
         };
       });
+
+      setNotice(moduleSwitchNotice(moduleName, agencyName, isEnabled));
 
       if (departmentId === access.departmentId) {
         await access.refresh();
@@ -295,8 +304,13 @@ export default function SuperAdminPage() {
         </section>
 
         {error ? (
-          <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div role="alert" className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
+          </div>
+        ) : null}
+        {notice ? (
+          <div role="status" className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            {notice}
           </div>
         ) : null}
 
@@ -421,6 +435,7 @@ export default function SuperAdminPage() {
                           void setFeatureEnabled(
                             feature.code,
                             !enabled,
+                            feature.display_name,
                           )
                         }
                         className={`relative h-7 w-12 shrink-0 rounded-full transition ${

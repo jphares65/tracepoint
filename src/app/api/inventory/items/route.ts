@@ -31,7 +31,7 @@ export async function GET() {
     .order("name");
   return error
     ? NextResponse.json({ error: error.message }, { status: 500 })
-    : NextResponse.json({ items: data ?? [], canManage: c.canManage });
+    : NextResponse.json({ items: data ?? [], canManage: c.canManage, canAdjust: c.canAdjust });
 }
 export async function POST(request: NextRequest) {
   const c = await getInventoryServerContext();

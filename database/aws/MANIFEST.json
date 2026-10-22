@@ -1,7 +1,7 @@
 {
     "description":  "Allocated AWS-native migration numbers. Entries with status applied/pending must match database/aws byte for byte (sha256Lf over LF text, sha256Crlf over the CRLF archive staging images are built from). Reserved numbers must not have a file until promoted here. Never renumber or edit an entry whose staging or production status is applied.",
     "authoritativeLineage":  "claude/integration-defects-rebased-20261021 @ ec027f5032a0b0f7b91c2c0d9f732491e10a085a (staging ledger 001-063 confirmed by staging-after-20261022T164959Z, 2026-10-22T16:55:37Z)",
-    "nextFree":  66,
+    "nextFree":  68,
     "migrations":  [
                        {
                            "version":  1,
@@ -632,19 +632,39 @@
                            "formerly":  "053 at 5b9ec98d",
                            "sha256Lf":  "76f6af92b373f89051473064581bd9e71f0935209749045ce1a357324800067c",
                            "sha256Crlf":  "bdcf4a353d90c739f172bc47548df4e0671a3651f830f7b9c846489ae7bfeae2"
+                       },
+                       {
+                           "version":  64,
+                           "filename":  "064_armorer_storage_location_permission.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "055 at c844398c (claude/integration-final-20261022); never applied",
+                           "sha256Lf":  "47771213fa5046e4ddb5b609843ce9054d649d556d1e06349e1b19d31451d4f0",
+                           "sha256Crlf":  "6159de3101edf09da45563e92882bfa8b7591e01491333de6e02131a240da84c"
+                       },
+                       {
+                           "version":  65,
+                           "filename":  "065_inventory_idempotency_and_recipients.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "056 at c844398c (claude/integration-final-20261022); never applied",
+                           "sha256Lf":  "0bcb0e71299acb1a5fb553dd80970bdcb264304c737560021226b2c3cb88a74c",
+                           "sha256Crlf":  "f7ce69421e04b43312f09a1401c83d6296883fc1a1438aff6d9fc98bc24e19fa"
                        }
                    ],
     "reserved":  [
                      {
-                         "version":  64,
-                         "filename":  "064_armory_history_contract.sql",
+                         "version":  66,
+                         "filename":  "066_armory_history_contract.sql",
                          "owner":  "B8a contract step (deferred; separately approved after the rollback window)",
                          "source":  "origin/claude/fix-b8a-contract-054 @ c50f73b3: database/aws/054_armory_history_contract.sql",
                          "requires":  "063"
                      },
                      {
-                         "version":  65,
-                         "filename":  "065_notification_job_recipients.sql",
+                         "version":  67,
+                         "filename":  "067_notification_job_recipients.sql",
                          "owner":  "B6 notification delivery",
                          "source":  "origin/claude/fix-b6-notification-delivery @ 1966f132: database/aws/047_notification_job_recipients.sql",
                          "requires":  "047 (feature catalog) and 063"

@@ -11,6 +11,15 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { formatDateTime } from "@/lib/format/date";
+import InspectionChoiceControl from "@/app/components/InspectionChoiceControl";
+import {
+  initialEquipmentCondition,
+  markRemainingPass,
+  notInspectedCount,
+  submittedVehicleChecklist,
+  vehicleSubmitBlockers,
+} from "@/lib/fleet/inspection-form";
+import { inspectionOutcome, type InspectionOutcome } from "@/lib/fleet/inspection-outcome";
 
 const DEFAULT_ITEMS = [
   ["body", "Body, windshield and mirrors"],
@@ -35,7 +44,7 @@ type Item = {
   id: string;
   label: string;
   category: string;
-  condition: Condition;
+  condition: Condition | null;
   note: string;
   required: boolean;
   critical: boolean;
@@ -111,6 +120,7 @@ export default function QuickInspectionPanel({
   inspections,
   rules,
   equipment,
+  canInspect = true,
   onSaved,
 }: {
   vehicleId: string;
@@ -118,6 +128,8 @@ export default function QuickInspectionPanel({
   inspections: Inspection[];
   rules: InspectionRules;
   equipment: VehicleEquipment[];
+  // UX-RB2-3 (D-R1): false when the agency's inspection rules refuse this user.
+  canInspect?: boolean;
   onSaved: () => Promise<void>;
 }) {
   const configuredSource =
@@ -154,7 +166,7 @@ export default function QuickInspectionPanel({
       required: item.required !== false,
       critical: item.critical === true,
       sort_order: Number(item.sort_order ?? index + 1),
-      condition: "Pass" as Condition,
+      condition: null,
       note: "",
     })),
 
@@ -167,14 +179,7 @@ export default function QuickInspectionPanel({
       required: true,
       critical: item.is_critical === true,
       sort_order: 1000 + index,
-      condition:
-        item.status === "Out of Service"
-          ? ("Critical" as Condition)
-          : ["Missing", "Attention"].includes(item.status)
-            ? item.is_critical === true
-              ? ("Critical" as Condition)
-              : ("Defect" as Condition)
-            : ("Pass" as Condition),
+      condition: initialEquipmentCondition(item.status, item.is_critical === true),
       note:
         item.status === "Current"
           ? ""
@@ -190,13 +195,15 @@ export default function QuickInspectionPanel({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<InspectionOutcome["tone"]>("success");
+  const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
   const [previewRecords, setPreviewRecords] = useState<Inspection[]>([]);
 
   const allInspections = [...previewRecords, ...inspections];
 
   const exceptionCount = useMemo(
-    () => items.filter((item) => item.condition !== "Pass").length,
+    () => items.filter((item) => item.condition !== null && item.condition !== "Pass").length,
     [items],
   );
 
@@ -236,19 +243,20 @@ export default function QuickInspectionPanel({
     setError("");
   }
 
-  async function submit() {
-    const missingNote = items.find(
-      (item) => item.condition !== "Pass" && !item.note.trim(),
-    );
+  const remainingItems = notInspectedCount(items);
+  const submitBlockers = vehicleSubmitBlockers(items);
 
-    if (missingNote) {
-      setError(`Add a short note for ${missingNote.label}.`);
+  async function submit() {
+    if (saving) return;
+    if (submitBlockers.length > 0) {
+      setError(submitBlockers.join(" "));
       return;
     }
 
     setSaving(true);
     setError("");
     setMessage("");
+    setWarning("");
 
     try {
       const result = items.some((item) => item.condition === "Critical")
@@ -273,6 +281,7 @@ export default function QuickInspectionPanel({
           ...current,
         ]);
 
+        setMessageTone("success");
         setMessage(
           exceptionCount
             ? "Preview inspection completed. Defects would create mechanic work and update readiness."
@@ -294,22 +303,20 @@ export default function QuickInspectionPanel({
             mileage,
             hours,
             notes,
-            checklist: items,
+            checklist: submittedVehicleChecklist(items),
           }),
         },
       );
 
       const payload = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(payload.error || "Inspection could not be submitted.");
-      }
+      // UX-RB-3: report what the server did, including a saved inspection whose later step failed.
+      const outcome = inspectionOutcome(response.ok, payload);
+      if (!outcome.saved) throw new Error(outcome.message);
 
-      setMessage(
-        payload.workOrder
-          ? "Inspection saved. Defects were routed to the mechanic."
-          : "Inspection saved. Vehicle remains ready.",
-      );
+      setMessageTone(outcome.tone);
+      setMessage(outcome.message);
+      setWarning(outcome.warning ?? "");
 
       setActive(false);
       reset();
@@ -330,23 +337,40 @@ export default function QuickInspectionPanel({
           <div>
             <h2 className="font-bold text-white">Quick Vehicle Inspection</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Agency checks and this vehicle&apos;s required equipment are
-              preloaded. Touch only exceptions.
+              Agency checks and this vehicle&apos;s required equipment. Answer
+              every item before submitting.
             </p>
           </div>
 
-          <button
-            onClick={() => setActive((value) => !value)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-500"
-          >
-            <ClipboardCheck size={15} />
-            {active ? "Close Inspection" : "Start Inspection"}
-          </button>
+          {canInspect ? (
+            <button
+              onClick={() => setActive((value) => !value)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-500"
+            >
+              <ClipboardCheck size={15} />
+              {active ? "Close Inspection" : "Start Inspection"}
+            </button>
+          ) : null}
         </div>
+        {!canInspect ? (
+          <p className="mt-4 rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-xs text-slate-400">
+            Your agency&apos;s inspection rules do not include your role, so you can view this vehicle&apos;s inspections but not submit one. A fleet manager can change who inspects in Fleet Rules.
+          </p>
+        ) : null}
 
         {message ? (
-          <div className="mt-4 rounded-xl border border-emerald-700 bg-emerald-950/30 p-3 text-xs text-emerald-200">
+          <div
+            role={messageTone === "danger" ? "alert" : "status"}
+            className={`mt-4 rounded-xl border p-3 text-xs ${
+              messageTone === "danger"
+                ? "border-red-700 bg-red-950/30 text-red-200"
+                : messageTone === "warning"
+                  ? "border-amber-700 bg-amber-950/30 text-amber-200"
+                  : "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+            }`}
+          >
             {message}
+            {warning ? <p className="mt-2 font-semibold text-amber-200">{warning}</p> : null}
           </div>
         ) : null}
 
@@ -356,7 +380,7 @@ export default function QuickInspectionPanel({
           </div>
         ) : null}
 
-        {active ? (
+        {active && canInspect ? (
           <div className="mt-5 space-y-4 border-t border-slate-800 pt-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <label>
@@ -402,10 +426,20 @@ export default function QuickInspectionPanel({
               </label>
             </div>
 
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-200">
-              <CheckCircle2 size={15} className="mr-2 inline" />
-              All {items.length} items start as Pass unless a tracked equipment
-              record already needs attention. Mark only what changed.
+            <div className="flex flex-col gap-2 rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-xs text-slate-200 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Every item starts as Not inspected. Items an equipment record
+                already shows as needing attention are pre-marked.
+              </span>
+              {remainingItems > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setItems((current) => markRemainingPass(current))}
+                  className="min-h-10 rounded-xl border border-emerald-500/40 px-3 font-semibold text-emerald-200 hover:bg-emerald-500/10"
+                >
+                  Mark remaining {remainingItems} as Pass
+                </button>
+              ) : null}
             </div>
 
             <div className="space-y-4">
@@ -429,7 +463,7 @@ export default function QuickInspectionPanel({
                       <div
                         key={item.id}
                         className={`rounded-xl border p-3 ${
-                          item.condition === "Pass"
+                          item.condition === "Pass" || item.condition === null
                             ? "border-slate-800 bg-slate-950/40"
                             : item.condition === "Critical"
                               ? "border-red-700 bg-red-950/20"
@@ -467,28 +501,16 @@ export default function QuickInspectionPanel({
                             </div>
                           </div>
 
-                          <div className="flex gap-1">
-                            {(
-                              ["Pass", "Defect", "Critical"] as Condition[]
-                            ).map((condition) => (
-                              <button
-                                type="button"
-                                key={condition}
-                                onClick={() => setCondition(item.id, condition)}
-                                className={`rounded-lg border px-2 py-1 text-[9px] font-bold uppercase ${
-                                  item.condition === condition
-                                    ? condition === "Pass"
-                                      ? "border-emerald-500 bg-emerald-500/15 text-emerald-200"
-                                      : condition === "Critical"
-                                        ? "border-red-500 bg-red-500/15 text-red-200"
-                                        : "border-amber-500 bg-amber-500/15 text-amber-200"
-                                    : "border-slate-700 text-slate-500"
-                                }`}
-                              >
-                                {condition}
-                              </button>
-                            ))}
-                          </div>
+                          <InspectionChoiceControl<Condition>
+                            itemLabel={item.label}
+                            value={item.condition}
+                            options={[
+                              { value: "Pass", tone: "pass" },
+                              { value: "Defect", tone: "warn" },
+                              { value: "Critical", tone: "fail" },
+                            ]}
+                            onChange={(condition) => setCondition(item.id, condition)}
+                          />
                         </div>
 
                         {item.equipmentId ? (
@@ -505,7 +527,7 @@ export default function QuickInspectionPanel({
                           </p>
                         ) : null}
 
-                        {item.condition !== "Pass" ? (
+                        {item.condition !== null && item.condition !== "Pass" ? (
                           <input
                             autoFocus
                             placeholder="Brief defect note (required)"
@@ -542,14 +564,16 @@ export default function QuickInspectionPanel({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p
                 className={`text-xs font-semibold ${
-                  exceptionCount ? "text-amber-300" : "text-emerald-300"
+                  submitBlockers.length || exceptionCount ? "text-amber-300" : "text-emerald-300"
                 }`}
               >
-                {exceptionCount
-                  ? `${exceptionCount} exception${
-                      exceptionCount === 1 ? "" : "s"
-                    } will be routed automatically.`
-                  : "Ready for one-tap submission."}
+                {submitBlockers.length
+                  ? submitBlockers.join(" ")
+                  : exceptionCount
+                    ? `${exceptionCount} exception${
+                        exceptionCount === 1 ? "" : "s"
+                      } will be reported.`
+                    : "All items inspected."}
               </p>
 
               <div className="flex gap-2">
@@ -562,7 +586,7 @@ export default function QuickInspectionPanel({
                 </button>
 
                 <button
-                  disabled={saving}
+                  disabled={saving || submitBlockers.length > 0}
                   onClick={() => void submit()}
                   className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
                 >

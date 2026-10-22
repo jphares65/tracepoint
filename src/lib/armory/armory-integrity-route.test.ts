@@ -188,6 +188,26 @@ test("ARM-16: inspection result values and the critical-item rule are enforced b
   assert.equal(failedNonCritical.status, 200);
 });
 
+test("C-07: a resubmitted inspection (same request key) is recorded once, with one status change", async () => {
+  const route = "../../app/api/armory/inspections/route.ts";
+  const db = world({ firearms: [firearm()], firearm_inspections: [], firearm_inspection_items: [], firearm_status_history: [], profiles: [] });
+  const body = inspectionBody({ result: "Failed", checklist: [{ label: "Slide", status: "Fail", critical: true }], idempotencyKey: "6f0c3a52-1c1e-4a8e-9a55-0d7f4b8f2a10" });
+  const first = await call(route, "POST", "/api/armory/inspections", body);
+  const second = await call(route, "POST", "/api/armory/inspections", body);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.inspection.id, first.body.inspection.id);
+  assert.equal(second.body.replayed, true);
+  assert.equal(db.tables.firearm_inspections.length, 1);
+  assert.equal(db.tables.firearm_inspections[0].idempotency_key, "6f0c3a52-1c1e-4a8e-9a55-0d7f4b8f2a10");
+  assert.equal(db.tables.firearm_inspection_items.length, 1);
+  assert.equal(db.tables.firearm_status_history.length, 1);
+
+  const malformed = await call(route, "POST", "/api/armory/inspections", inspectionBody({ idempotencyKey: "again" }));
+  assert.equal(malformed.status, 400);
+  assert.equal(db.tables.firearm_inspections.length, 1);
+});
+
 test("ARM-17: inspection status changes are written to the status history, and a pass restores only what an inspection removed", async () => {
   const route = "../../app/api/armory/inspections/route.ts";
   const db = world({ firearms: [firearm()], firearm_inspections: [], firearm_inspection_items: [], firearm_status_history: [], profiles: [] });
@@ -340,11 +360,36 @@ test("ARM-21/ARM-22: the server stamps the actor on each new activity and count,
   assert.equal(matching.status, 200, "a count that matches needs no reason");
 });
 
+test("C-32: a save based on an older ledger is refused instead of overwriting the newer one", async () => {
+  const route = "../../app/api/pilot/ammunition/route.ts";
+  const put = (body: unknown) => call(route, "PUT", "/api/pilot/ammunition", body);
+  const loadedAt = "2026-10-20T10:00:00.000Z";
+  const db = world({ pilot_ammunition_workspaces: [{ department_id: D, workspace: storedWorkspace(), updated_at: loadedAt }], audit_events: [] });
+  const purchase = (id: string) => ({ ...storedWorkspace(), activity: [storedActivity, { ...storedActivity, id, quantityBefore: 1000, quantityAfter: 1500, quantityChange: 500, createdAt: "2026-10-20T11:00:00.000Z" }], ammoTypes: [{ ...ammoType, currentOnHand: 1500 }] });
+
+  // Two armorers load the ledger at loadedAt; the first one saves.
+  const first = await put({ workspace: purchase("act-a"), baseUpdatedAt: loadedAt });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.ok(first.body.updatedAt && first.body.updatedAt !== loadedAt, "the response carries the new revision");
+
+  // The second one saves from the same, now stale, ledger: refused, nothing lost.
+  const second = await put({ workspace: purchase("act-b"), baseUpdatedAt: loadedAt });
+  assert.equal(second.status, 409);
+  assert.equal(second.body.code, "stale_workspace");
+  assert.match(second.body.error, /changed since you loaded it/);
+  assert.deepEqual(db.tables.pilot_ammunition_workspaces[0].workspace.activity.map((entry: Row) => entry.id), ["act-1", "act-a"]);
+
+  // Reloaded, the second save succeeds on top of the first.
+  const retried = await put({ workspace: { ...purchase("act-b"), activity: [storedActivity, purchase("act-a").activity[1], purchase("act-b").activity[1]] }, baseUpdatedAt: first.body.updatedAt });
+  assert.equal(retried.status, 200, JSON.stringify(retried.body));
+  assert.equal(db.tables.pilot_ammunition_workspaces[0].workspace.activity.length, 3);
+});
+
 // ARM-23
 const reconciliationTables = (status = "Draft", submittedBy: string | null = null) => ({
   department_rules: [],
   ammunition_lots: [{ id: "lot-1", department_id: D, category: "Duty", caliber: "9mm", manufacturer: "X", lot_number: "L1", quantity_on_hand: 500, is_active: true }, { id: "lot-foreign", department_id: "dept-2", quantity_on_hand: 10 }],
-  ammunition_reconciliations: [{ id: "rec-1", department_id: D, cycle_name: "Spring", cycle_year: 2026, status, created_by: ARMORER, submitted_by: submittedBy }],
+  ammunition_reconciliations: [{ id: "rec-1", department_id: D, cycle_name: "Spring", cycle_year: 2026, status, created_by: ARMORER, submitted_by: submittedBy, updated_at: "2026-10-20T10:00:00.000000Z" }],
   ammunition_reconciliation_items: [{ reconciliation_id: "rec-1", department_id: D, lot_id: "lot-1", expected_quantity: 500, physical_quantity: 480, variance: -20, explanation: "Range issue not logged" }],
 });
 
@@ -382,6 +427,224 @@ test("ARM-23: expected quantities come from the lots, a variance needs a reason,
   assert.equal(db.tables.ammunition_reconciliations[0].status, "Certified");
   assert.equal(db.tables.ammunition_reconciliations[0].certified_by, CHIEF);
   assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "certify does not rewrite the counts");
+});
+
+test("C-R1: Save Draft or a second Submit cannot pull a submitted count back from the certifier; Withdraw is explicit", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const counted = [{ lotId: "lot-1", physicalQuantity: 300, explanation: "recount" }];
+
+  let db = world(reconciliationTables("Submitted", ARMORER));
+  const draft = await post({ action: "save", reconciliationId: "rec-1", items: counted });
+  assert.equal(draft.status, 409);
+  assert.match(draft.body.error, /awaiting certification/);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "the submitted counts are untouched");
+
+  db = world(reconciliationTables("Submitted", ARMORER), CHIEF);
+  const resubmit = await post({ action: "submit", reconciliationId: "rec-1", items: counted });
+  assert.equal(resubmit.status, 409);
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER, "a second submit cannot take over the submission");
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480);
+
+  // Owner decision: withdrawal needs the management permission, a reason, and an audit record.
+  db = world(reconciliationTables("Submitted", ARMORER));
+  const unauthorized = await post({ action: "withdraw", reconciliationId: "rec-1", reason: "Recount" });
+  assert.equal(unauthorized.status, 403);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  const admin = ["manage_firearms", "manage_inspections", "administer_department"];
+  db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+  const noReason = await post({ action: "withdraw", reconciliationId: "rec-1", reason: "  " });
+  assert.equal(noReason.status, 400);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  const withdrawn = await post({ action: "withdraw", reconciliationId: "rec-1", items: counted, reason: "Recount of lot L1 requested" });
+  assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.body));
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Draft");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, null);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "withdrawing changes the status only");
+  const audit = (db.tables.audit_events ?? []).filter((row: Row) => row.action === "ammunition_reconciliation_withdrawn");
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].actor_user_id, CHIEF);
+  assert.equal(audit[0].summary, "Recount of lot L1 requested");
+  assert.equal(audit[0].previous_value.submitted_by, ARMORER);
+
+  db = world(reconciliationTables("Draft"), CHIEF, admin);
+  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1", reason: "x" })).status, 409);
+  db = world(reconciliationTables("Certified", ARMORER), CHIEF, admin);
+  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1", reason: "x" })).status, 409);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Certified");
+});
+
+test("C-R1: a withdrawal is never left without its audit record", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const admin = ["manage_firearms", "manage_inspections", "administer_department"];
+  const body = { action: "withdraw", reconciliationId: "rec-1", reason: "Recount requested" };
+  const failing = (db: ReturnType<typeof createDb>, fail: { audit?: boolean; restore?: boolean }) => {
+    const from = db.from;
+    let reconciliationUpdates = 0;
+    (db as any).from = (table: string) => {
+      const builder = from(table);
+      if (table === "audit_events" && fail.audit) {
+        return { insert: async () => ({ data: null, error: { message: "simulated audit failure" } }) };
+      }
+      if (table === "ammunition_reconciliations" && fail.restore) {
+        const update = builder.update;
+        builder.update = (value: Row) => {
+          reconciliationUpdates += 1;
+          if (reconciliationUpdates < 2) return update(value);
+          const refused: any = { eq: () => refused, select: () => refused, maybeSingle: () => refused,
+            then: (resolve: any) => resolve({ data: null, error: { message: "new row violates row-level security policy" } }) };
+          return refused;
+        };
+      }
+      return builder;
+    };
+  };
+
+  // Bridge client: the audit insert fails, the submission is put back.
+  let db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+  failing(db, { audit: true });
+  let response = await post(body);
+  assert.equal(response.status, 500);
+  assert.match(response.body.error, /stays submitted/);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER);
+
+  // Bridge client: putting it back also fails; the response does not claim it stayed submitted.
+  db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+  failing(db, { audit: true, restore: true });
+  const logged: unknown[] = [];
+  const error = console.error;
+  console.error = (...args: unknown[]) => { logged.push(args); };
+  try { response = await post(body); } finally { console.error = error; }
+  assert.equal(response.status, 500);
+  assert.doesNotMatch(response.body.error, /stays submitted/);
+  assert.match(response.body.error, /could not be restored/);
+  assert.equal(logged.length, 1, "the unaudited withdrawal is logged for follow-up");
+
+  // AWS-native client: one statement withdraws and audits, or neither.
+  const executed: { text: string; values: readonly unknown[] }[] = [];
+  const atomic = (result: Row | Error) => {
+    db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+    (db as any).execute = async (text: string, values: readonly unknown[]) => {
+      executed.push({ text, values });
+      if (result instanceof Error) throw result;
+      return { rows: [result] };
+    };
+    return db;
+  };
+  atomic({ withdrawn: 1, audited: 1 });
+  response = await post(body);
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  const { RECONCILIATION_WITHDRAW_SQL } = await import("./reconciliation-withdraw.ts");
+  assert.equal(executed[0].text, RECONCILIATION_WITHDRAW_SQL);
+  assert.deepEqual([executed[0].values[0], executed[0].values[1], executed[0].values[3], executed[0].values[4]], ["rec-1", D, CHIEF, "Recount requested"]);
+  assert.equal(db.writes.length, 0, "the atomic path does not also write through the table client");
+
+  atomic(new Error("simulated audit failure"));
+  response = await post(body);
+  assert.equal(response.status, 500);
+  assert.match(response.body.error, /stays submitted/);
+
+  atomic({ withdrawn: 0, audited: 0 });
+  assert.equal((await post(body)).status, 409);
+
+  atomic({ withdrawn: 1, audited: 0 });
+  assert.equal((await post(body)).status, 500, "a mismatch is never reported as success");
+
+  atomic({ withdrawn: 1, audited: 1 });
+  assert.equal((await post({ ...body, reason: " " })).status, 400, "the reason is still required");
+  const before = executed.length;
+  atomic({ withdrawn: 1, audited: 1 });
+  (globalThis as any).__armoryAccess.context.permissions = ["manage_firearms", "manage_inspections"];
+  assert.equal((await post(body)).status, 403, "the permission is still required");
+  assert.equal(executed.length, before, "nothing is executed without the permission");
+});
+
+test("C-R1 race (bridge client): a competing write between the read and the save is a 409 and the counts stay", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const counted = [{ lotId: "lot-1", physicalQuantity: 300, explanation: "recount" }];
+  // Runs `competing` just before the n-th update of the reconciliation row.
+  const interleave = (db: ReturnType<typeof createDb>, n: number, competing: () => void) => {
+    const from = db.from;
+    let updates = 0;
+    (db as any).from = (table: string) => {
+      const builder = from(table);
+      if (table === "ammunition_reconciliations") {
+        const update = builder.update;
+        builder.update = (value: Row) => { updates += 1; if (updates === n) competing(); return update(value); };
+      }
+      return builder;
+    };
+  };
+  const submittedBy = (db: ReturnType<typeof createDb>, user: string) => () => Object.assign(db.tables.ammunition_reconciliations[0], {
+    status: "Submitted", submitted_by: user, updated_at: "2026-10-22T09:00:00.000001Z",
+  });
+
+  // Another armorer submits after this Save Draft read the Draft, before it claims the row.
+  let db = world(reconciliationTables("Draft"), CHIEF);
+  interleave(db, 1, submittedBy(db, OFFICER));
+  let response = await post({ action: "save", reconciliationId: "rec-1", items: counted });
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.match(response.body.error, /saved or submitted this reconciliation while you were editing/);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, OFFICER);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "the submitted counts are untouched");
+  assert.equal(db.writes.filter((write) => write.table === "ammunition_reconciliation_items").length, 0, "no item row was written");
+
+  // A competing Submit after the claim: the final update does not land.
+  db = world(reconciliationTables("Draft"), CHIEF);
+  interleave(db, 2, submittedBy(db, OFFICER));
+  response = await post({ action: "submit", reconciliationId: "rec-1", items: counted });
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, OFFICER, "the other submission is not overwritten");
+
+  // Uncontested: the claim and the save both land.
+  db = world(reconciliationTables("Draft"), CHIEF);
+  response = await post({ action: "submit", reconciliationId: "rec-1", items: counted });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, CHIEF);
+  assert.equal(db.tables.ammunition_reconciliation_items.length, 1);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 300);
+});
+
+test("C-R1 race (AWS-native client): Save Draft and Submit run in one transaction, and each outcome has its status", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const outcomes: [unknown, number, RegExp | null][] = [
+    [{ outcome: "conflict", status: "Submitted" }, 409, /submitted and awaiting certification/],
+    [{ outcome: "conflict", status: "Certified" }, 409, /cannot be changed/],
+    [{ outcome: "invalid", error: "Every ammunition lot requires a physical count before submission." }, 400, /physical count/],
+    [{ outcome: "not_found" }, 404, null],
+    [{ outcome: "saved" }, 200, null],
+  ];
+  for (const [outcome, status, message] of outcomes) {
+    const db = world(reconciliationTables("Draft"), CHIEF);
+    let transactions = 0;
+    (db as any).transaction = async () => { transactions += 1; return outcome; };
+    const response = await post({ action: "save", reconciliationId: "rec-1", items: [] });
+    assert.equal(response.status, status, JSON.stringify(response.body));
+    if (message) assert.match(response.body.error, message);
+    assert.equal(transactions, 1);
+    assert.equal(db.writes.length, 0, "the transactional path does not also write through the table client");
+  }
+});
+
+test("C-R1 race: two people starting the same cycle's reconciliation get a 409, not a 500", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const db = world(reconciliationTables("Draft"), CHIEF);
+  db.tables.ammunition_reconciliations.length = 0;
+  db.tables.department_rules.push({ department_id: D, spring_cycle_start: "01-01", spring_cycle_end: "12-31", fall_cycle_start: "12-31", fall_cycle_end: "12-31" });
+  const from = db.from;
+  (db as any).from = (table: string) => table === "ammunition_reconciliations"
+    ? { insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: "23505", message: "duplicate key" } }) }) }) }
+    : from(table);
+  const response = await call(route, "POST", "/api/armory/ammunition/reconciliations", { action: "save", items: [] });
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.match(response.body.error, /just started this cycle/);
 });
 
 // B8a

@@ -3,6 +3,7 @@ import {validatedCognitoOrigin} from './cognito-redirect-origin';
 import {shadowCognitoDiagnostic,shadowCognitoDiagnosticsEnabled} from './cognito-shadow-diagnostic';
 import {COGNITO_FLOW_LIFETIME_SECONDS,type CognitoTokens,type createCognitoPkce} from './cognito-pkce';
 import {cognitoManagedLoginOrigin} from './cognito-endpoints';
+import {DEFAULT_RETURN_PATH,hasReturnPathCookie,readFormReturnPath,returnPathSetCookie,safeReturnPath} from './return-path';
 
 type SessionReceipt={userId:string;handle:string;expiresAt:number};
 type Pkce=ReturnType<typeof createCognitoPkce>;
@@ -56,6 +57,23 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
   if(options.location)headers.set('Location',options.location);for(const value of options.cookies??[])headers.append('Set-Cookie',value);
   return new Response(JSON.stringify({code}),{status,headers});
  }
+ // A-65: these endpoints are reached by full-page form posts and redirects, so a
+ // JSON failure body would be rendered as the page. A browser navigation is sent
+ // to /login with a fixed notice code (and the validated destination, when one
+ // is known); API and native callers keep the JSON contract.
+ function browserNavigation(request:Request){
+  const mode=request.headers.get('sec-fetch-mode');
+  if(mode!==null)return mode==='navigate'&&[null,'document'].includes(request.headers.get('sec-fetch-dest'));
+  return (request.headers.get('accept')??'').toLowerCase().includes('text/html');
+ }
+ function failure(request:Request,status:number,code:'authorization_unavailable'|'authorization_rejected'|'logout_unconfirmed',cookies:string[]=[],returnTo:string|null=null){
+  if(!browserNavigation(request))return response(status,code,{cookies});
+  const target=new URL(origin+'/login');target.searchParams.set('notice',code);
+  const next=safeReturnPath(returnTo);if(next&&next!==DEFAULT_RETURN_PATH)target.searchParams.set('next',next);
+  return response(303,code,{location:target.toString(),cookies});
+ }
+ // The idle sign-out hand-off cookie is single use: clear it once a sign-in starts or completes.
+ const consumedReturnCookie=(request:Request)=>hasReturnPathCookie(request.headers.get('cookie'))?[returnPathSetCookie(null)]:[];
  function guard(request:Request,path:string,method:string,csrf=true){
   if(!enabled)return response(503,'provider_disabled');const url=new URL(request.url);
   // Next may expose the ECS container origin in Request.url behind the shadow ALB.
@@ -103,12 +121,16 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
  return {
   async begin(request:Request){
    const rejected=guard(request,'/api/auth/cognito/login','POST');if(rejected)return rejected;
-   try{const flow=await ports.pkce.begin(),url=new URL(flow.url);
+   // SV-32/A-64: the /login form posts the validated destination as "next".
+   // Only the CSRF-guarded same-origin form is read; the value is validated
+   // again and sealed server-side with the PKCE transaction.
+   const returnTo=await readFormReturnPath(request);
+   try{const flow=await ports.pkce.begin({returnTo}),url=new URL(flow.url);
     if(url.origin!==providerOrigin||url.pathname!=='/oauth2/authorize'||url.searchParams.get('client_id')!==config.clientId||url.searchParams.get('redirect_uri')!==origin+'/api/auth/cognito/callback'||flow.cookie.name!==flowCookie||!handlePattern.test(flow.cookie.value)||flow.cookie.maxAge!==COGNITO_FLOW_LIFETIME_SECONDS)throw Error();
     shadowCognitoDiagnostic('flow_cookie_set',{secure:true,httpOnly:true,sameSiteLax:true,pathRoot:true,hostOnly:true,maxAgeSeconds:COGNITO_FLOW_LIFETIME_SECONDS,setCookieCount:1,
      requestHostShadow:request.headers.get('host')===new URL(origin).host,forwardedHostShadow:request.headers.get('x-forwarded-host')===new URL(origin).host,forwardedProtoHttps:request.headers.get('x-forwarded-proto')==='https'});
-    return response(303,'authorization_started',{location:flow.url,cookies:[cookie(flowCookie,flow.cookie.value,flow.cookie.maxAge)]});
-   }catch{return response(503,'authorization_unavailable');}
+    return response(303,'authorization_started',{location:flow.url,cookies:[cookie(flowCookie,flow.cookie.value,flow.cookie.maxAge),...consumedReturnCookie(request)]});
+   }catch{return failure(request,503,'authorization_unavailable',[],returnTo);}
   },
   async callback(request:Request){
    const rejected=guard(request,'/api/auth/cognito/callback','GET',false);if(rejected)return rejected;
@@ -138,24 +160,32 @@ export function createCognitoTransport(config:CognitoRedirectConfig,ports:Cognit
     });
     branch='identity_receipt_match';if(!established||identity.userId!==established.userId)throw Error();
     branch='session_cookie';shadowCognitoDiagnostic('callback_success');
+    // The destination comes only from the sealed, consumed PKCE transaction
+    // (never from callback parameters) and is a validated same-origin path.
     // Tenant selection and Support Mode are account-specific. They must never
     // survive a successful Cognito account switch.
-    return response(303,'authenticated',{location:origin+'/',cookies:[cleared,...clearTenantContext(),session(established)]});
-   }catch{shadowCognitoDiagnostic(branch);return response(401,'authorization_rejected',{cookies:[cleared,...clearApplicationContext()]});}
+    const destination=safeReturnPath(identity.returnTo)??DEFAULT_RETURN_PATH;
+    return response(303,'authenticated',{location:origin+destination,cookies:[cleared,...clearTenantContext(),session(established),...consumedReturnCookie(request)]});
+   }catch{shadowCognitoDiagnostic(branch);return failure(request,401,'authorization_rejected',[cleared,...clearApplicationContext()]);}
   },
   async refresh(request:Request){
    const rejected=guard(request,'/api/auth/cognito/refresh','POST');if(rejected)return rejected;
    try{const receipt=await ports.rotate(readCookie(request,sessionCookie));return response(200,'session_refreshed',{cookies:[session(receipt)]});}
    catch{return response(401,'sign_in_required',{cookies:[cookie(sessionCookie,'',0)]});}
   },
-  async logout(request:Request){
+  async logout(request:Request,options:{returnTo?:string|null}={}){
    const rejected=guard(request,'/api/auth/cognito/logout','POST');if(rejected)return rejected;
    // Match the bridge sign-out contract: a new multi-agency login must choose
    // its agency instead of inheriting the previous session's tenant selection.
    const cleared=[cookie(sessionCookie,'',0),cookie(flowCookie,'',0),
     cookie('tracepoint_department_id','',0),cookie('tracepoint_support_department_id','',0)];
+   // A-47: an idle expiry hands its page to the next sign-in. The hosted logout
+   // returns to the fixed, provider-registered /login URL, so the destination
+   // travels in a short-lived host-only cookie instead of the logout_uri.
+   const returnTo=safeReturnPath(options?.returnTo);
+   if(returnTo&&returnTo!==DEFAULT_RETURN_PATH)cleared.push(returnPathSetCookie(returnTo));
    try{await ports.revoke(readCookie(request,sessionCookie));const url=new URL(providerOrigin+'/logout');url.search=new URLSearchParams({client_id:config.clientId,logout_uri:origin+'/login'}).toString();return response(303,'signed_out',{location:url.toString(),cookies:cleared});}
-   catch{return response(503,'logout_unconfirmed',{cookies:cleared});}
+   catch{return failure(request,503,'logout_unconfirmed',cleared);}
   },
  };
 }

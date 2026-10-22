@@ -26,6 +26,8 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate } from "@/lib/format/date";
+import { statusChangeMessage } from "@/lib/fleet/status-change";
+import { READING_CORRECTION_REQUIRED, readingCorrectionNeeded } from "@/lib/fleet/reading-correction";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import {
@@ -95,7 +97,6 @@ type VehicleForm = {
   nextServiceDate: string;
   nextServiceMileage: string;
   nextServiceHours: string;
-  openIssueCount: string;
   comments: string;
   notes: string;
   reason: string;
@@ -125,7 +126,6 @@ const EMPTY_FORM: VehicleForm = {
   nextServiceDate: "",
   nextServiceMileage: "",
   nextServiceHours: "",
-  openIssueCount: "0",
   comments: "",
   notes: "",
   reason: "",
@@ -205,7 +205,6 @@ function formForVehicle(vehicle: FleetVehicle): VehicleForm {
     nextServiceDate: vehicle.next_service_date ?? "",
     nextServiceMileage: vehicle.next_service_mileage?.toString() ?? "",
     nextServiceHours: vehicle.next_service_hours?.toString() ?? "",
-    openIssueCount: vehicle.open_issue_count?.toString() ?? "0",
     comments: vehicle.comments ?? "",
     notes: vehicle.notes ?? "",
     reason: "",
@@ -353,6 +352,10 @@ function FleetManagementContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [messageWarning, setMessageWarning] = useState(false);
+  // UX-RB2-7 (D-08): the vehicle dialog's own failure message and correction reason.
+  const [formError, setFormError] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
@@ -391,12 +394,16 @@ function FleetManagementContent() {
   function openCreateForm() {
     setEditingVehicleId(null);
     setForm(EMPTY_FORM);
+    setFormError("");
+    setCorrectionReason("");
     setShowForm(true);
   }
 
   function openEditForm(vehicle: FleetVehicle) {
     setEditingVehicleId(vehicle.id);
     setForm(formForVehicle(vehicle));
+    setFormError("");
+    setCorrectionReason("");
     setShowForm(true);
   }
 
@@ -405,6 +412,8 @@ function FleetManagementContent() {
     setShowForm(false);
     setEditingVehicleId(null);
     setForm(EMPTY_FORM);
+    setFormError("");
+    setCorrectionReason("");
   }
 
   async function loadFleet() {
@@ -591,24 +600,21 @@ function FleetManagementContent() {
 
   async function saveVehicle() {
     if (!form.unitNumber.trim()) {
-      setError("Unit number is required.");
+      setFormError("Unit number is required.");
       return;
     }
     if (editingVehicleId && !form.reason.trim()) {
-      setError("Enter a reason for this vehicle update.");
+      setFormError("Enter a reason for this vehicle update.");
       return;
     }
     const original = editingVehicleId ? vehicles.find((vehicle) => vehicle.id === editingVehicleId) : undefined;
-    const lowered = (input: string, stored: number | null | undefined) =>
-      input.trim() !== "" && Number(input) < Number(stored ?? 0);
-    let mileageCorrectionReason: string | undefined;
-    if (original && (lowered(form.currentMileage, original.current_mileage) || lowered(form.currentHours, original.current_hours))) {
-      mileageCorrectionReason = window.prompt(
-        `Lowering the mileage or engine hours of Unit ${original.unit_number} is a correction. Why is the recorded reading wrong?`,
-      )?.trim();
-      if (!mileageCorrectionReason) return;
+    const mileageCorrectionReason = readingCorrectionNeeded(form, original) ? correctionReason.trim() : undefined;
+    if (mileageCorrectionReason === "") {
+      setFormError(READING_CORRECTION_REQUIRED);
+      return;
     }
     setSaving(true);
+    setFormError("");
     setError("");
     setMessage("");
     try {
@@ -632,7 +638,7 @@ function FleetManagementContent() {
       );
       await loadFleet();
     } catch (saveError) {
-      setError(
+      setFormError(
         saveError instanceof Error
           ? saveError.message
           : "The vehicle could not be saved.",
@@ -663,7 +669,11 @@ function FleetManagementContent() {
         body: JSON.stringify({ id: vehicle.id, status, reason }),
       });
       if (!response.ok) throw new Error(await responseError(response));
-      setMessage(`Unit ${vehicle.unit_number} status updated and audited.`);
+      const payload = (await response.json().catch(() => ({}))) as { item?: { status?: string } };
+      // UX-RB2-4 (D-15): report the status the server applied, not the one requested.
+      const outcome = statusChangeMessage(vehicle.unit_number, status, payload.item?.status);
+      setMessage(outcome.message);
+      setMessageWarning(outcome.tone === "warning");
       await loadFleet();
     } catch (saveError) {
       setError(
@@ -728,7 +738,7 @@ function FleetManagementContent() {
           </div>
         ) : null}
         {message ? (
-          <div className="rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">
+          <div role="status" className={messageWarning ? "rounded-2xl border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-100" : "rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200"}>
             {message}
           </div>
         ) : null}
@@ -1366,316 +1376,39 @@ function FleetManagementContent() {
                   <X size={18} />
                 </button>
               </div>
+              {formError ? (
+                <div role="alert" className="mx-5 mt-4 rounded-xl border border-red-700 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                  {formError}
+                </div>
+              ) : null}
               <div className="grid gap-4 p-5 sm:grid-cols-2">
-                <Field label="Unit Number">
-                  <input
-                    value={form.unitNumber}
-                    onChange={(event) =>
-                      setForm({ ...form, unitNumber: event.target.value })
-                    }
-                    className={inputClass}
-                    placeholder="e.g. 3101"
-                  />
-                </Field>
-                <Field label="License Plate">
-                  <input
-                    value={form.licensePlate}
-                    onChange={(event) =>
-                      setForm({ ...form, licensePlate: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Year">
-                  <input
-                    type="number"
-                    value={form.year}
-                    onChange={(event) =>
-                      setForm({ ...form, year: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Make">
-                  <input
-                    value={form.make}
-                    onChange={(event) =>
-                      setForm({ ...form, make: event.target.value })
-                    }
-                    className={inputClass}
-                    placeholder="Ford"
-                  />
-                </Field>
-                <Field label="Model">
-                  <input
-                    value={form.model}
-                    onChange={(event) =>
-                      setForm({ ...form, model: event.target.value })
-                    }
-                    className={inputClass}
-                    placeholder="Police Interceptor Utility"
-                  />
-                </Field>
-                <Field label="Vehicle Type">
-                  <input
-                    value={form.vehicleType}
-                    onChange={(event) =>
-                      setForm({ ...form, vehicleType: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="VIN" span>
-                  <input
-                    value={form.vin}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        vin: event.target.value.toUpperCase(),
-                      })
-                    }
-                    className={inputClass}
-                    maxLength={17}
-                  />
-                </Field>
-                <Field label="Assignment Type">
-                  <select
-                    value={form.assignmentType}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        assignmentType: event.target.value as AssignmentType,
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    <option>Pool</option>
-                    <option>Permanent</option>
-                    <option>Specialized</option>
-                  </select>
-                </Field>
-                <Field label="Assigned To">
-                  <input
-                    value={form.assignedTo}
-                    onChange={(event) =>
-                      setForm({ ...form, assignedTo: event.target.value })
-                    }
-                    className={inputClass}
-                    placeholder="Officer, unit, or function"
-                  />
-                </Field>
-                <Field label="Home Location">
-                  <input
-                    value={form.homeLocation}
-                    onChange={(event) =>
-                      setForm({ ...form, homeLocation: event.target.value })
-                    }
-                    className={inputClass}
-                    placeholder="Headquarters"
-                  />
-                </Field>
-                <Field label="Current Mileage">
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.currentMileage}
-                    onChange={(event) =>
-                      setForm({ ...form, currentMileage: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Current Hours">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.currentHours}
-                    onChange={(event) =>
-                      setForm({ ...form, currentHours: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Status">
-                  <select
-                    value={form.status}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        status: event.target.value as FleetStatus,
-                      })
-                    }
-                    className={inputClass}
-                  >
-                    {STATUSES.map((status) => (
-                      <option key={status}>{status}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Open Issues">
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.openIssueCount}
-                    onChange={(event) =>
-                      setForm({ ...form, openIssueCount: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Inspection Due">
-                  <input
-                    type="date"
-                    value={form.inspectionDueDate}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        inspectionDueDate: event.target.value,
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Registration Expires">
-                  <input
-                    type="date"
-                    value={form.registrationExpirationDate}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        registrationExpirationDate: event.target.value,
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Insurance Expires">
-                  <input
-                    type="date"
-                    value={form.insuranceExpirationDate}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        insuranceExpirationDate: event.target.value,
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="In Service Date">
-                  <input
-                    type="date"
-                    value={form.inServiceDate}
-                    onChange={(event) =>
-                      setForm({ ...form, inServiceDate: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Last Service">
-                  <input
-                    type="date"
-                    value={form.lastServiceDate}
-                    onChange={(event) =>
-                      setForm({ ...form, lastServiceDate: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Last Service Mileage">
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.lastServiceMileage}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        lastServiceMileage: event.target.value,
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Last Service Hours">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.lastServiceHours}
-                    onChange={(event) =>
-                      setForm({ ...form, lastServiceHours: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Next Service Date">
-                  <input
-                    type="date"
-                    value={form.nextServiceDate}
-                    onChange={(event) =>
-                      setForm({ ...form, nextServiceDate: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Next Service Mileage">
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.nextServiceMileage}
-                    onChange={(event) =>
-                      setForm({
-                        ...form,
-                        nextServiceMileage: event.target.value,
-                      })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Next Service Hours">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={form.nextServiceHours}
-                    onChange={(event) =>
-                      setForm({ ...form, nextServiceHours: event.target.value })
-                    }
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Operational Comments" span>
-                  <textarea
-                    value={form.comments}
-                    onChange={(event) =>
-                      setForm({ ...form, comments: event.target.value })
-                    }
-                    className={`${inputClass} min-h-20 resize-y`}
-                  />
-                </Field>
-                <Field label="Notes" span>
-                  <textarea
-                    value={form.notes}
-                    onChange={(event) =>
-                      setForm({ ...form, notes: event.target.value })
-                    }
-                    className={`${inputClass} min-h-24 resize-y`}
-                  />
-                </Field>
-                {editingVehicleId ? (
-                  <Field label="Reason for Change" span>
-                    <textarea
-                      required
-                      value={form.reason}
-                      onChange={(event) =>
-                        setForm({ ...form, reason: event.target.value })
-                      }
-                      className={`${inputClass} min-h-20 resize-y`}
-                      placeholder="Explain why these vehicle details are changing."
-                    />
-                  </Field>
-                ) : null}
+                <Field label="Unit Number"><input value={form.unitNumber} onChange={(event) => setForm({ ...form, unitNumber: event.target.value })} className={inputClass} placeholder="e.g. 3101" /></Field>
+                <Field label="License Plate"><input value={form.licensePlate} onChange={(event) => setForm({ ...form, licensePlate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Year"><input type="number" value={form.year} onChange={(event) => setForm({ ...form, year: event.target.value })} className={inputClass} /></Field>
+                <Field label="Make"><input value={form.make} onChange={(event) => setForm({ ...form, make: event.target.value })} className={inputClass} placeholder="Ford" /></Field>
+                <Field label="Model"><input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} className={inputClass} placeholder="Police Interceptor Utility" /></Field>
+                <Field label="Vehicle Type"><input value={form.vehicleType} onChange={(event) => setForm({ ...form, vehicleType: event.target.value })} className={inputClass} /></Field>
+                <Field label="VIN" span><input value={form.vin} onChange={(event) => setForm({ ...form, vin: event.target.value.toUpperCase() })} className={inputClass} maxLength={17} /></Field>
+                <Field label="Assignment Type"><select value={form.assignmentType} onChange={(event) => setForm({ ...form, assignmentType: event.target.value as AssignmentType })} className={inputClass}><option>Pool</option><option>Permanent</option><option>Specialized</option></select></Field>
+                <Field label="Assigned To"><input value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })} className={inputClass} placeholder="Officer, unit, or function" /></Field>
+                <Field label="Home Location"><input value={form.homeLocation} onChange={(event) => setForm({ ...form, homeLocation: event.target.value })} className={inputClass} placeholder="Headquarters" /></Field>
+                <Field label="Current Mileage"><input type="number" min="0" value={form.currentMileage} onChange={(event) => setForm({ ...form, currentMileage: event.target.value })} className={inputClass} /></Field>
+                <Field label="Current Hours"><input type="number" min="0" step="0.1" value={form.currentHours} onChange={(event) => setForm({ ...form, currentHours: event.target.value })} className={inputClass} /></Field>
+                <Field label="Status"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as FleetStatus })} className={inputClass}>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select></Field>
+                <Field label="Inspection Due"><input type="date" value={form.inspectionDueDate} onChange={(event) => setForm({ ...form, inspectionDueDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Registration Expires"><input type="date" value={form.registrationExpirationDate} onChange={(event) => setForm({ ...form, registrationExpirationDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Insurance Expires"><input type="date" value={form.insuranceExpirationDate} onChange={(event) => setForm({ ...form, insuranceExpirationDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="In Service Date"><input type="date" value={form.inServiceDate} onChange={(event) => setForm({ ...form, inServiceDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Last Service"><input type="date" value={form.lastServiceDate} onChange={(event) => setForm({ ...form, lastServiceDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Last Service Mileage"><input type="number" min="0" value={form.lastServiceMileage} onChange={(event) => setForm({ ...form, lastServiceMileage: event.target.value })} className={inputClass} /></Field>
+                <Field label="Last Service Hours"><input type="number" min="0" step="0.1" value={form.lastServiceHours} onChange={(event) => setForm({ ...form, lastServiceHours: event.target.value })} className={inputClass} /></Field>
+                <Field label="Next Service Date"><input type="date" value={form.nextServiceDate} onChange={(event) => setForm({ ...form, nextServiceDate: event.target.value })} className={inputClass} /></Field>
+                <Field label="Next Service Mileage"><input type="number" min="0" value={form.nextServiceMileage} onChange={(event) => setForm({ ...form, nextServiceMileage: event.target.value })} className={inputClass} /></Field>
+                <Field label="Next Service Hours"><input type="number" min="0" step="0.1" value={form.nextServiceHours} onChange={(event) => setForm({ ...form, nextServiceHours: event.target.value })} className={inputClass} /></Field>
+                <Field label="Operational Comments" span><textarea value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} className={`${inputClass} min-h-20 resize-y`} /></Field>
+                <Field label="Notes" span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className={`${inputClass} min-h-24 resize-y`} /></Field>
+                {editingVehicleId ? <Field label="Reason for Change" span><textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-20 resize-y`} placeholder="Explain why these vehicle details are changing." /></Field> : null}
+                {readingCorrectionNeeded(form, editingVehicleId ? vehicles.find((vehicle) => vehicle.id === editingVehicleId) : undefined) ? <Field label="Reason for the Mileage or Hours Correction" span><textarea required value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} className={`${inputClass} min-h-20 resize-y`} placeholder="The new reading is lower than the recorded one. Why is the recorded reading wrong?" /></Field> : null}
               </div>
               <div className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
                 <button

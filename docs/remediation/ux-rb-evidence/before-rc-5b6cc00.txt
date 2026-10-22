@@ -1,0 +1,95 @@
+### src/app/range-days/completion-contract.test.ts
+not ok 1 - UX-RB-1: the scoring page uses the explicit control and blocks unrecorded Completion rows
+# pass 0
+# fail 1
+### src/lib/range/scoring-rules.test.ts
+ok 1 - RNG-15: the Complete / Incomplete toggle is honoured for every format and incomplete never passes
+ok 2 - RNG-09: an Any-firearm drill is matched to the standard of the firearm used
+ok 3 - the range scoring page saves through these rules
+ok 4 - RNG-07: the page lets scorers take attendance and add walk-ups but keeps other roster edits for managers
+ok 5 - UX-RB-1 defect (RC 5b6cc00): the old toggle display disagreed with the saved value for Completion drills
+not ok 6 - UX-RB-1: whatever the control displays is exactly what is saved, for every format
+not ok 7 - UX-RB-1: only an untouched Completion row needs an explicit choice
+not ok 8 - UX-RB-1: no failure or remediation flag without a recorded failing result
+not ok 9 - UX-RB-1: an explicit failing result still records the deficiency (B10 semantics kept)
+# pass 5
+# fail 4
+### src/app/range-days/components/CompletionChoiceControl.test.tsx
+# Error: Cannot find module './CompletionChoiceControl.tsx'
+not ok 1 - src/app/range-days/components/CompletionChoiceControl.test.tsx
+# pass 0
+# fail 1
+### src/app/firearms/inspections/new/page-contract.test.ts
+not ok 1 - UX-RB-2: the New Inspection page has no Pass or Passed defaults and no stale copy
+# pass 0
+# fail 1
+### src/app/fleet-management/quick-inspection-contract.test.ts
+not ok 1 - UX-RB-2: the quick inspection panel has no Pass defaults and no one-tap copy
+# pass 0
+# fail 1
+### src/lib/armory/inspection-form.test.ts
+# Error: Cannot find module './inspection-form.ts'
+not ok 1 - src/lib/armory/inspection-form.test.ts
+# pass 0
+# fail 1
+### src/lib/fleet/inspection-form.test.ts
+# Error: Cannot find module './inspection-form.ts'
+not ok 1 - src/lib/fleet/inspection-form.test.ts
+# pass 0
+# fail 1
+### src/app/components/InspectionChoiceControl.test.tsx
+# Error: Cannot find module './InspectionChoiceControl.tsx'
+not ok 1 - src/app/components/InspectionChoiceControl.test.tsx
+# pass 0
+# fail 1
+### src/app/fleet-management/inspection-outcome-contract.test.ts
+not ok 1 - UX-RB-3: the quick inspection panel reports the server's outcome, not a work-order guess
+# pass 0
+# fail 1
+### src/lib/fleet/inspection-outcome.test.ts
+# Error: Cannot find module './inspection-outcome.ts'
+not ok 1 - src/lib/fleet/inspection-outcome.test.ts
+# pass 0
+# fail 1
+### src/app/firearms/custody-transfer-contract.test.ts
+not ok 1 - UX-RB-4: the firearm record page sends the restricted custody contract and gates on server operations
+not ok 2 - UX-RB-4 / C-64: the Restricted tab sends the notes the officer typed
+# pass 0
+# fail 2
+### src/lib/armory/restricted-custody.test.ts
+# Error: Cannot find module './restricted-custody.ts'
+not ok 1 - src/lib/armory/restricted-custody.test.ts
+# pass 0
+# fail 1
+### src/lib/armory/restricted-custody-route.test.ts
+not ok 1 - UX-RB-4: transfers in both directions through the real route with the page's requests
+  error: "Cannot find module 'src/lib/armory/restricted-custody.ts' imported from <RC 5b6cc00>/src/lib/armory/restricted-custody-route.test.ts"
+ok 2 - UX-RB-4: the RC record page's body is refused before reaching the database
+not ok 3 - UX-RB-4: another officer without custody permission sees no operations
+# pass 1
+# fail 2
+### src/app/range-days/sync-contract.test.ts
+not ok 1 - UX-RB-5: a stale save is recovered by merging, never by reloading the page
+not ok 2 - UX-RB-5: unsynced local changes survive a reload and an unknown base is never saved
+not ok 3 - UX-RB-5: conflicts are shown with both values and a choice
+not ok 4 - UX-RB-6: impossible values are stopped on the officer's row; pills reflect the server
+# pass 0
+# fail 4
+### src/lib/range/workspace-merge.test.ts
+# Error: Cannot find module './workspace-merge.ts'
+not ok 1 - src/lib/range/workspace-merge.test.ts
+# pass 0
+# fail 1
+### src/lib/range/simultaneous-instructors-route.test.ts
+not ok 1 - UX-RB-5: two instructors scoring different officers at the same time keep both scores
+  error: "Cannot find module 'src/lib/range/workspace-merge.ts' imported from <RC 5b6cc00>/src/lib/range/simultaneous-instructors-route.test.ts"
+ok 2 - UX-RB-5 defect (RC 5b6cc00): without recovery the second device's save is refused and its score never reaches the server
+not ok 3 - UX-RB-5: the same officer scored on both devices is kept as a conflict, then resolved without loss
+  error: "Cannot find module 'src/lib/range/workspace-merge.ts' imported from <RC 5b6cc00>/src/lib/range/simultaneous-instructors-route.test.ts"
+# pass 1
+# fail 2
+### src/lib/range/row-validation.test.ts
+not ok 1 - UX-RB-6: a typed measurement is checked with the server's own rule before saving
+not ok 2 - UX-RB-6: what the row blocks is exactly what the server refuses (same function, unchanged server behaviour)
+# pass 0
+# fail 2

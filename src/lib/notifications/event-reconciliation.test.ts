@@ -35,8 +35,18 @@ test("notification reconciliation deduplicates and preserves first-seen audit ev
   });
   assert.equal(result.row.notification_key, item.key);
   assert.equal(result.row.first_seen_at, "2026-09-01T00:00:00Z");
-  assert.equal(result.row.acknowledged_at, "2026-09-02T00:00:00Z");
+  // An unchanged condition leaves the officer-owned columns to the stored row,
+  // so a concurrent acknowledge/snooze is never overwritten by a stale read.
+  assert.equal("acknowledged_at" in result.row, false);
+  assert.equal("snoozed_until" in result.row, false);
   assert.equal(result.row.resolved_at, null);
+});
+
+test("a first sighting writes explicit unacknowledged, unsnoozed state", () => {
+  const result = buildNotificationEventReconciliationRow({ departmentId: "department-a", userId: "officer-a", item, now: "2026-09-05T00:00:00Z" });
+  assert.equal(result.row.first_seen_at, "2026-09-05T00:00:00Z");
+  assert.equal(result.row.acknowledged_at, null);
+  assert.equal(result.row.snoozed_until, null);
 });
 
 test("a changed or previously resolved condition reopens the same event key", () => {

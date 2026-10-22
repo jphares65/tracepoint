@@ -1,11 +1,27 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
 import { formatDateTime } from "@/lib/format/date";
+import {
+  LOST_CONNECTION_MESSAGE,
+  requestKeyFor,
+  type RequestKeyStore,
+} from "@/lib/tracepoint/request-key";
+import InspectionChoiceControl from "@/app/components/InspectionChoiceControl";
+import {
+  inspectionStatusEffect,
+  inspectionSubmitBlockers,
+  markRemainingPass,
+  notInspected,
+  notInspectedCount,
+  submittedChecklist,
+  type ChecklistStatus,
+  type FormChecklistItem,
+} from "@/lib/armory/inspection-form";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -55,16 +71,8 @@ type ArmoryResponse = {
   members: unknown[];
 };
 
-type ChecklistStatus = "Pass" | "Fail" | "N/A";
-
-type ChecklistItem = {
-  id: string;
-  section: string;
-  label: string;
-  status: ChecklistStatus;
-  note: string;
-  critical?: boolean;
-};
+// The template order and items. Statuses are cleared before use (UX-RB-2).
+type ChecklistItem = Omit<FormChecklistItem, "status"> & { status: ChecklistStatus };
 
 const INSPECTION_TYPES = [
   "Routine Firearm Inspection",
@@ -310,19 +318,23 @@ function NewInspectionContent() {
   );
   const [inspectionLocation, setInspectionLocation] = useState("Armory");
 
-  const [weaponCleared, setWeaponCleared] = useState("Yes");
-  const [ammoRemoved, setAmmoRemoved] = useState("Yes");
+  const [weaponCleared, setWeaponCleared] = useState("");
+  const [ammoRemoved, setAmmoRemoved] = useState("");
   const [magazinesPresented, setMagazinesPresented] = useState("");
   const [roundCount, setRoundCount] = useState("");
   const [opticBatteryReplaced, setOpticBatteryReplaced] = useState("N/A");
   const [cleaningCondition, setCleaningCondition] = useState("Acceptable");
 
   const [checklist, setChecklist] =
-    useState<ChecklistItem[]>(DEFAULT_CHECKLIST);
+    useState<FormChecklistItem[]>(() => notInspected(DEFAULT_CHECKLIST));
 
-  const [result, setResult] = useState<(typeof RESULTS)[number]>("Passed");
-  const [serviceRecommendation, setServiceRecommendation] =
-    useState<(typeof SERVICE_RECOMMENDATIONS)[number]>("Remain In Service");
+  const [result, setResult] = useState<(typeof RESULTS)[number] | "">("");
+  const [serviceRecommendation, setServiceRecommendation] = useState<
+    (typeof SERVICE_RECOMMENDATIONS)[number] | ""
+  >("");
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const requestKey = useRef<RequestKeyStore>({ current: null });
   const [followUpDate, setFollowUpDate] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [notes, setNotes] = useState("");
@@ -373,7 +385,7 @@ function NewInspectionContent() {
   );
 
   const checklistSections = useMemo(() => {
-    return checklist.reduce<Record<string, ChecklistItem[]>>((groups, item) => {
+    return checklist.reduce<Record<string, FormChecklistItem[]>>((groups, item) => {
       if (!groups[item.section]) groups[item.section] = [];
       groups[item.section].push(item);
       return groups;
@@ -382,6 +394,14 @@ function NewInspectionContent() {
 
   const failedItems = checklist.filter((item) => item.status === "Fail");
   const failedCriticalItems = failedItems.filter((item) => item.critical);
+  const remainingItems = notInspectedCount(checklist);
+  const submitBlockers = inspectionSubmitBlockers({
+    firearmSelected: Boolean(selectedFirearm),
+    checklist,
+    weaponCleared,
+    ammoRemoved,
+    result,
+  });
 
   function updateChecklistStatus(id: string, status: ChecklistStatus) {
     setChecklist((current) =>
@@ -396,54 +416,64 @@ function NewInspectionContent() {
   }
 
   async function handleSaveInspection() {
+    // C-07: one tap is one inspection, even before the button re-renders.
+    if (savingRef.current) return;
     setSubmitError(null);
     setSavedMessage(null);
 
-    if (!selectedFirearm) {
-      setSubmitError("Select a firearm before saving the inspection.");
+    if (!selectedFirearm || submitBlockers.length > 0) {
+      setSubmitError(submitBlockers.join(" ") || "Select a firearm before saving the inspection.");
       return;
     }
 
-    if (result === "Passed" && failedCriticalItems.length > 0) {
-      setSubmitError(
-        "This inspection cannot be marked Passed while critical checklist items are failed.",
-      );
-      return;
-    }
-
+    savingRef.current = true;
+    setSaving(true);
     try {
       const inspectionDateTime = new Date(
         `${inspectionDate}T${inspectionTime || "00:00"}`,
       ).toISOString();
 
-      const response = await fetch("/api/armory/inspections", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          firearmId: selectedFirearm.id,
-          inspectionType,
-          inspectionReason,
-          inspectionDate: inspectionDateTime,
-          inspectionLocation,
-          assigneeName: selectedFirearm.active_assignment
+      const inspectionRequest = {
+        firearmId: selectedFirearm.id,
+        inspectionType,
+        inspectionReason,
+        inspectionDate: inspectionDateTime,
+        inspectionLocation,
+        assigneeName:
+          selectedFirearm.active_assignment
             ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
             : null,
-          weaponCleared,
-          ammunitionRemoved: ammoRemoved,
-          magazinesPresented,
-          roundCount,
-          opticBatteryStatus: opticBatteryReplaced,
-          cleaningCondition,
-          result,
-          serviceRecommendation,
-          followUpDate: followUpDate || null,
-          correctiveAction,
-          notes,
-          checklist,
-        }),
-      });
+        weaponCleared,
+        ammunitionRemoved: ammoRemoved,
+        magazinesPresented,
+        roundCount,
+        opticBatteryStatus: opticBatteryReplaced,
+        cleaningCondition,
+        result,
+        serviceRecommendation: serviceRecommendation || null,
+        followUpDate: followUpDate || null,
+        correctiveAction,
+        notes,
+        checklist: submittedChecklist(checklist),
+      };
+
+      // C-07: resubmitting the same inspection (for example after a lost
+      // connection) reuses its key, so the server returns the first record.
+      let response: Response;
+      try {
+        response = await fetch("/api/armory/inspections", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...inspectionRequest,
+            idempotencyKey: requestKeyFor(requestKey.current, inspectionRequest),
+          }),
+        });
+      } catch {
+        throw new Error(LOST_CONNECTION_MESSAGE);
+      }
 
       const payload = (await response.json()) as { error?: string };
 
@@ -459,6 +489,8 @@ function NewInspectionContent() {
           ? error.message
           : "Inspection could not be saved.",
       );
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -729,6 +761,7 @@ function NewInspectionContent() {
                     onChange={(event) => setWeaponCleared(event.target.value)}
                     className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
                   >
+                    <option value="">Not recorded</option>
                     <option>Yes</option>
                     <option>No</option>
                     <option>N/A</option>
@@ -742,6 +775,7 @@ function NewInspectionContent() {
                     onChange={(event) => setAmmoRemoved(event.target.value)}
                     className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
                   >
+                    <option value="">Not recorded</option>
                     <option>Yes</option>
                     <option>No</option>
                     <option>N/A</option>
@@ -839,30 +873,16 @@ function NewInspectionContent() {
                               ) : null}
                             </div>
 
-                            <div className="flex flex-wrap gap-2">
-                              {(
-                                ["Pass", "Fail", "N/A"] as ChecklistStatus[]
-                              ).map((status) => (
-                                <button
-                                  key={status}
-                                  type="button"
-                                  onClick={() =>
-                                    updateChecklistStatus(item.id, status)
-                                  }
-                                  className={`rounded-xl border px-3 py-1.5 text-[11px] font-semibold transition ${
-                                    item.status === status
-                                      ? status === "Fail"
-                                        ? "border-red-500 bg-red-500/10 text-red-200"
-                                        : status === "Pass"
-                                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-200"
-                                          : "border-slate-600 bg-slate-700/30 text-slate-200"
-                                      : "border-slate-700 text-slate-400 hover:border-blue-500/50 hover:text-white"
-                                  }`}
-                                >
-                                  {status}
-                                </button>
-                              ))}
-                            </div>
+                            <InspectionChoiceControl<ChecklistStatus>
+                              itemLabel={item.label}
+                              value={item.status}
+                              options={[
+                                { value: "Pass", tone: "pass" },
+                                { value: "Fail", tone: "fail" },
+                                { value: "N/A", tone: "neutral" },
+                              ]}
+                              onChange={(status) => updateChecklistStatus(item.id, status)}
+                            />
                           </div>
 
                           <input
@@ -899,10 +919,11 @@ function NewInspectionContent() {
                   <select
                     value={result}
                     onChange={(event) =>
-                      setResult(event.target.value as (typeof RESULTS)[number])
+                      setResult(event.target.value as (typeof RESULTS)[number] | "")
                     }
                     className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
                   >
+                    <option value="">Choose a result</option>
                     {RESULTS.map((item) => (
                       <option key={item} value={item}>
                         {item}
@@ -918,11 +939,12 @@ function NewInspectionContent() {
                     onChange={(event) =>
                       setServiceRecommendation(
                         event.target
-                          .value as (typeof SERVICE_RECOMMENDATIONS)[number],
+                          .value as (typeof SERVICE_RECOMMENDATIONS)[number] | "",
                       )
                     }
                     className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[13px] text-slate-200 outline-none transition focus:border-blue-500/60"
                   >
+                    <option value="">No recommendation</option>
                     {SERVICE_RECOMMENDATIONS.map((item) => (
                       <option key={item} value={item}>
                         {item}
@@ -1010,20 +1032,44 @@ function NewInspectionContent() {
                   </p>
                 </div>
 
+                <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
+                  <span>Not inspected</span>
+                  <span className={`font-bold ${remainingItems > 0 ? "text-amber-300" : "text-emerald-300"}`}>
+                    {remainingItems}
+                  </span>
+                </div>
+
+                {remainingItems > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setChecklist((current) => markRemainingPass(current))}
+                    className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-emerald-500/40 px-4 text-[12px] font-semibold text-emerald-200 transition hover:bg-emerald-500/10"
+                  >
+                    Mark remaining {remainingItems} as Pass
+                  </button>
+                ) : null}
+
+                <p className="text-[12px] leading-5 text-slate-300">
+                  {inspectionStatusEffect(result)}
+                </p>
+
+                {submitBlockers.length > 0 ? (
+                  <ul aria-label="Before saving" className="list-disc space-y-1 pl-4 text-[12px] text-amber-200">
+                    {submitBlockers.map((blocker) => (
+                      <li key={blocker}>{blocker}</li>
+                    ))}
+                  </ul>
+                ) : null}
+
                 <button
                   type="button"
                   onClick={handleSaveInspection}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-blue-500"
+                  disabled={saving || submitBlockers.length > 0}
+                  className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Save size={14} />
-                  Save Inspection
+                  {saving ? "Saving…" : "Save Inspection"}
                 </button>
-
-                <p className="text-[11px] leading-5 text-slate-600">
-                  Save currently validates the completed form. Next step is
-                  connecting this to the inspection database/API and applying
-                  firearm status changes.
-                </p>
               </div>
             </section>
           </aside>

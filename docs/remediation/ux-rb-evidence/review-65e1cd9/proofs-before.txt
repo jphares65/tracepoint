@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: P1 same officer/drill/run scored fresh on two devices -> two results stored, no conflict
+ok 1 - P1 same officer/drill/run scored fresh on two devices -> two results stored, no conflict
+  ---
+  duration_ms: 167.03927
+  type: 'test'
+  ...
+# Subtest: P2 other device finalizes the day; recovered save is refused (409 w/o stale code) and every later save fails
+ok 2 - P2 other device finalizes the day; recovered save is refused (409 w/o stale code) and every later save fails
+  ---
+  duration_ms: 14.954499
+  type: 'test'
+  ...
+# Subtest: P3 open attendance: same walk-up added on two scorer devices -> recovered save 403 forever
+ok 3 - P3 open attendance: same walk-up added on two scorer devices -> recovered save 403 forever
+  ---
+  duration_ms: 8.183488
+  type: 'test'
+  ...
+# Subtest: P4 base/local pair mismatch (2 tabs share localStorage) silently reverts a saved correction and deletes a roster entry
+ok 4 - P4 base/local pair mismatch (2 tabs share localStorage) silently reverts a saved correction and deletes a roster entry
+  ---
+  duration_ms: 5.995392
+  type: 'test'
+  ...
+# Subtest: P5 copy with no known base (old format / first-load failed, no sync state) resurrects a record the other device deleted
+ok 5 - P5 copy with no known base (old format / first-load failed, no sync state) resurrects a record the other device deleted
+  ---
+  duration_ms: 4.292296
+  type: 'test'
+  ...
+# Subtest: P6 id collision across devices (same ms, same index) -> different officers shown as one conflict; 'Keep other' drops a score
+ok 6 - P6 id collision across devices (same ms, same index) -> different officers shown as one conflict; 'Keep other' drops a score
+  ---
+  duration_ms: 5.018645
+  type: 'test'
+  ...
+# Subtest: P7 repeated conflict on the same record is listed twice; resolving the older one applies a superseded value
+ok 7 - P7 repeated conflict on the same record is listed twice; resolving the older one applies a superseded value
+  ---
+  duration_ms: 2.794647
+  type: 'test'
+  ...
+# Subtest: P8 records without string ids: identical unkeyed records collapse; an edited one is duplicated
+ok 8 - P8 records without string ids: identical unkeyed records collapse; an edited one is duplicated
+  ---
+  duration_ms: 1.099067
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 586.890337

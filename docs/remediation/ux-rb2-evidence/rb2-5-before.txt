@@ -1,0 +1,926 @@
+TAP version 13
+# Subtest: UX-RB2-5 (B-75): an attendee with recorded attendance or results cannot be removed
+not ok 1 - UX-RB2-5 (B-75): an attendee with recorded attendance or results cannot be removed
+  ---
+  duration_ms: 1059.118854
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/components/AgencyTrainingRosterBoard.test.tsx:2:2112'
+  failureType: 'testCodeFailure'
+  error: |-
+    Unable to find role="button" and name "Alex Able cannot be removed: attendance or results are recorded"
+    
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-4 rounded-2xl border border-blue-500/20 bg-slate-950/25 p-4 sm:p-5"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+          [36m>[39m
+            [36m<div>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400"[39m
+              [36m>[39m
+                [0mLive Training Board[0m
+              [36m</p>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"mt-1 text-base font-bold text-white"[39m
+              [36m>[39m
+                [0mRoster & Results[0m
+              [36m</h3>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"mt-1 text-xs text-slate-500"[39m
+              [36m>[39m
+                [0m2[0m
+                [0m assigned / [0m
+                [0m1[0m
+                [0m completed[0m
+              [36m</p>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex gap-2"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-slate-200 hover:border-blue-500/50"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-user-round-plus lucide-user-plus-2"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M2 21a8 8 0 0 1 13.292-6"[39m
+                  [36m/>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"10"[39m
+                    [33mcy[39m=[32m"8"[39m
+                    [33mr[39m=[32m"5"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M19 16v6"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M22 19h-6"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0m Add Personnel[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-save"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M7 3v4a1 1 0 0 0 1 1h7"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mSave All[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"overflow-x-auto rounded-xl border border-slate-800"[39m
+          [36m>[39m
+            [36m<table[39m
+              [33mclass[39m=[32m"min-w-[1050px] w-full border-collapse text-left"[39m
+            [36m>[39m
+              [36m<thead[39m
+                [33mclass[39m=[32m"bg-slate-950/70"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"[39m
+                [36m>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [0mPersonnel[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mAttendance[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mOutcome[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mHours[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mScore / Result[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mNotes[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"w-12 px-3 py-3"[39m
+                  [36m/>[39m
+                [36m</tr>[39m
+              [36m</thead>[39m
+              [36m<tbody[39m
+                [33mclass[39m=[32m"divide-y divide-slate-800"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"bg-slate-900/30 align-top"[39m
+                [36m>[39m
+                  [36m<td[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"text-xs font-bold text-white"[39m
+                    [36m>[39m
+                      [0mAlex Able[0m
+                    [36m</p>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"mt-1 text-[10px] text-slate-500"[39m
+                    [36m>[39m
+                      [0mDepartment member[0m
+                    [36m</p>[39m
+                  [36m</td>[39m
+                  [36m<td[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [36m<select[39m
+                      [33mclass[39m=[32m"w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-blue-500"[39m
+      ...
+    
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-4 rounded-2xl border border-blue-500/20 bg-slate-950/25 p-4 sm:p-5"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+          [36m>[39m
+            [36m<div>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400"[39m
+              [36m>[39m
+                [0mLive Training Board[0m
+              [36m</p>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"mt-1 text-base font-bold text-white"[39m
+              [36m>[39m
+                [0mRoster & Results[0m
+              [36m</h3>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"mt-1 text-xs text-slate-500"[39m
+              [36m>[39m
+                [0m2[0m
+                [0m assigned / [0m
+                [0m1[0m
+                [0m completed[0m
+              [36m</p>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex gap-2"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-slate-200 hover:border-blue-500/50"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-user-round-plus lucide-user-plus-2"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M2 21a8 8 0 0 1 13.292-6"[39m
+                  [36m/>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"10"[39m
+                    [33mcy[39m=[32m"8"[39m
+                    [33mr[39m=[32m"5"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M19 16v6"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M22 19h-6"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0m Add Personnel[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-save"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M7 3v4a1 1 0 0 0 1 1h7"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mSave All[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"overflow-x-auto rounded-xl border border-slate-800"[39m
+          [36m>[39m
+            [36m<table[39m
+              [33mclass[39m=[32m"min-w-[1050px] w-full border-collapse text-left"[39m
+            [36m>[39m
+              [36m<thead[39m
+                [33mclass[39m=[32m"bg-slate-950/70"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"[39m
+                [36m>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [0mPersonnel[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mAttendance[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mOutcome[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mHours[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mScore / Result[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mNotes[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"w-12 px-3 py-3"[39m
+                  [36m/>[39m
+                [36m</tr>[39m
+              [36m</thead>[39m
+              [36m<tbody[39m
+                [33mclass[39m=[32m"divide-y divide-slate-800"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"bg-slate-900/30 align-top"[39m
+                [36m>[39m
+                  [36m<td[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"text-xs font-bold text-white"[39m
+                    [36m>[39m
+                      [0mAlex Able[0m
+                    [36m</p>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"mt-1 text-[10px] text-slate-500"[39m
+                    [36m>[39m
+                      [0mDepartment member[0m
+                    [36m</p>[39m
+                  [36m</td>[39m
+                  [36m<td[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [36m<select[39m
+                      [33mclass[39m=[32m"w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-white outline-none focus:border-blue-500"[39m
+      ...
+  code: 'ERR_TEST_FAILURE'
+  name: 'TestingLibraryElementError'
+  stack: |-
+    waitForWrapper (/home/user/tracepoint/node_modules/@testing-library/dom/dist/wait-for.js:163:27)
+    /home/user/tracepoint/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/components/AgencyTrainingRosterBoard.test.tsx:32:29)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: UX-RB2-5 (B-75): when the server keeps an attendee, the row comes back and the next save succeeds
+not ok 2 - UX-RB2-5 (B-75): when the server keeps an attendee, the row comes back and the next save succeeds
+  ---
+  duration_ms: 1101.951402
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/components/AgencyTrainingRosterBoard.test.tsx:2:2778'
+  failureType: 'testCodeFailure'
+  error: |-
+    Unable to find an element with the text: /The attendee was put back; your other changes are kept\. Save again\./. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+    
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-4 rounded-2xl border border-blue-500/20 bg-slate-950/25 p-4 sm:p-5"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+          [36m>[39m
+            [36m<div>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400"[39m
+              [36m>[39m
+                [0mLive Training Board[0m
+              [36m</p>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"mt-1 text-base font-bold text-white"[39m
+              [36m>[39m
+                [0mRoster & Results[0m
+              [36m</h3>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"mt-1 text-xs text-slate-500"[39m
+              [36m>[39m
+                [0m1[0m
+                [0m assigned / [0m
+                [0m0[0m
+                [0m completed[0m
+              [36m</p>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex gap-2"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-slate-200 hover:border-blue-500/50"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-user-round-plus lucide-user-plus-2"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M2 21a8 8 0 0 1 13.292-6"[39m
+                  [36m/>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"10"[39m
+                    [33mcy[39m=[32m"8"[39m
+                    [33mr[39m=[32m"5"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M19 16v6"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M22 19h-6"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0m Add Personnel[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-save"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M7 3v4a1 1 0 0 0 1 1h7"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mSave All[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200"[39m
+          [36m>[39m
+            [0mAttendance or results are recorded for a removed attendee.[0m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"overflow-x-auto rounded-xl border border-slate-800"[39m
+          [36m>[39m
+            [36m<table[39m
+              [33mclass[39m=[32m"min-w-[1050px] w-full border-collapse text-left"[39m
+            [36m>[39m
+              [36m<thead[39m
+                [33mclass[39m=[32m"bg-slate-950/70"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"[39m
+                [36m>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [0mPersonnel[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mAttendance[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mOutcome[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mHours[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mScore / Result[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mNotes[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"w-12 px-3 py-3"[39m
+                  [36m/>[39m
+                [36m</tr>[39m
+              [36m</thead>[39m
+              [36m<tbody[39m
+                [33mclass[39m=[32m"divide-y divide-slate-800"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"bg-slate-900/30 align-top"[39m
+                [36m>[39m
+                  [36m<td[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"text-xs font-bold text-white"[39m
+                    [36m>[39m
+                      [0mAlex Able[0m
+                    [36m</p>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"mt-1 text-[10px] text-slate-500"[39m
+                    [36m>[39m
+                      [0mDepartment member[0m
+                    [36m</p>[39m
+                  [36m</td>[39m
+                  [36m<td[39m
+                    [33mcla...
+    
+    Ignored nodes: comments, script, style
+    [36m<body>[39m
+      [36m<div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-4 rounded-2xl border border-blue-500/20 bg-slate-950/25 p-4 sm:p-5"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+          [36m>[39m
+            [36m<div>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400"[39m
+              [36m>[39m
+                [0mLive Training Board[0m
+              [36m</p>[39m
+              [36m<h3[39m
+                [33mclass[39m=[32m"mt-1 text-base font-bold text-white"[39m
+              [36m>[39m
+                [0mRoster & Results[0m
+              [36m</h3>[39m
+              [36m<p[39m
+                [33mclass[39m=[32m"mt-1 text-xs text-slate-500"[39m
+              [36m>[39m
+                [0m1[0m
+                [0m assigned / [0m
+                [0m0[0m
+                [0m completed[0m
+              [36m</p>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex gap-2"[39m
+            [36m>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-slate-200 hover:border-blue-500/50"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-user-round-plus lucide-user-plus-2"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M2 21a8 8 0 0 1 13.292-6"[39m
+                  [36m/>[39m
+                  [36m<circle[39m
+                    [33mcx[39m=[32m"10"[39m
+                    [33mcy[39m=[32m"8"[39m
+                    [33mr[39m=[32m"5"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M19 16v6"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M22 19h-6"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0m Add Personnel[0m
+              [36m</button>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-save"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"15"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"2"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"15"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M7 3v4a1 1 0 0 0 1 1h7"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0mSave All[0m
+              [36m</button>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200"[39m
+          [36m>[39m
+            [0mAttendance or results are recorded for a removed attendee.[0m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"overflow-x-auto rounded-xl border border-slate-800"[39m
+          [36m>[39m
+            [36m<table[39m
+              [33mclass[39m=[32m"min-w-[1050px] w-full border-collapse text-left"[39m
+            [36m>[39m
+              [36m<thead[39m
+                [33mclass[39m=[32m"bg-slate-950/70"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"[39m
+                [36m>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [0mPersonnel[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mAttendance[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mOutcome[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mHours[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mScore / Result[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"px-3 py-3"[39m
+                  [36m>[39m
+                    [0mNotes[0m
+                  [36m</th>[39m
+                  [36m<th[39m
+                    [33mclass[39m=[32m"w-12 px-3 py-3"[39m
+                  [36m/>[39m
+                [36m</tr>[39m
+              [36m</thead>[39m
+              [36m<tbody[39m
+                [33mclass[39m=[32m"divide-y divide-slate-800"[39m
+              [36m>[39m
+                [36m<tr[39m
+                  [33mclass[39m=[32m"bg-slate-900/30 align-top"[39m
+                [36m>[39m
+                  [36m<td[39m
+                    [33mclass[39m=[32m"px-4 py-3"[39m
+                  [36m>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"text-xs font-bold text-white"[39m
+                    [36m>[39m
+                      [0mAlex Able[0m
+                    [36m</p>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"mt-1 text-[10px] text-slate-500"[39m
+                    [36m>[39m
+                      [0mDepartment member[0m
+                    [36m</p>[39m
+                  [36m</td>[39m
+                  [36m<td[39m
+                    [33mcla...
+  code: 'ERR_TEST_FAILURE'
+  name: 'TestingLibraryElementError'
+  stack: |-
+    waitForWrapper (/home/user/tracepoint/node_modules/@testing-library/dom/dist/wait-for.js:163:27)
+    /home/user/tracepoint/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/components/AgencyTrainingRosterBoard.test.tsx:49:26)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: UX-RB2-5 (B-R4): the page's Refresh reloads the board
+not ok 3 - UX-RB2-5 (B-R4): the page's Refresh reloads the board
+  ---
+  duration_ms: 1042.617984
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/components/AgencyTrainingRosterBoard.test.tsx:2:4536'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 2
+    
+    
+    Ignored nodes: comments, script, style
+    [36m<html>[39m
+      [36m<head>[39m
+        [36m<meta[39m
+          [33mcharset[39m=[32m"utf-8"[39m
+        [36m/>[39m
+      [36m</head>[39m
+      [36m<body>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"space-y-4 rounded-2xl border border-blue-500/20 bg-slate-950/25 p-4 sm:p-5"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"[39m
+            [36m>[39m
+              [36m<div>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.18em] text-blue-400"[39m
+                [36m>[39m
+                  [0mLive Training Board[0m
+                [36m</p>[39m
+                [36m<h3[39m
+                  [33mclass[39m=[32m"mt-1 text-base font-bold text-white"[39m
+                [36m>[39m
+                  [0mRoster & Results[0m
+                [36m</h3>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"mt-1 text-xs text-slate-500"[39m
+                [36m>[39m
+                  [0m1[0m
+                  [0m assigned / [0m
+                  [0m0[0m
+                  [0m completed[0m
+                [36m</p>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"flex gap-2"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs font-bold text-slate-200 hover:border-blue-500/50"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-user-round-plus lucide-user-plus-2"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"15"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"15"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"M2 21a8 8 0 0 1 13.292-6"[39m
+                    [36m/>[39m
+                    [36m<circle[39m
+                      [33mcx[39m=[32m"10"[39m
+                      [33mcy[39m=[32m"8"[39m
+                      [33mr[39m=[32m"5"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"M19 16v6"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"M22 19h-6"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [0m Add Personnel[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-500 disabled:opacity-60"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-save"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"15"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"2"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"15"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"[39m
+                    [36m/>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"M7 3v4a1 1 0 0 0 1 1h7"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [0mSave All[0m
+                [36m</button>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"overflow-x-auto rounded-xl border border-slate-800"[39m
+            [36m>[39m
+              [36m<table[39m
+                [33mclass[39m=[32m"min-w-[1050px] w-full border-collapse text-left"[39m
+              [36m>[39m
+                [36m<thead[39m
+                  [33mclass[39m=[32m"bg-slate-950/70"[39m
+                [36m>[39m
+                  [36m<tr[39m
+                    [33mclass[39m=[32m"text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600"[39m
+                  [36m>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"px-4 py-3"[39m
+                    [36m>[39m
+                      [0mPersonnel[0m
+                    [36m</th>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"px-3 py-3"[39m
+                    [36m>[39m
+                      [0mAttendance[0m
+                    [36m</th>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"px-3 py-3"[39m
+                    [36m>[39m
+                      [0mOutcome[0m
+                    [36m</th>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"px-3 py-3"[39m
+                    [36m>[39m
+                      [0mHours[0m
+                    [36m</th>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"px-3 py-3"[39m
+                    [36m>[39m
+                      [0mScore / Result[0m
+                    [36m</th>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"px-3 py-3"[39m
+                    [36m>[39m
+                      [0mNotes[0m
+                    [36m</th>[39m
+                    [36m<th[39m
+                      [33mclass[39m=[32m"w-12 px-3 py-3"[39m
+                    [36m/>[39m
+                  [36m</tr>[39m
+                [36m</thead>[39m
+                [36m<tbody[39m
+                  [33mclass[39m=[32m"divide-y divide-slate-800"[39m
+                [36m>[39m
+                  [36m<tr[39m
+                    [33mclass[39m=[32m"bg-slate-900/30 align-top"[39m
+                  [36m>[39m
+                    [36m<td[39m
+                      [33mclass[39m=[32m"px-4 py-3"[39m
+                    [36m>[39m
+                      [36m<p[39m
+                        [33mclass[39m=[32m"text-xs font-bold text-white"[39m
+                      [36m>[39m
+                        [0mAlex Able[0m
+                      [36m</p>[39m
+                      [36m<p[39m
+                        [33mclass[39m=[32m"mt-1 text-[10px] text-slate...
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    <anonymous> (/home/user/tracepoint-b2/src/app/components/AgencyTrainingRosterBoard.test.tsx:62:30)
+    runWithExpensiveErrorDiagnosticsDisabled (/home/user/tracepoint/node_modules/@testing-library/dom/dist/config.js:47:12)
+    checkCallback (/home/user/tracepoint/node_modules/@testing-library/dom/dist/wait-for.js:124:77)
+    Timeout.checkRealTimersCallback [as _onTimeout] (/home/user/tracepoint/node_modules/@testing-library/dom/dist/wait-for.js:118:16)
+    listOnTimeout (node:internal/timers:588:17)
+    process.processTimers (node:internal/timers:523:7)
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 0
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4446.507912

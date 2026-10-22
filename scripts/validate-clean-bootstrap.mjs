@@ -2,6 +2,7 @@ import { localPostgresPort } from "../src/test-support/local-postgres-port.mjs";
 import { awsNativeSupersededBridgeMigrations } from "../src/test-support/aws-native-schema-files.mjs";
 import { catalogSql, manifestSql } from "./staging-management-manifest.mjs";
 import { supabasePrerequisites } from "./postgres-bootstrap-prerequisites.mjs";
+import { validateReconciliationWithdrawal } from "./validate-local-reconciliation-withdrawal.mjs";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import assert from "node:assert/strict";
@@ -506,7 +507,16 @@ try {
         where tgname = 'fleet_vehicles_safety_hold_clearance_guard'
           and tgrelid = 'public.fleet_vehicles'::regclass and tgenabled <> 'D'
       )
-        and pg_get_functiondef('public.guard_fleet_safety_hold_clearance()'::regprocedure) like '%critical work order is open%' as fleet_safety_hold_clearance_refused_with_open_critical_work
+        and pg_get_functiondef('public.guard_fleet_safety_hold_clearance()'::regprocedure) like '%critical work order is open%' as fleet_safety_hold_clearance_refused_with_open_critical_work,
+      exists (select 1 from public.role_permissions where role_code = 'armorer' and permission_code = 'firearm_custody.manage_storage_locations')
+        and not exists (
+          select 1 from public.departments department
+          where not exists (
+            select 1 from public.department_role_permissions grant_row
+            where grant_row.department_id = department.id and grant_row.role_code = 'armorer'
+              and grant_row.permission_code = 'firearm_custody.manage_storage_locations'
+          )
+        ) as armorer_manages_storage_locations
   `)).rows[0];
   const failedAwsChecks = Object.entries(awsChecks).filter(([, passed]) => !passed).map(([name]) => name);
   if (failedAwsChecks.length) throw new Error(`AWS-native schema checks failed: ${failedAwsChecks.join(", ")}`);
@@ -515,6 +525,12 @@ try {
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw new Error(`AWS-native field-write authorization failed: ${error.message}`, { cause: error });
+  }
+  try {
+    await client.query(await readFile("scripts/validate-local-storage-location-roles.sql", "utf8"));
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw new Error(`AWS-native storage-location role authorization failed: ${error.message}`, { cause: error });
   }
   try {
     await client.query(await readFile("scripts/validate-local-fleet-inspection-eligibility.sql", "utf8"));
@@ -563,6 +579,22 @@ try {
   } catch (error) {
     await client.query("rollback").catch(() => {});
     throw new Error(`AWS-native rollback JSON preservation failed: ${error.message}`, { cause: error });
+  }
+
+  try {
+    await validateReconciliationWithdrawal(client);
+  } catch (error) {
+    throw new Error(`AWS-native reconciliation withdrawal failed: ${error.message}`, { cause: error });
+  }
+
+  try {
+    const { stdout } = await execFileAsync(process.execPath, ["--import", "tsx", "scripts/validate-local-reconciliation-concurrency.ts"], {
+      env: { ...process.env, TRACEPOINT_VALIDATION_DATABASE: JSON.stringify({ port, password: "local-bootstrap-only" }) },
+      timeout: 180000, maxBuffer: 1 << 24,
+    });
+    process.stdout.write(stdout);
+  } catch (error) {
+    throw new Error(`AWS-native reconciliation concurrency failed: ${error.stderr || error.stdout || error.message}`, { cause: error });
   }
 
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);

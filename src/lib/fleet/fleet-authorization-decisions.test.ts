@@ -204,3 +204,31 @@ test("vehicle detail (web and mobile) and the fleet report withhold costs withou
     else noCosts(body.workOrders[0], `${permissions} report`);
   }
 });
+
+// UX-RB2-3 (D-R1, contract row C34): the vehicle detail says whether this user
+// may inspect or report an issue, by the same rule the POST routes apply, so
+// the page never offers a form that ends in a 403.
+test("UX-RB2-3: vehicle detail (web and mobile) reports canInspect and canReportIssue as the POST routes decide", async () => {
+  const { request, vehicleRoute, mobileVehicleRoute, inspections, workOrders } = await load();
+  for (const [permissions, roleCodes, inspectionRoles, inspect, report] of [
+    [["view_fleet"], ["chief"], ["officer"], false, false],
+    [["view_fleet"], ["officer"], ["officer"], true, true],
+    [["view_fleet"], ["chief"], [], true, true],
+    [["manage_fleet_maintenance", "view_fleet"], ["mechanic"], ["officer"], false, true],
+    [["perform_fleet_inspections"], [], ["officer"], true, true],
+  ] as const) {
+    for (const [route, url] of [[vehicleRoute, `/api/fleet/vehicles/${V}`], [mobileVehicleRoute, `/api/mobile/fleet/vehicles/${V}`]] as const) {
+      const db = createDb(fleet([...inspectionRoles]));
+      signIn(db, [...permissions], [...roleCodes]);
+      const body = await (await route.GET(request(url), params({ vehicleId: V }))).json();
+      assert.equal(body.canInspect, inspect, `${permissions} ${roleCodes} ${url} canInspect`);
+      assert.equal(body.canReportIssue, report, `${permissions} ${roleCodes} ${url} canReportIssue`);
+    }
+    const db = createDb(fleet([...inspectionRoles]));
+    signIn(db, [...permissions], [...roleCodes]);
+    const inspected = await inspections.POST(request(`/api/fleet/vehicles/${V}/inspections`, "POST", { checklist: checklist() }), params({ vehicleId: V }));
+    assert.equal(inspected.status === 201, inspect, `${permissions} ${roleCodes} inspection POST agrees`);
+    const reported = await workOrders.POST(request(`/api/fleet/vehicles/${V}/work-orders`, "POST", { recordType: "Issue", title: "Dent" }), params({ vehicleId: V }));
+    assert.equal(reported.status === 201, report, `${permissions} ${roleCodes} issue POST agrees`);
+  }
+});

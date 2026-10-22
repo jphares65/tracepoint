@@ -11,7 +11,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AgencyTrainingCloseoutPanel from "@/app/components/AgencyTrainingCloseoutPanel";
 
 type Member = {
@@ -50,8 +50,23 @@ type Props = {
   eventId: string;
   defaultHours: number | null;
   canManage: boolean;
+  // UX-RB2-5 (B-R4): changes when the page's Refresh is used.
+  refreshKey?: number;
   onSaved?: (attendeeCount: number, completedCount: number) => void;
 };
+
+// UX-RB2-5 (B-75): the server keeps an attendee whose saved attendance or
+// result is recorded (roster route, B7/TRN-11), so only unrecorded rows can be
+// removed. The decision uses the saved row, not unsaved edits.
+export function rosterRowRemovable(saved: Pick<RosterRow, "attendanceStatus" | "outcomeStatus"> | undefined) {
+  return !saved || (saved.attendanceStatus === "assigned" && saved.outcomeStatus === "pending");
+}
+
+/** Puts back saved, recorded rows that were removed locally; keeps every other local edit. */
+export function restoreRecordedRows<T extends Pick<RosterRow, "userId" | "attendanceStatus" | "outcomeStatus">>(current: T[], saved: T[]) {
+  const present = new Set(current.map((row) => row.userId));
+  return [...current, ...saved.filter((row) => !present.has(row.userId) && !rosterRowRemovable(row))];
+}
 
 function normalizedRow(member: Member, value?: Partial<RosterRow>): RosterRow {
   return {
@@ -74,10 +89,13 @@ export default function AgencyTrainingRosterBoard({
   eventId,
   defaultHours,
   canManage: pageCanManage,
+  refreshKey = 0,
   onSaved,
 }: Props) {
   const [members, setMembers] = useState<Member[]>([]);
   const [rows, setRows] = useState<RosterRow[]>([]);
+  // The rows as the server last returned them.
+  const [savedRows, setSavedRows] = useState<RosterRow[]>([]);
   const [canManage, setCanManage] = useState(pageCanManage);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,37 +107,50 @@ export default function AgencyTrainingRosterBoard({
   const [search, setSearch] = useState("");
   const [eventStatus, setEventStatus] = useState("");
 
+  const fetchRoster = useCallback(async () => {
+    const response = await fetch(
+      `/api/agency-training/events/${encodeURIComponent(eventId)}/roster`,
+      { cache: "no-store" },
+    );
+    const payload = (await response.json().catch(() => ({}))) as RosterPayload;
+    if (!response.ok) {
+      throw new Error(payload.error || "The training roster could not be loaded.");
+    }
+    const nextMembers = payload.members ?? [];
+    const memberMap = new Map(nextMembers.map((member) => [member.userId, member]));
+    const nextRows = (payload.attendees ?? []).map((attendee) =>
+      normalizedRow(
+        memberMap.get(attendee.userId) ?? {
+          userId: attendee.userId,
+          fullName: attendee.fullName ?? "Former Member",
+          badgeNumber: attendee.badgeNumber ?? null,
+          rankTitle: attendee.rankTitle ?? null,
+          unitName: attendee.unitName ?? null,
+        },
+        attendee,
+      ),
+    );
+    return { payload, nextMembers, nextRows };
+  }, [eventId]);
+
+  async function fetchSavedRows() {
+    try {
+      return (await fetchRoster()).nextRows;
+    } catch {
+      return null;
+    }
+  }
+
   const loadRoster = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const response = await fetch(
-        `/api/agency-training/events/${encodeURIComponent(eventId)}/roster`,
-        { cache: "no-store" },
-      );
-      const payload = (await response.json().catch(() => ({}))) as RosterPayload;
-      if (!response.ok) {
-        throw new Error(payload.error || "The training roster could not be loaded.");
-      }
-
-      const nextMembers = payload.members ?? [];
-      const memberMap = new Map(nextMembers.map((member) => [member.userId, member]));
-      const nextRows = (payload.attendees ?? []).map((attendee) =>
-        normalizedRow(
-          memberMap.get(attendee.userId) ?? {
-            userId: attendee.userId,
-            fullName: attendee.fullName ?? "Former Member",
-            badgeNumber: attendee.badgeNumber ?? null,
-            rankTitle: attendee.rankTitle ?? null,
-            unitName: attendee.unitName ?? null,
-          },
-          attendee,
-        ),
-      );
+      const { payload, nextMembers, nextRows } = await fetchRoster();
 
       setMembers(nextMembers);
       setRows(nextRows);
+      setSavedRows(nextRows);
       setDirty(false);
       setEventStatus(payload.event?.status ?? "");
       setCanManage(
@@ -136,11 +167,24 @@ export default function AgencyTrainingRosterBoard({
     } finally {
       setLoading(false);
     }
-  }, [eventId, pageCanManage]);
+  }, [fetchRoster, pageCanManage]);
 
   useEffect(() => {
     void loadRoster();
   }, [loadRoster]);
+
+  // UX-RB2-5 (B-R4): the page's Refresh reloads the board, and asks before
+  // discarding unsaved roster edits.
+  const handledRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (refreshKey === handledRefreshKey.current) return;
+    handledRefreshKey.current = refreshKey;
+    if (dirty && !window.confirm("Discard the unsaved roster and results changes and reload this event?")) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a reload the user asked for, as in the load effect above
+    void loadRoster();
+  }, [dirty, loadRoster, refreshKey]);
+
+  const savedByUser = useMemo(() => new Map(savedRows.map((row) => [row.userId, row])), [savedRows]);
 
   const assignedIds = useMemo(() => new Set(rows.map((row) => row.userId)), [rows]);
   const availableMembers = useMemo(() => {
@@ -208,6 +252,19 @@ export default function AgencyTrainingRosterBoard({
       );
 
       const payload = (await response.json().catch(() => ({}))) as RosterPayload;
+      if (response.status === 409) {
+        // UX-RB2-5 (B-75): reload what the server holds and put back attendees
+        // whose record it keeps, so the next save can succeed. Other edits stay.
+        const fresh = await fetchSavedRows();
+        if (fresh) {
+          setSavedRows(fresh);
+          const restored = restoreRecordedRows(rows, fresh);
+          if (restored.length > rows.length) {
+            setRows(restored);
+            throw new Error(`${payload.error || "The roster could not be saved."} The attendee was put back; your other changes are kept. Save again.`);
+          }
+        }
+      }
       if (!response.ok) {
         throw new Error(payload.error || "The roster could not be saved.");
       }
@@ -217,6 +274,7 @@ export default function AgencyTrainingRosterBoard({
         normalizedRow(memberMap.get(attendee.userId) ?? rows.find((row) => row.userId === attendee.userId)!, attendee),
       );
       setRows(nextRows);
+      setSavedRows(nextRows);
       setSaved(true);
       setDirty(false);
       onSaved?.(
@@ -393,6 +451,8 @@ export default function AgencyTrainingRosterBoard({
                     {canManage ? (
                       <button
                         type="button"
+                        disabled={!rosterRowRemovable(savedByUser.get(row.userId))}
+                        title={rosterRowRemovable(savedByUser.get(row.userId)) ? undefined : "Attendance or results are recorded, so this attendee's record is kept. Mark them Excused instead."}
                         onClick={() => {
                           setRows((current) =>
                             current.filter((item) => item.userId !== row.userId),
@@ -400,8 +460,8 @@ export default function AgencyTrainingRosterBoard({
                           setSaved(false);
                           setDirty(true);
                         }}
-                        className="rounded-lg border border-slate-700 p-2 text-slate-500 hover:border-rose-500/50 hover:text-rose-300"
-                        aria-label={`Remove ${row.fullName}`}
+                        className="rounded-lg border border-slate-700 p-2 text-slate-500 hover:border-rose-500/50 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-700 disabled:hover:text-slate-500"
+                        aria-label={rosterRowRemovable(savedByUser.get(row.userId)) ? `Remove ${row.fullName}` : `${row.fullName} cannot be removed: attendance or results are recorded`}
                       >
                         <Trash2 size={14} />
                       </button>

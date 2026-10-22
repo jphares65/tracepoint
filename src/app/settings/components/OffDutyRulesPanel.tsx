@@ -5,7 +5,9 @@ import {
   useState,
 } from "react";
 
-type OffDutyRules = {
+import SaveStatus, { type SaveResult } from "./SaveStatus";
+
+export type OffDutyRules = {
   requireInspection: boolean;
   requireQualification: boolean;
   renewalDays: number;
@@ -37,24 +39,50 @@ async function requestJson<T>(
   return payload as T;
 }
 
-export default function OffDutyRulesPanel() {
-  const [rules, setRules] =
-    useState<OffDutyRules>({
-      requireInspection: true,
-      requireQualification: true,
-      renewalDays: 365,
-      inspectionIntervalDays: 180,
-      inspectionDueSoonDays: 30,
-    });
+const DEFAULT_RULES: OffDutyRules = {
+  requireInspection: true,
+  requireQualification: true,
+  renewalDays: 365,
+  inspectionIntervalDays: 180,
+  inspectionDueSoonDays: 30,
+};
 
-  const [loading, setLoading] = useState(true);
+function sameRules(a: OffDutyRules, b: OffDutyRules) {
+  return (Object.keys(DEFAULT_RULES) as Array<keyof OffDutyRules>).every((key) => a[key] === b[key]);
+}
+
+export default function OffDutyRulesPanel({
+  onSaved,
+  onDirtyChange,
+}: {
+  /** The rules as the server stored them, after a save. */
+  onSaved?: (rules: OffDutyRules) => void;
+  /** Whether this panel has unsaved changes (E-06). */
+  onDirtyChange?: (dirty: boolean) => void;
+} = {}) {
+  const [rules, setRules] =
+    useState<OffDutyRules>(DEFAULT_RULES);
+  // The rules as last loaded from or saved to the server.
+  const [savedRules, setSavedRules] =
+    useState<OffDutyRules>(DEFAULT_RULES);
+
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "failed">("loading");
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [result, setResult] = useState<SaveResult>(null);
+
+  const dirty = loadState === "loaded" && !sameRules(rules, savedRules);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  // Leaving with unsaved edits is guarded by the page; unmounting discards them.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   async function load() {
-    setLoading(true);
-    setError("");
+    setLoadState("loading");
+    setLoadError("");
 
     try {
       const payload =
@@ -65,27 +93,38 @@ export default function OffDutyRulesPanel() {
         );
 
       setRules(payload.rules);
+      setSavedRules(payload.rules);
+      setLoadState("loaded");
     }
     catch (loadError) {
-      setError(
+      // Never show (or save) defaults in place of rules that did not load.
+      setLoadError(
         loadError instanceof Error
           ? loadError.message
           : "Off-duty rules could not be loaded.",
       );
-    }
-    finally {
-      setLoading(false);
+      setLoadState("failed");
     }
   }
 
   useEffect(() => {
+    // Loading is an external request made once when the panel opens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, []);
 
+  function edit(patch: Partial<OffDutyRules>) {
+    setResult(null);
+    const next = { ...rules, ...patch };
+    setRules(next);
+    // Tell the page at once, so a tab change in the same moment is guarded.
+    onDirtyChange?.(!sameRules(next, savedRules));
+  }
+
   async function save() {
+    if (loadState !== "loaded" || saving) return;
     setSaving(true);
-    setError("");
-    setMessage("");
+    setResult(null);
 
     try {
       const payload =
@@ -103,22 +142,29 @@ export default function OffDutyRulesPanel() {
           },
         );
 
+      // Show what the server stored, not what was sent.
       setRules(payload.rules);
-      setMessage("Off-duty firearm policy saved.");
+      setSavedRules(payload.rules);
+      onDirtyChange?.(false);
+      setResult({ tone: "success", message: "Off-duty firearm rules saved." });
+      onSaved?.(payload.rules);
     }
     catch (saveError) {
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Off-duty rules could not be saved.",
-      );
+      setResult({
+        tone: "error",
+        message: `${
+          saveError instanceof Error && saveError.message
+            ? saveError.message
+            : "Off-duty rules could not be saved."
+        } Your changes are still on this form.`,
+      });
     }
     finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
+  if (loadState === "loading") {
     return (
       <div className="py-8 text-sm text-slate-400">
         Loading off-duty firearm rules…
@@ -126,20 +172,26 @@ export default function OffDutyRulesPanel() {
     );
   }
 
+  if (loadState === "failed") {
+    return (
+      <div role="alert" className="space-y-3 rounded-xl border border-red-800 bg-red-950/30 p-4 text-sm text-red-200">
+        <p>
+          {loadError} The current off-duty rules are unchanged; nothing can be
+          saved until they load.
+        </p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="rounded-xl border border-red-700 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-900/40"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      {error ? (
-        <div className="rounded-xl border border-red-800 bg-red-950/30 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      ) : null}
-
-      {message ? (
-        <div className="rounded-xl border border-emerald-800 bg-emerald-950/30 p-3 text-sm text-emerald-200">
-          {message}
-        </div>
-      ) : null}
-
       <section className="rounded-2xl border border-slate-800 bg-slate-950/30 p-5">
         <label className="flex items-start justify-between gap-5">
           <div>
@@ -159,11 +211,7 @@ export default function OffDutyRulesPanel() {
             type="checkbox"
             checked={rules.requireInspection}
             onChange={(event) =>
-              setRules((current) => ({
-                ...current,
-                requireInspection:
-                  event.target.checked,
-              }))
+              edit({ requireInspection: event.target.checked })
             }
             className="mt-1 h-5 w-5"
           />
@@ -198,11 +246,7 @@ export default function OffDutyRulesPanel() {
             type="checkbox"
             checked={rules.requireQualification}
             onChange={(event) =>
-              setRules((current) => ({
-                ...current,
-                requireQualification:
-                  event.target.checked,
-              }))
+              edit({ requireQualification: event.target.checked })
             }
             className="mt-1 h-5 w-5"
           />
@@ -226,11 +270,7 @@ export default function OffDutyRulesPanel() {
             max={3650}
             value={rules.renewalDays}
             onChange={(event) =>
-              setRules((current) => ({
-                ...current,
-                renewalDays:
-                  Number(event.target.value),
-              }))
+              edit({ renewalDays: Number(event.target.value) })
             }
             className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
           />
@@ -254,16 +294,12 @@ export default function OffDutyRulesPanel() {
             disabled={!rules.requireInspection}
             value={rules.inspectionIntervalDays}
             onChange={(event) =>
-              setRules((current) => ({
-                ...current,
-                inspectionIntervalDays:
-                  Number(event.target.value),
-              }))
+              edit({ inspectionIntervalDays: Number(event.target.value) })
             }
             className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed"
           />
           <span className="mt-1 block text-slate-500">
-            Days
+            Days · the same setting as the Armory inspection interval
           </span>
         </label>
 
@@ -281,11 +317,7 @@ export default function OffDutyRulesPanel() {
             disabled={!rules.requireInspection}
             value={rules.inspectionDueSoonDays}
             onChange={(event) =>
-              setRules((current) => ({
-                ...current,
-                inspectionDueSoonDays:
-                  Number(event.target.value),
-              }))
+              edit({ inspectionDueSoonDays: Number(event.target.value) })
             }
             className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed"
           />
@@ -301,14 +333,17 @@ export default function OffDutyRulesPanel() {
         history remains part of the record regardless of policy.
       </div>
 
-      <button
-        type="button"
-        disabled={saving}
-        onClick={() => void save()}
-        className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save Off-Duty Rules"}
-      </button>
+      <div className="sticky bottom-3 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/90 p-3 backdrop-blur">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => void save()}
+          className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save Off-Duty Rules"}
+        </button>
+        <SaveStatus name="Off-Duty Rules" result={result} dirty={dirty} />
+      </div>
     </div>
   );
 }

@@ -6,7 +6,10 @@ import type {CognitoVerificationConfig} from './cognito-verifier';
 import {validatedCognitoOrigin,type CognitoRedirectConfig} from './cognito-redirect-origin';
 import {shadowCognitoDiagnostic} from './cognito-shadow-diagnostic';
 import {cognitoManagedLoginOrigin} from './cognito-endpoints';
-export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string};
+import {safeReturnPath} from './return-path';
+// returnTo is the validated post-sign-in destination (SV-32/A-64). It is sealed
+// with the rest of this server-side transaction and never sent to the provider.
+export type AuthorizationTransaction={state:string;verifier:string;nonce:string;expiresAt:number;clientId:string;callback:string;returnTo?:string};
 export const COGNITO_FLOW_LIFETIME_SECONDS=600;
 export interface AuthorizationTransactionStore {
  // Server-only encrypted storage. take must atomically delete/consume even if
@@ -29,9 +32,9 @@ export function createCognitoPkce(config:CognitoRedirectConfig,store:Authorizati
  const callback=validatedCognitoOrigin(config)+'/api/auth/cognito/callback';
  const random=()=>randomBytes(32).toString('base64url');
  return {
-  async begin(){
-   const handle=random(),state=random(),verifier=random(),nonce=random();
-   try{await store.put(handle,{state,verifier,nonce,expiresAt:now()+COGNITO_FLOW_LIFETIME_SECONDS*1000,clientId:config.clientId,callback});}catch{throw Error('Cognito authorization could not be started.');}
+  async begin(options:{returnTo?:string|null}={}){
+   const handle=random(),state=random(),verifier=random(),nonce=random(),returnTo=safeReturnPath(options?.returnTo);
+   try{await store.put(handle,{state,verifier,nonce,expiresAt:now()+COGNITO_FLOW_LIFETIME_SECONDS*1000,clientId:config.clientId,callback,...(returnTo?{returnTo}:{})});}catch{throw Error('Cognito authorization could not be started.');}
    const url=new URL(domain+'/oauth2/authorize');url.search=new URLSearchParams({response_type:'code',client_id:config.clientId,redirect_uri:callback,scope:'openid email',state,nonce,code_challenge_method:'S256',code_challenge:createHash('sha256').update(verifier).digest('base64url')}).toString();
    // The handle must be installed only as a Secure, HttpOnly, SameSite=Lax,
    // Path=/ cookie with this __Host- name; never expose the verifier to a browser.
@@ -67,7 +70,9 @@ export function createCognitoPkce(config:CognitoRedirectConfig,store:Authorizati
     // and durable session policy. Tokens are never returned by this boundary.
     branch='verified_session_establishment';const identity=await verifyTokens({accessToken:value.access_token,idToken:value.id_token,refreshToken:value.refresh_token,expiresIn:value.expires_in},transaction.nonce);
     branch='verified_identity_shape';if(!identity||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.userId))throw Error();
-    return {userId:identity.userId};
+    // The sealed destination is re-validated on the way out; anything else is My Home.
+    const returnTo=safeReturnPath(transaction.returnTo);
+    return {userId:identity.userId,...(returnTo?{returnTo}:{})};
    }catch{shadowCognitoDiagnostic(branch);throw Error('Cognito authorization could not be completed. Start a new sign-in.');}
   }
  };

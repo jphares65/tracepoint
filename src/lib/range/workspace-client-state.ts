@@ -1,6 +1,6 @@
 type Keyed = { id?: unknown };
 
-function stable(value: unknown): string {
+export function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   if (value && typeof value === "object") {
     const source = value as Record<string, unknown>;

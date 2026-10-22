@@ -17,6 +17,13 @@ import {
   readAmmunitionWorkspaceBody,
 } from "@/lib/tracepoint/ammunition-request-body";
 
+// Compared at the millisecond: both values come from the same column, and a
+// JSON round trip keeps milliseconds only.
+function sameRevision(base: string | null, stored: unknown) {
+  if (base === null || stored === null || stored === undefined) return base === null && (stored === null || stored === undefined);
+  return Date.parse(base) === Date.parse(String(stored instanceof Date ? stored.toISOString() : stored));
+}
+
 export async function GET() {
   const access = await resolveServerAccess();
 
@@ -68,13 +75,22 @@ export async function PUT(request: Request) {
   const userId = context.user.id;
 
   let workspace: ReturnType<typeof ammunitionWorkspaceForStorage>;
+  // C-32: the revision (updated_at) the page loaded. Absent from callers that
+  // predate the check, which keep the previous last-write behaviour.
+  let baseUpdatedAt: string | null | undefined;
 
   try {
     const payload = (await readAmmunitionWorkspaceBody(request)) as {
       workspace?: unknown;
+      baseUpdatedAt?: unknown;
     };
 
     workspace = ammunitionWorkspaceForStorage(payload.workspace);
+    if ("baseUpdatedAt" in payload) {
+      if (payload.baseUpdatedAt !== null && (typeof payload.baseUpdatedAt !== "string" || Number.isNaN(Date.parse(payload.baseUpdatedAt))))
+        throw new Error("invalid revision");
+      baseUpdatedAt = payload.baseUpdatedAt;
+    }
   } catch (error) {
     if (error instanceof AmmunitionWorkspaceBodyTooLarge) {
       return NextResponse.json({ error: error.message }, { status: 413 });
@@ -87,6 +103,16 @@ export async function PUT(request: Request) {
 
   try {
     const stored = await createRangeReadRepository(admin, departmentId).getAmmunition(departmentId);
+    if (baseUpdatedAt !== undefined && !sameRevision(baseUpdatedAt, stored?.updated_at ?? null)) {
+      return NextResponse.json(
+        {
+          error: "The ammunition ledger changed since you loaded it, so this change was not saved. Reload the ledger and make the change again.",
+          code: "stale_workspace",
+          updatedAt: stored?.updated_at ?? null,
+        },
+        { status: 409 },
+      );
+    }
     workspace = stampAmmunitionWorkspace(workspace, stored?.workspace, {
       userId,
       name: context.fullName,
@@ -107,7 +133,7 @@ export async function PUT(request: Request) {
   }
 
   try {
-    const { error } = await admin
+    const { data: saved, error } = await admin
       .from("pilot_ammunition_workspaces")
       .upsert(
         {
@@ -119,7 +145,9 @@ export async function PUT(request: Request) {
         {
           onConflict: "department_id",
         },
-      );
+      )
+      .select("updated_at")
+      .single();
 
     if (error) {
       return NextResponse.json(
@@ -153,6 +181,7 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({
       message: "Ammunition workspace saved.",
+      updatedAt: saved?.updated_at ?? null,
       dutyLotCount: workspace.dutyLots.length,
       trainingLotCount: workspace.trainingLots.length,
       transactionCount: workspace.transactions.length,

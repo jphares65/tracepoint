@@ -1,0 +1,118 @@
+### src/app/range-days/completion-contract.test.ts
+ok 1 - UX-RB-1: the scoring page uses the explicit control and blocks unrecorded Completion rows
+# pass 1
+# fail 0
+### src/lib/range/scoring-rules.test.ts
+ok 1 - RNG-15: the Complete / Incomplete toggle is honoured for every format and incomplete never passes
+ok 2 - RNG-09: an Any-firearm drill is matched to the standard of the firearm used
+ok 3 - the range scoring page saves through these rules
+ok 4 - RNG-07: the page lets scorers take attendance and add walk-ups but keeps other roster edits for managers
+ok 5 - UX-RB-1 defect (RC 5b6cc00): the old toggle display disagreed with the saved value for Completion drills
+ok 6 - UX-RB-1: whatever the control displays is exactly what is saved, for every format
+ok 7 - UX-RB-1: only an untouched Completion row needs an explicit choice
+ok 8 - UX-RB-1: no failure or remediation flag without a recorded failing result
+ok 9 - UX-RB-1: an explicit failing result still records the deficiency (B10 semantics kept)
+# pass 9
+# fail 0
+### src/app/range-days/components/CompletionChoiceControl.test.tsx
+ok 1 - UX-RB-1: an untouched Completion row shows Not recorded with neither choice selected
+ok 2 - UX-RB-1: each choice is explicit; one tap on Complete records complete
+ok 3 - UX-RB-1: the highlighted choice is the stored value
+ok 4 - UX-RB-1: scored formats show the complete default they save
+ok 5 - the control is labelled for the officer
+# pass 5
+# fail 0
+### src/app/firearms/inspections/new/page-contract.test.ts
+ok 1 - UX-RB-2: the New Inspection page has no Pass or Passed defaults and no stale copy
+# pass 1
+# fail 0
+### src/app/fleet-management/quick-inspection-contract.test.ts
+ok 1 - UX-RB-2: the quick inspection panel has no Pass defaults and no one-tap copy
+# pass 1
+# fail 0
+### src/lib/armory/inspection-form.test.ts
+ok 1 - UX-RB-2: every checklist item starts Not inspected, whatever the template default
+ok 2 - UX-RB-2: an untouched form cannot be saved and lists what is missing
+ok 3 - UX-RB-2: Mark remaining as Pass only fills items not yet answered
+ok 4 - UX-RB-2: a fully answered form with an explicit result can be saved; a failed critical item blocks Passed
+ok 5 - UX-RB-2: an uninspected item is never turned into an answer in the request body
+ok 6 - UX-RB-2: the server refuses a missing result and an unanswered item (unchanged contract)
+ok 7 - UX-RB-2: the form states the status effect of the chosen result
+# pass 7
+# fail 0
+### src/lib/fleet/inspection-form.test.ts
+ok 1 - UX-RB-2: vehicle checks start Not inspected; only a known-bad equipment record is carried in
+ok 2 - UX-RB-2: an untouched vehicle inspection cannot be submitted
+ok 3 - UX-RB-2: Mark remaining as Pass is explicit and never overrides an answered item
+ok 4 - UX-RB-2: a defect still needs a note
+# pass 4
+# fail 0
+### src/app/components/InspectionChoiceControl.test.tsx
+ok 1 - UX-RB-2: an unanswered item shows Not inspected and no option selected
+ok 2 - UX-RB-2: choosing an option reports it and highlights only the stored value
+# pass 2
+# fail 0
+### src/app/fleet-management/inspection-outcome-contract.test.ts
+ok 1 - UX-RB-3: the quick inspection panel reports the server's outcome, not a work-order guess
+# pass 1
+# fail 0
+### src/lib/fleet/inspection-outcome.test.ts
+ok 1 - UX-RB-3: a critical defect with no work order reports Out of Service, never ready
+ok 2 - UX-RB-3: an open critical work order keeps a clean inspection Out of Service
+ok 3 - UX-RB-3: defects with a work order report attention and the routing
+ok 4 - UX-RB-3: only a clean inspection of an available vehicle reports available
+ok 5 - UX-RB-3: a pending or unrecorded audit is shown as a warning
+ok 6 - UX-RB-3: a 500 that carries the inspection is saved: close the form, do not resubmit
+ok 7 - UX-RB-3: a failure without an inspection is not saved and keeps the form
+ok 8 - UX-RB-3: missing readiness never claims the vehicle is ready
+# pass 8
+# fail 0
+### src/app/firearms/custody-transfer-contract.test.ts
+ok 1 - UX-RB-4: the firearm record page sends the restricted custody contract and gates on server operations
+ok 2 - UX-RB-4 / C-64: the Restricted tab sends the notes the officer typed
+# pass 2
+# fail 0
+### src/lib/armory/restricted-custody.test.ts
+ok 1 - UX-RB-4 defect (RC 5b6cc00): the record page's old body is refused by the route contract
+ok 2 - UX-RB-4: the page's request is accepted by the route in both directions
+ok 3 - UX-RB-4: the page cannot build a request without a reason or, for check-in, a location
+ok 4 - UX-RB-4: operations mirror 031 — the assignee may check in an officer-held Duty Only firearm and check out a stored one
+ok 5 - UX-RB-4: another officer needs manage_restricted_firearm_custody
+ok 6 - UX-RB-4: no custody action without an assignment and an active, in-effect Duty Only restriction
+ok 7 - UX-RB-4: custody history shows what happened and the officer's reason and notes
+# pass 7
+# fail 0
+### src/lib/armory/restricted-custody-route.test.ts
+ok 1 - UX-RB-4: transfers in both directions through the real route with the page's requests
+ok 2 - UX-RB-4: the RC record page's body is refused before reaching the database
+ok 3 - UX-RB-4: another officer without custody permission sees no operations
+# pass 3
+# fail 0
+### src/app/range-days/sync-contract.test.ts
+ok 1 - UX-RB-5: a stale save is recovered by merging, never by reloading the page
+ok 2 - UX-RB-5: unsynced local changes survive a reload and an unknown base is never saved
+ok 3 - UX-RB-5: conflicts are shown with both values and a choice
+ok 4 - UX-RB-6: impossible values are stopped on the officer's row; pills reflect the server
+# pass 4
+# fail 0
+### src/lib/range/workspace-merge.test.ts
+ok 1 - UX-RB-5: two instructors scoring different officers keep both results
+ok 2 - UX-RB-5: the same score edited on both devices is a conflict; neither value is lost
+ok 3 - UX-RB-5: identical edits on both devices are not a conflict
+ok 4 - UX-RB-5: with no changes on this device the server copy is taken as is
+ok 5 - UX-RB-5: a deletion is replayed only when the other device did not change the record
+ok 6 - UX-RB-5: an offline copy with no known base never silently overwrites differing server records
+ok 7 - UX-RB-6: a result is Saved only when the server holds exactly that version
+# pass 7
+# fail 0
+### src/lib/range/simultaneous-instructors-route.test.ts
+ok 1 - UX-RB-5: two instructors scoring different officers at the same time keep both scores
+ok 2 - UX-RB-5 defect (RC 5b6cc00): without recovery the second device's save is refused and its score never reaches the server
+ok 3 - UX-RB-5: the same officer scored on both devices is kept as a conflict, then resolved without loss
+# pass 3
+# fail 0
+### src/lib/range/row-validation.test.ts
+ok 1 - UX-RB-6: a typed measurement is checked with the server's own rule before saving
+ok 2 - UX-RB-6: what the row blocks is exactly what the server refuses (same function, unchanged server behaviour)
+# pass 2
+# fail 0

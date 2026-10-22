@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { submitIdleSessionExpiry } from "./idle-session-core";
+import { currentReturnPath, submitIdleSessionExpiry } from "./idle-session-core";
 
 const WARNING_AFTER_MS = 25 * 60 * 1000;
 const SIGN_OUT_AFTER_MS = 30 * 60 * 1000;
@@ -29,9 +29,10 @@ export default function IdleSessionGuard() {
     }
   }, []);
 
-  const signOut = useCallback(() => {
+  // Only the automatic expiry carries the current page to the next sign-in.
+  const signOut = useCallback((returnTo?: string) => {
     clearTimers();
-    submitIdleSessionExpiry(document);
+    submitIdleSessionExpiry(document, returnTo);
   }, [clearTimers]);
 
   const scheduleTimers = useCallback(() => {
@@ -40,7 +41,7 @@ export default function IdleSessionGuard() {
     }, WARNING_AFTER_MS);
 
     signOutTimer.current = setTimeout(() => {
-      signOut();
+      signOut(currentReturnPath(window.location));
     }, SIGN_OUT_AFTER_MS);
   }, [signOut]);
 
@@ -103,7 +104,7 @@ export default function IdleSessionGuard() {
 
           <button
             type="button"
-            onClick={signOut}
+            onClick={() => signOut()}
             className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-red-500/50 hover:text-red-300"
           >
             Sign Out

@@ -43,6 +43,16 @@ export function buildNotificationEventReconciliationRow({
   const changed = Boolean(
     prior && String(prior.fingerprint) !== fingerprint,
   );
+  // The read path upserts on (department_id,user_id,notification_key) and the
+  // upsert updates only the columns it is given. For an unchanged condition the
+  // officer-owned acknowledgement/snooze columns are left out, so an
+  // acknowledge or snooze made while this read was in flight is never
+  // overwritten with the stale value read earlier (which also kept the
+  // dispatcher from mailing an item the officer had just acknowledged). A new
+  // or changed condition writes them explicitly: insert defaults, or reopen.
+  const officerState = prior && !changed
+    ? {}
+    : { acknowledged_at: null, snoozed_until: null };
 
   return {
     fingerprint,
@@ -61,8 +71,7 @@ export function buildNotificationEventReconciliationRow({
       first_seen_at: prior?.first_seen_at ?? now,
       last_seen_at: now,
       resolved_at: null,
-      acknowledged_at: changed ? null : prior?.acknowledged_at ?? null,
-      snoozed_until: changed ? null : prior?.snoozed_until ?? null,
+      ...officerState,
       updated_at: now,
     },
   };

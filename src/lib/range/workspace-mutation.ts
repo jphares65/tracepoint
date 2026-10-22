@@ -134,7 +134,7 @@ function part(item: WorkspaceRecord, ...keys: string[]) {
 }
 
 // A saved result is identified for corrections by its range day, drill, run and officer.
-function resultKey(item: WorkspaceRecord) {
+export function resultKey(item: WorkspaceRecord) {
   const parts = [
     part(item, "rangeDayId", "range_day_id"),
     part(item, "drillId", "drill_id", "rangeDayDrillId", "range_day_drill_id"),
@@ -277,6 +277,27 @@ function measurement(item: WorkspaceRecord, key: string) {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+/**
+ * RNG-14: the possible values for one result on its drill. Shared by the server
+ * check below and the scoring page (UX-RB-6), so an impossible value is stopped
+ * on the officer's row instead of stalling every later save.
+ */
+export function resultMeasurementError(item: WorkspaceRecord, drill: WorkspaceRecord | null | undefined) {
+  const runNumber = Number(part(item, "runNumber", "run_number"));
+  const components = Array.isArray(drill?.qualificationComponents) ? drill.qualificationComponents as WorkspaceRecord[] : [];
+  const component = Number.isInteger(runNumber) && runNumber > 0 ? record(components[runNumber - 1]) : {};
+  const maximum = [component.maximumScore, drill?.maxScore].find((value) => typeof value === "number" && Number.isFinite(value)) as number | undefined;
+  const drillName = text(drill?.name) || "this drill";
+  const score = measurement(item, "score");
+  if (score !== undefined && (Number.isNaN(score) || score < 0)) return `Score for ${drillName} must be a number of 0 or more.`;
+  if (score !== undefined && maximum !== undefined && score > maximum) return `Score ${score} for ${drillName} is above the maximum of ${maximum}.`;
+  const time = measurement(item, "timeSeconds");
+  if (time !== undefined && (Number.isNaN(time) || time <= 0)) return `Time for ${drillName} must be a number of seconds greater than 0.`;
+  const hits = measurement(item, "hitCount");
+  if (hits !== undefined && (Number.isNaN(hits) || hits < 0 || !Number.isInteger(hits))) return `Hit count for ${drillName} must be a whole number of 0 or more.`;
+  return "";
+}
+
 // RNG-14: a new or changed result must carry possible values for its drill.
 function invalidResultMessage(existing: WorkspaceRecord, next: WorkspaceRecord) {
   const before = collection(existing, "results", "drill_run_results");
@@ -285,18 +306,8 @@ function invalidResultMessage(existing: WorkspaceRecord, next: WorkspaceRecord) 
     const stored = present(before, item);
     if (stored && same(stored, item)) continue;
     const drill = drills.find((candidate) => text(candidate.id) === part(item, "drillId", "drill_id", "rangeDayDrillId", "range_day_drill_id"));
-    const runNumber = Number(part(item, "runNumber", "run_number"));
-    const components = Array.isArray(drill?.qualificationComponents) ? drill.qualificationComponents as WorkspaceRecord[] : [];
-    const component = Number.isInteger(runNumber) && runNumber > 0 ? record(components[runNumber - 1]) : {};
-    const maximum = [component.maximumScore, drill?.maxScore].find((value) => typeof value === "number" && Number.isFinite(value)) as number | undefined;
-    const drillName = text(drill?.name) || "this drill";
-    const score = measurement(item, "score");
-    if (score !== undefined && (Number.isNaN(score) || score < 0)) return `Score for ${drillName} must be a number of 0 or more.`;
-    if (score !== undefined && maximum !== undefined && score > maximum) return `Score ${score} for ${drillName} is above the maximum of ${maximum}.`;
-    const time = measurement(item, "timeSeconds");
-    if (time !== undefined && (Number.isNaN(time) || time <= 0)) return `Time for ${drillName} must be a number of seconds greater than 0.`;
-    const hits = measurement(item, "hitCount");
-    if (hits !== undefined && (Number.isNaN(hits) || hits < 0 || !Number.isInteger(hits))) return `Hit count for ${drillName} must be a whole number of 0 or more.`;
+    const error = resultMeasurementError(item, drill);
+    if (error) return error;
   }
   return "";
 }
@@ -320,6 +331,34 @@ export function authorizeRangeWorkspaceMutation(input: {
       !validateTenantReferences(next, input.departmentId, existing)) {
     return { ok: false, status: 403, error: "The range workspace contains records outside your agency." };
   }
+  return changeDecision(existing, next, canManage);
+}
+
+/**
+ * UX-RB-5: the same decision for a client that is about to save a merged
+ * workspace, so a change the server would refuse is shown to the instructor
+ * instead of being sent (and refused) with every later save. The agency check
+ * stays on the server; the caller's capabilities come from GET /range-workspace.
+ */
+export function previewRangeWorkspaceMutation(input: {
+  existingWorkspace: unknown;
+  nextWorkspace: unknown;
+  canManage: boolean;
+  canScore: boolean;
+  // The caller's agency from GET /range-workspace; with it, the agency and
+  // reference check runs here too (review R2-M3).
+  departmentId?: string | null;
+}): RangeWorkspaceMutationDecision {
+  if (!input.canManage && !input.canScore) {
+    return { ok: false, status: 403, error: "You do not have permission to update range records." };
+  }
+  if (input.departmentId && !validateTenantReferences(record(input.nextWorkspace), input.departmentId)) {
+    return { ok: false, status: 403, error: "The range workspace contains records outside your agency." };
+  }
+  return changeDecision(record(input.existingWorkspace), record(input.nextWorkspace), input.canManage);
+}
+
+function changeDecision(existing: WorkspaceRecord, next: WorkspaceRecord, canManage: boolean): RangeWorkspaceMutationDecision {
   if (finalizedHistoryChanged(existing, next)) {
     return { ok: false, status: 409, error: "Completed, locked, archived, or finalized range records cannot be changed." };
   }

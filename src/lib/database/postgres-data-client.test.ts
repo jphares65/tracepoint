@@ -178,3 +178,22 @@ test("notification dispatcher is cross-tenant only for its two reviewed tables",
   assert.equal(calls.some(call => call.text === "set local role authenticated"), false);
   assert.throws(() => dispatcher.from("profiles"), /table access rejected/);
 });
+
+test("transaction runs several statements in one authorized transaction and rolls back on failure", async () => {
+  const value = fixture();
+  await value.client.transaction(async (tx) => {
+    await tx.query("select 1 from public.ammunition_reconciliations where id = $1 for update", ["r"]);
+    await tx.query("update public.ammunition_reconciliations set notes = $1", ["n"]);
+  });
+  assert.deepEqual(value.calls.map(call => call.text), [
+    "begin", "set local role authenticated",
+    "select set_config('tracepoint.subject_id', $1, true)",
+    "select set_config('tracepoint.department_id', $1, true)",
+    "select 1 from public.ammunition_reconciliations where id = $1 for update",
+    "update public.ammunition_reconciliations set notes = $1",
+    "commit",
+  ]);
+  const failing = fixture();
+  await assert.rejects(failing.client.transaction(async (tx) => { await tx.query("delete from x"); throw new Error("conflict"); }), /conflict/);
+  assert.deepEqual(failing.calls.slice(-2).map(call => call.text), ["delete from x", "rollback"]);
+});

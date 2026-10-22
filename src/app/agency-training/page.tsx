@@ -194,6 +194,7 @@ export default function AgencyTrainingPage() {
     "overview",
   );
   const [saving, setSaving] = useState(false);
+  const [rosterRefreshKey, setRosterRefreshKey] = useState(0);
   const [draft, setDraft] = useState<EventDraft>(() => initialDraft());
 
   const loadEvents = useCallback(async () => {
@@ -326,7 +327,10 @@ export default function AgencyTrainingPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => void loadEvents()}
+                onClick={() => {
+                  setRosterRefreshKey((value) => value + 1);
+                  void loadEvents();
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-950/50 px-4 py-3 text-xs font-bold text-slate-300 transition hover:border-slate-600 hover:text-white"
               >
                 <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
@@ -617,6 +621,7 @@ export default function AgencyTrainingPage() {
                   {activeWorkspace === "roster" ? (
                     <AgencyTrainingRosterBoard
                       key={selectedEvent.id}
+                      refreshKey={rosterRefreshKey}
                       eventId={selectedEvent.id}
                       defaultHours={selectedEvent.defaultHours}
                       canManage={canManage}

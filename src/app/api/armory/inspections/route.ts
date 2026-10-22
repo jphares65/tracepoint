@@ -46,7 +46,10 @@ type InspectionPayload = {
   correctiveAction?: string;
   notes?: string;
   checklist?: ChecklistItemPayload[];
+  idempotencyKey?: unknown;
 };
+
+const INSPECTION_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET() {
   try {
@@ -140,6 +143,44 @@ export async function POST(request: Request) {
       );
     }
 
+    // C-07: a request key (065) makes a resubmitted inspection, for example a
+    // retry after a lost connection, return the first one instead of
+    // recording a duplicate inspection and a second status change.
+    const rawKey = body.idempotencyKey;
+    const idempotencyKey =
+      typeof rawKey === "string" && INSPECTION_KEY.test(rawKey.trim())
+        ? rawKey.trim().toLowerCase()
+        : null;
+
+    if (rawKey !== undefined && rawKey !== null && rawKey !== "" && !idempotencyKey) {
+      return NextResponse.json(
+        { error: "The request key is invalid. Reload the page and try again." },
+        { status: 400 },
+      );
+    }
+
+    const replay = async () => {
+      if (!idempotencyKey) return null;
+      const { data: existing, error: existingError } = await supabase
+        .from("firearm_inspections")
+        .select("*")
+        .eq("department_id", context.departmentId)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (existingError) throw new Error(existingError.message);
+      if (!existing) return null;
+      if (existing.firearm_id !== body.firearmId) {
+        return NextResponse.json(
+          { error: "This request was already used for a different inspection, so nothing was recorded. Reload and try again." },
+          { status: 409 },
+        );
+      }
+      return NextResponse.json({ inspection: existing, updatedFirearmStatus: null, replayed: true });
+    };
+
+    const replayed = await replay();
+    if (replayed) return replayed;
+
     const { data: firearm, error: firearmError } = await supabase
       .from("firearms")
       .select("id, department_id, condition_status")
@@ -189,9 +230,16 @@ export async function POST(request: Request) {
         follow_up_date: body.followUpDate || null,
         corrective_action: body.correctiveAction?.trim() || null,
         notes: body.notes?.trim() || null,
+        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
       })
       .select("*")
       .single();
+
+    // Two submissions with one key raced: the other one recorded it.
+    if (insertError?.code === "23505" && idempotencyKey) {
+      const raced = await replay();
+      if (raced) return raced;
+    }
 
     if (insertError || !inspection) {
       return NextResponse.json(
@@ -221,7 +269,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "Inspection was created, but checklist items could not be saved: " +
+              "Inspection was created, but checklist items could not be saved. Do not record it again; open it from the inspection list. " +
               itemError.message,
           },
           { status: 500 },
@@ -255,7 +303,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "Inspection was saved, but firearm status could not be updated: " +
+              "Inspection was saved, but firearm status could not be updated. Do not record the inspection again; set the status on the firearm. " +
               (statusError instanceof Error ? statusError.message : "unknown error"),
           },
           { status: 500 },
