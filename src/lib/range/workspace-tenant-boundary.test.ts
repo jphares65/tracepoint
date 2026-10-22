@@ -6,6 +6,7 @@ import {
   hasValidRangeWorkspaceTenantBoundary,
 } from "./workspace-mutation.ts";
 import {
+  agencyWorkspaceResponse,
   attemptsProtectedRecordMutation,
   mergeProtectedWorkspaceRecords,
   workspaceForActiveDepartment,
@@ -153,4 +154,12 @@ test("a foreign record submitted by a client remains fail-closed and cannot be m
   });
   assert.equal(decision.ok, false);
   if (!decision.ok) assert.equal(decision.status, 403);
+});
+
+test("an API response withholds another agency's records and counts them without their content", () => {
+  const response = agencyWorkspaceResponse(workspaceWithLegacyForeignRecords(), "agency-a");
+  assert.deepEqual(response.workspace, workspaceForActiveDepartment(workspaceWithLegacyForeignRecords(), "agency-a"));
+  assert.ok(response.withheld && Object.values(response.withheld).every((count) => typeof count === "number" && count > 0));
+  assert.equal(JSON.stringify(response.withheld).includes("agency-b"), false);
+  assert.equal(agencyWorkspaceResponse(activeWorkspace(), "agency-a").withheld, null);
 });

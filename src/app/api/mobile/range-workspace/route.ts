@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, hasServerFeature, resolveServerAccess, type ServerAccessContext } from "@/lib/tracepoint/server-access";
 import { createRangeReadRepository } from "@/lib/range/read-repository";
-import { authorizeRangeWorkspaceMutation } from "@/lib/range/workspace-mutation";
+import { authorizeRangeWorkspaceMutation, hasValidRangeWorkspaceTenantBoundary } from "@/lib/range/workspace-mutation";
+import { agencyWorkspaceResponse, mergeProtectedWorkspaceRecords } from "@/lib/range/workspace-tenant-boundary";
 export const dynamic = "force-dynamic";
 function permitted(context: ServerAccessContext) { return (hasServerFeature(context, "range_training") || hasServerFeature(context, "qualifications")) && hasAnyServerPermission(context, ["manage_range_days", "score_range_days", "manage_qualifications"]); }
 export async function GET(request: Request) {
@@ -10,15 +11,21 @@ export async function GET(request: Request) {
     const repository = createRangeReadRepository(resolved.context.admin, resolved.context.departmentId);
     const [workspace, people] = await Promise.all([repository.getWorkspace(resolved.context.departmentId), repository.getPersonnel(resolved.context.departmentId)]);
     const labels = new Map<string, Record<string, unknown>>(people.profiles.map((profile) => [String(profile.id), profile]));
-    return NextResponse.json({ userId: resolved.context.userId, workspace: workspace.workspace ?? {}, personnel: people.memberships.map((membership) => { const person = labels.get(String(membership.user_id)); return { id: String(membership.user_id), userId: String(membership.user_id), displayName: String(person?.full_name ?? person?.email ?? "TracePoint officer"), badgeNumber: membership.badge_number ?? null }; }) }, { headers: { "Cache-Control": "no-store" } });
+    // Legacy records stamped with another agency are never returned; PUT reattaches them (as the web route).
+    const agency = agencyWorkspaceResponse(workspace.workspace ?? {}, resolved.context.departmentId);
+    if (agency.withheld) console.warn("tracepoint_range_foreign_records_withheld", { route: "mobile", departmentId: resolved.context.departmentId, withheld: agency.withheld });
+    return NextResponse.json({ userId: resolved.context.userId, workspace: agency.workspace, personnel: people.memberships.map((membership) => { const person = labels.get(String(membership.user_id)); return { id: String(membership.user_id), userId: String(membership.user_id), displayName: String(person?.full_name ?? person?.email ?? "TracePoint officer"), badgeNumber: membership.badge_number ?? null }; }) }, { headers: { "Cache-Control": "no-store" } });
   } catch { return NextResponse.json({ error: "Live scoring could not be loaded." }, { status: 500 }); }
 }
 export async function PUT(request: Request) {
   const resolved = await resolveServerAccess(request); if (!resolved.ok) return accessFailureResponse(resolved); if (!permitted(resolved.context)) return NextResponse.json({ error: "You are not authorized to save live scores." }, { status: 403 });
-  const body = await request.json().catch(() => ({})) as { workspace?: unknown }; const workspace = body.workspace;
-  if (!workspace || typeof workspace !== "object") return NextResponse.json({ error: "A scoring workspace is required." }, { status: 400 });
+  const body = await request.json().catch(() => ({})) as { workspace?: unknown }; const submitted = body.workspace;
+  if (!submitted || typeof submitted !== "object") return NextResponse.json({ error: "A scoring workspace is required." }, { status: 400 });
   const existing = await resolved.context.admin.from("pilot_range_workspaces").select("workspace,updated_at").eq("department_id", resolved.context.departmentId).maybeSingle();
   if (existing.error) return NextResponse.json({ error: "The current scoring workspace could not be loaded." }, { status: 500 });
+  // The raw payload is checked first; other agencies' legacy records are then copied back from the stored workspace, never from the client.
+  if (!hasValidRangeWorkspaceTenantBoundary({ existingWorkspace: existing.data?.workspace ?? {}, nextWorkspace: submitted, departmentId: resolved.context.departmentId })) return NextResponse.json({ error: "The scoring workspace contains records outside your agency." }, { status: 403 });
+  const workspace = mergeProtectedWorkspaceRecords(existing.data?.workspace ?? {}, submitted, resolved.context.departmentId);
   const decision = authorizeRangeWorkspaceMutation({ existingWorkspace: existing.data?.workspace ?? {}, nextWorkspace: workspace, departmentId: resolved.context.departmentId, permissions: resolved.context.permissions });
   if (!decision.ok) return NextResponse.json({ error: decision.error }, { status: decision.status });
   const updatedAt = new Date(Math.max(Date.now(), existing.data ? Date.parse(existing.data.updated_at) + 1 : 0)).toISOString();

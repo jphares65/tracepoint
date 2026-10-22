@@ -138,6 +138,23 @@ export function workspaceForActiveDepartment<T extends WorkspaceRecord>(
 }
 
 /**
+ * The agency's workspace as an API response may carry it: records stamped with
+ * another agency (and children of no kept range day) are withheld. `withheld`
+ * counts them per collection so the routes can record where legacy foreign
+ * records still exist; it holds no record content.
+ */
+export function agencyWorkspaceResponse(workspace: unknown, departmentId: string) {
+  const source = record(workspace);
+  const filtered = workspaceForActiveDepartment(source, departmentId);
+  const withheld: Partial<Record<CollectionName, number>> = {};
+  for (const name of COLLECTIONS) {
+    const removed = collection(source, name).length - collection(filtered, name).length;
+    if (removed > 0) withheld[name] = removed;
+  }
+  return { workspace: filtered, withheld: Object.keys(withheld).length ? withheld : null };
+}
+
+/**
  * Reattaches foreign or unlinked legacy records from the tenant's stored JSON
  * after a browser has submitted only active-department records. These records
  * are copied byte-for-byte from the server; they are never accepted from the

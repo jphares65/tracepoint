@@ -15,7 +15,10 @@ import {
   authorizeRangeWorkspaceMutation,
   hasValidRangeWorkspaceTenantBoundary,
 } from "@/lib/range/workspace-mutation";
-import { mergeProtectedWorkspaceRecords } from "@/lib/range/workspace-tenant-boundary";
+import {
+  agencyWorkspaceResponse,
+  mergeProtectedWorkspaceRecords,
+} from "@/lib/range/workspace-tenant-boundary";
 
 type StoredRangeDayWorkspace = {
   rangeDays?: unknown[];
@@ -77,13 +80,19 @@ export async function GET() {
 
   try {
     const data = await createRangeReadRepository(admin, departmentId).getWorkspace(departmentId);
+    // Legacy JSON can hold records stamped with another agency. They are never
+    // returned; PUT reattaches them from the stored copy.
+    const agency = agencyWorkspaceResponse(data.workspace ?? {}, departmentId);
+    if (agency.withheld) {
+      console.warn("tracepoint_range_foreign_records_withheld", { route: "pilot", departmentId, withheld: agency.withheld });
+    }
 
     return NextResponse.json({
       departmentId,
       userId: resolved.context.userId,
       canManage: hasAnyServerPermission(resolved.context, ["manage_range_days"]),
       canScore: hasAnyServerPermission(resolved.context, ["score_range_days", "manage_qualifications"]),
-      workspace: data.workspace,
+      workspace: data.workspace ? agency.workspace : data.workspace,
       qualificationStandards: data.qualificationStandards,
       updatedAt: data.updatedAt,
       updatedByUserId: data.updatedByUserId,
