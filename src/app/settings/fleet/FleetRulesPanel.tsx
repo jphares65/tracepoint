@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RefreshCw, Save } from "lucide-react";
+import { canSaveRules, formatCodeList, parseCodeList, type RulesLoad } from "@/lib/fleet/rules-form";
 
 const DEFAULTS: any = {
   status_automation_enabled: true,
@@ -67,23 +68,64 @@ function Toggle({
   );
 }
 
+// UX-RB2-2 (D-27): keeps the text as typed so a comma can start the next code.
+function CodeListInput({
+  value,
+  onChange,
+  className,
+  placeholder,
+  label,
+}: {
+  value: unknown;
+  onChange: (codes: string[]) => void;
+  className: string;
+  placeholder?: string;
+  label: string;
+}) {
+  const [text, setText] = useState(() => formatCodeList(value));
+  const [synced, setSynced] = useState(value);
+  if (synced !== value && formatCodeList(value) !== formatCodeList(parseCodeList(text))) {
+    setSynced(value);
+    setText(formatCodeList(value));
+  }
+  return (
+    <input
+      aria-label={label}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+        const codes = parseCodeList(event.target.value);
+        setSynced(codes);
+        onChange(codes);
+      }}
+      onBlur={() => setText(formatCodeList(parseCodeList(text)))}
+      placeholder={placeholder}
+      className={className}
+    />
+  );
+}
+
 export default function FleetRulesPanel() {
   const [rules, setRules] = useState<any>(DEFAULTS);
-  const [loading, setLoading] = useState(true);
+  const [load, setLoad] = useState<RulesLoad>({ state: "loading" });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     fetch("/api/fleet/rules", { cache: "no-store" })
       .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || "The agency's fleet rules could not be loaded.");
         setRules({ ...DEFAULTS, ...payload.rules });
+        setLoad({ state: "loaded" });
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((e) =>
+        setLoad({ state: "failed", error: e instanceof Error && e.message ? e.message : "The agency's fleet rules could not be loaded." }),
+      );
+  }, [attempt]);
   async function save() {
+    if (!canSaveRules(load, saving)) return;
     setSaving(true);
     setError("");
     setMessage("");
@@ -119,9 +161,23 @@ export default function FleetRulesPanel() {
           {message}
         </div>
       ) : null}
-      {loading ? (
-        <div className="flex h-48 items-center justify-center">
+      {load.state === "loading" ? (
+        <div className="flex h-48 items-center justify-center" role="status" aria-label="Loading fleet rules">
           <RefreshCw className="animate-spin text-blue-300" />
+        </div>
+      ) : load.state === "failed" ? (
+        <div role="alert" className="rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200">
+          <p>{load.error} The current rules are unchanged; nothing can be saved until they load.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setLoad({ state: "loading" });
+              setAttempt((value) => value + 1);
+            }}
+            className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border border-red-700 px-4 text-sm font-semibold text-red-100 hover:bg-red-900/40"
+          >
+            <RefreshCw size={14} /> Try again
+          </button>
         </div>
       ) : (
         <>
@@ -265,17 +321,10 @@ export default function FleetRulesPanel() {
                 <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Fleet Manager Roles
                 </span>
-                <input
-                  value={(rules.fleet_manager_role_codes ?? []).join(", ")}
-                  onChange={(e) =>
-                    setRules({
-                      ...rules,
-                      fleet_manager_role_codes: e.target.value
-                        .split(",")
-                        .map((x) => x.trim())
-                        .filter(Boolean),
-                    })
-                  }
+                <CodeListInput
+                  label="Fleet Manager Roles"
+                  value={rules.fleet_manager_role_codes}
+                  onChange={(codes) => setRules((current: typeof rules) => ({ ...current, fleet_manager_role_codes: codes }))}
                   className={input}
                 />
               </label>
@@ -283,17 +332,10 @@ export default function FleetRulesPanel() {
                 <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Mechanic Roles
                 </span>
-                <input
-                  value={(rules.mechanic_role_codes ?? []).join(", ")}
-                  onChange={(e) =>
-                    setRules({
-                      ...rules,
-                      mechanic_role_codes: e.target.value
-                        .split(",")
-                        .map((x) => x.trim())
-                        .filter(Boolean),
-                    })
-                  }
+                <CodeListInput
+                  label="Mechanic Roles"
+                  value={rules.mechanic_role_codes}
+                  onChange={(codes) => setRules((current: typeof rules) => ({ ...current, mechanic_role_codes: codes }))}
                   className={input}
                 />
               </label>
@@ -313,17 +355,10 @@ export default function FleetRulesPanel() {
                 <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Inspection types
                 </span>
-                <input
-                  value={(rules.inspection_types ?? []).join(", ")}
-                  onChange={(e) =>
-                    setRules({
-                      ...rules,
-                      inspection_types: e.target.value
-                        .split(",")
-                        .map((x) => x.trim())
-                        .filter(Boolean),
-                    })
-                  }
+                <CodeListInput
+                  label="Inspection types"
+                  value={rules.inspection_types}
+                  onChange={(codes) => setRules((current: typeof rules) => ({ ...current, inspection_types: codes }))}
                   className={input}
                 />
               </label>
@@ -348,18 +383,11 @@ export default function FleetRulesPanel() {
                 <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Permitted inspector role codes
                 </span>
-                <input
-                  value={(rules.inspection_role_codes ?? []).join(", ")}
-                  onChange={(e) =>
-                    setRules({
-                      ...rules,
-                      inspection_role_codes: e.target.value
-                        .split(",")
-                        .map((x) => x.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="Blank allows all agency users"
+                <CodeListInput
+                  label="Permitted inspector role codes"
+                  value={rules.inspection_role_codes}
+                  onChange={(codes) => setRules((current: typeof rules) => ({ ...current, inspection_role_codes: codes }))}
+                  placeholder="Blank: anyone with View Fleet may inspect"
                   className={input}
                 />
               </label>
@@ -602,7 +630,7 @@ export default function FleetRulesPanel() {
           <div className="flex justify-end">
             <button
               onClick={() => void save()}
-              disabled={saving}
+              disabled={!canSaveRules(load, saving)}
               className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
             >
               {saving ? (
