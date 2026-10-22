@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: UX-RB2-6 (E-52): switching a module off asks first; either change reports what happened
+ok 1 - UX-RB2-6 (E-52): switching a module off asks first; either change reports what happened
+  ---
+  duration_ms: 6.690123
+  type: 'test'
+  ...
+# Subtest: UX-RB2-6 (E-52): the confirmation names the module and the agency and states the effect
+ok 2 - UX-RB2-6 (E-52): the confirmation names the module and the agency and states the effect
+  ---
+  duration_ms: 1.379328
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 362.991723

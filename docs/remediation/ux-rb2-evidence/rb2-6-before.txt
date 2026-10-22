@@ -1,0 +1,183 @@
+TAP version 13
+# Subtest: UX-RB2-6 (E-52): switching a module off asks first; either change reports what happened
+not ok 1 - UX-RB2-6 (E-52): switching a module off asks first; either change reports what happened
+  ---
+  duration_ms: 9.055306
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/super-admin/module-switch-contract.test.ts:2:1210'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /if \(!isEnabled && !window\.confirm\(moduleDisableConfirmation\(moduleName, agencyName\)\)\) return;/. Input:
+    
+    'async function setFeatureEnabled(\n' +
+      '    featureCode: string,\n' +
+      '    isEnabled: boolean,\n' +
+      '  ) {\n' +
+      '    if (!departmentId) return;\n' +
+      '\n' +
+      '    setSavingFeature(featureCode);\n' +
+      '    setError(null);\n' +
+      '\n' +
+      '    try {\n' +
+      '      const response = await fetch("/api/super-admin", {\n' +
+      '        method: "PATCH",\n' +
+      '        headers: {\n' +
+      '          "Content-Type": "application/json",\n' +
+      '        },\n' +
+      '        credentials: "same-origin",\n' +
+      '        body: JSON.stringify({\n' +
+      '          departmentId,\n' +
+      '          featureCode,\n' +
+      '          isEnabled,\n' +
+      '        }),\n' +
+      '      });\n' +
+      '\n' +
+      '      if (!response.ok) {\n' +
+      '        throw new Error(await readError(response));\n' +
+      '      }\n' +
+      '\n' +
+      '      setPayload((current) => {\n' +
+      '        if (!current) return current;\n' +
+      '\n' +
+      '        const exists = current.entitlements.some(\n' +
+      '          (row) =>\n' +
+      '            row.department_id === departmentId &&\n' +
+      '            row.feature_code === featureCode,\n' +
+      '        );\n' +
+      '\n' +
+      '        const entitlements = exists\n' +
+      '          ? current.entitlements.map((row) =>\n' +
+      '              row.department_id === departmentId &&\n' +
+      '              row.feature_code === featureCode\n' +
+      '                ? {\n' +
+      '                    ...row,\n' +
+      '                    is_enabled: isEnabled,\n' +
+      '                  }\n' +
+      '                : row,\n' +
+      '            )\n' +
+      '          : [\n' +
+      '              ...current.entitlements,\n' +
+      '              {\n' +
+      '                department_id: departmentId,\n' +
+      '                feature_code: featureCode,\n' +
+      '                is_enabled: isEnabled,\n' +
+      '              },\n' +
+      '            ];\n' +
+      '\n' +
+      '        return {\n' +
+      '          ...current,\n' +
+      '          entitlements,\n' +
+      '        };\n' +
+      '      });\n' +
+      '\n' +
+      '      if (departmentId === access.departmentId) {\n' +
+      '        await access.refresh();\n' +
+      '      }\n' +
+      '    } catch (saveError) {\n' +
+      '      setError(\n' +
+      '        saveError instanceof Error\n' +
+      '          ? saveError.message\n' +
+      '          : "Module access could not be updated.",\n' +
+      '      );\n' +
+      '    } finally {\n' +
+      '      setSavingFeature(null);\n' +
+      '    }\n' +
+      '  }\n' +
+      '\n' +
+      '  '
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    async function setFeatureEnabled(
+        featureCode: string,
+        isEnabled: boolean,
+      ) {
+        if (!departmentId) return;
+    
+        setSavingFeature(featureCode);
+        setError(null);
+    
+        try {
+          const response = await fetch("/api/super-admin", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              departmentId,
+              featureCode,
+              isEnabled,
+            }),
+          });
+    
+          if (!response.ok) {
+            throw new Error(await readError(response));
+          }
+    
+          setPayload((current) => {
+            if (!current) return current;
+    
+            const exists = current.entitlements.some(
+              (row) =>
+                row.department_id === departmentId &&
+                row.feature_code === featureCode,
+            );
+    
+            const entitlements = exists
+              ? current.entitlements.map((row) =>
+                  row.department_id === departmentId &&
+                  row.feature_code === featureCode
+                    ? {
+                        ...row,
+                        is_enabled: isEnabled,
+                      }
+                    : row,
+                )
+              : [
+                  ...current.entitlements,
+                  {
+                    department_id: departmentId,
+                    feature_code: featureCode,
+                    is_enabled: isEnabled,
+                  },
+                ];
+    
+            return {
+              ...current,
+              entitlements,
+            };
+          });
+    
+          if (departmentId === access.departmentId) {
+            await access.refresh();
+          }
+        } catch (saveError) {
+          setError(
+            saveError instanceof Error
+              ? saveError.message
+              : "Module access could not be updated.",
+          );
+        } finally {
+          setSavingFeature(null);
+        }
+      }
+    
+      
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/super-admin/module-switch-contract.test.ts:9:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 421.69699
