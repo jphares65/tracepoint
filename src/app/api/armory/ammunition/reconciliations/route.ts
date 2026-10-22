@@ -12,6 +12,14 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { ammunitionUserNames } from "@/lib/armory/ammunition-user-names";
+import {
+  claimToken,
+  RECONCILIATION_CONFLICTS,
+  reconciliationItemRows,
+  saveReconciliationLocked,
+  submissionProblem,
+  transactionalClient,
+} from "@/lib/armory/reconciliation-save";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- legacy dynamic database boundary */
 
@@ -605,15 +613,42 @@ export async function POST(request: NextRequest) {
         .select("id")
         .single();
 
+      // One reconciliation per cycle: a concurrent start is a conflict, not a failure.
+      if (insertError?.code === "23505") {
+        return NextResponse.json({ error: RECONCILIATION_CONFLICTS.cycleStarted }, { status: 409 });
+      }
       if (insertError) throw new Error(insertError.message);
-      reconciliationId = data.id;
+      reconciliationId = data.id as string;
+    }
+    const id = reconciliationId as string;
+    const saveAction = action as "save" | "submit";
+
+    // AWS-native: check, items and status in one transaction under the row lock.
+    const transactional = transactionalClient(admin);
+    if (transactional) {
+      const result = await transactional.transaction((tx) => saveReconciliationLocked(tx, {
+        reconciliationId: id, departmentId, actorUserId: user.id, action: saveAction, items, notes, now, lotQuantity,
+      }));
+      if (result.outcome === "not_found") {
+        return NextResponse.json({ error: "Reconciliation record not found." }, { status: 404 });
+      }
+      if (result.outcome === "conflict") {
+        return NextResponse.json(
+          { error: result.status === "Certified" ? RECONCILIATION_CONFLICTS.Certified : RECONCILIATION_CONFLICTS.Submitted, status: result.status },
+          { status: 409 },
+        );
+      }
+      if (result.outcome === "invalid") return NextResponse.json({ error: result.error }, { status: 400 });
+      return NextResponse.json({ ok: true, reconciliationId: id });
     }
 
+    // Bridge client (no request transaction): compare-and-set on updated_at
+    // before any item row is touched, and again on the final update.
     const { data: reconciliation, error: reconciliationError } =
       await admin
         .from("ammunition_reconciliations")
-        .select("id,status")
-        .eq("id", reconciliationId)
+        .select("id,status,updated_at")
+        .eq("id", id)
         .eq("department_id", departmentId)
         .maybeSingle();
 
@@ -627,18 +662,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (reconciliation.status === "Certified") {
-      return NextResponse.json(
-        { error: "Certified reconciliations cannot be changed." },
-        { status: 409 },
-      );
-    }
-
     // C-R1: Save Draft or a second Submit used to rewrite a submitted count
     // and, for Save Draft, silently return it to Draft.
-    if (reconciliation.status === "Submitted") {
+    if (reconciliation.status !== "Draft") {
       return NextResponse.json(
-        { error: "This reconciliation is submitted and awaiting certification. Withdraw it to draft before changing the counts." },
+        { error: reconciliation.status === "Certified" ? RECONCILIATION_CONFLICTS.Certified : RECONCILIATION_CONFLICTS.Submitted, status: reconciliation.status },
         { status: 409 },
       );
     }
@@ -646,68 +674,43 @@ export async function POST(request: NextRequest) {
     const { data: storedItems, error: storedItemsError } = await admin
       .from("ammunition_reconciliation_items")
       .select("lot_id,expected_quantity")
-      .eq("reconciliation_id", reconciliationId)
+      .eq("reconciliation_id", id)
       .eq("department_id", departmentId);
 
     if (storedItemsError) throw new Error(storedItemsError.message);
 
-    const storedExpected = new Map<string, number>(
-      (storedItems ?? []).map((item: any) => [String(item.lot_id), Number(item.expected_quantity)]),
+    const rows = reconciliationItemRows(
+      items,
+      { reconciliationId: id, departmentId },
+      new Map<string, number>((storedItems ?? []).map((item: any) => [String(item.lot_id), Number(item.expected_quantity)])),
+      lotQuantity,
     );
 
-    const rows = items.map((item: any) => {
-      const lotId = String(item.lotId);
-      const parsed =
-        item.physicalQuantity === null ||
-        item.physicalQuantity === undefined ||
-        item.physicalQuantity === ""
-          ? null
-          : Number.parseInt(String(item.physicalQuantity), 10);
-      const physicalQuantity =
-        parsed !== null && Number.isFinite(parsed) && parsed >= 0
-          ? parsed
-          : null;
-      const expectedQuantity =
-        storedExpected.get(lotId) ?? lotQuantity.get(lotId) ?? 0;
+    if (saveAction === "submit") {
+      const problem = submissionProblem(rows);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    }
 
-      return {
-        reconciliation_id: reconciliationId,
-        department_id: departmentId,
-        lot_id: lotId,
-        expected_quantity: expectedQuantity,
-        physical_quantity: physicalQuantity,
-        variance:
-          physicalQuantity === null
-            ? null
-            : physicalQuantity - expectedQuantity,
-        explanation:
-          typeof item.explanation === "string" &&
-          item.explanation.trim()
-            ? item.explanation.trim()
-            : null,
-      };
-    });
+    const token = claimToken();
+    const { data: claimed, error: claimError } = await admin
+      .from("ammunition_reconciliations")
+      .update({ updated_at: token })
+      .eq("id", id)
+      .eq("department_id", departmentId)
+      .eq("status", "Draft")
+      .eq("updated_at", reconciliation.updated_at)
+      .select("id")
+      .maybeSingle();
 
-    if (action === "submit") {
-      if (rows.some((row: any) => row.physical_quantity === null)) {
-        return NextResponse.json(
-          { error: "Every ammunition lot requires a physical count before submission." },
-          { status: 400 },
-        );
-      }
-
-      if (rows.some((row: any) => row.variance !== 0 && !row.explanation)) {
-        return NextResponse.json(
-          { error: "Every discrepancy requires an explanation before submission." },
-          { status: 400 },
-        );
-      }
+    if (claimError) throw new Error(claimError.message);
+    if (!claimed) {
+      return NextResponse.json({ error: RECONCILIATION_CONFLICTS.changed }, { status: 409 });
     }
 
     const { error: deleteError } = await admin
       .from("ammunition_reconciliation_items")
       .delete()
-      .eq("reconciliation_id", reconciliationId)
+      .eq("reconciliation_id", id)
       .eq("department_id", departmentId);
 
     if (deleteError) throw new Error(deleteError.message);
@@ -723,27 +726,30 @@ export async function POST(request: NextRequest) {
     const update: Record<string, unknown> = {
       notes,
       updated_at: now,
+      status: saveAction === "submit" ? "Submitted" : "Draft",
     };
 
-    if (action === "save") {
-      update.status = "Draft";
-    }
-
-    if (action === "submit") {
-      update.status = "Submitted";
+    if (saveAction === "submit") {
       update.submitted_at = now;
       update.submitted_by = user.id;
     }
 
-    const { error: updateError } = await admin
+    const { data: saved, error: updateError } = await admin
       .from("ammunition_reconciliations")
       .update(update)
-      .eq("id", reconciliationId)
-      .eq("department_id", departmentId);
+      .eq("id", id)
+      .eq("department_id", departmentId)
+      .eq("status", "Draft")
+      .eq("updated_at", token)
+      .select("id")
+      .maybeSingle();
 
     if (updateError) throw new Error(updateError.message);
+    if (!saved) {
+      return NextResponse.json({ error: RECONCILIATION_CONFLICTS.changed }, { status: 409 });
+    }
 
-    return NextResponse.json({ ok: true, reconciliationId });
+    return NextResponse.json({ ok: true, reconciliationId: id });
   } catch (saveError) {
     return NextResponse.json(
       {

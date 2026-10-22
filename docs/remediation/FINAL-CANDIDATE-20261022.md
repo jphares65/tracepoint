@@ -20,7 +20,8 @@ deployed, and no database has been changed.
 | Inventory (D-62/63/65/70, C-07, C-32, C-48, D-14, D-22), migration 056 | in `c8f9b3c` | run 36 |
 | Owner decisions: reconciliation withdrawal (permission, reason, audit); adjustment controls for authorized users only | `e43f7c7` | locally 1047/1047 |
 | Settings SV-29 (E-02, E-04, E-06, E-07, AE-R1) | `1dfb993`, cherry-picked unchanged as `c0b4558` | CI run 37 green on `1dfb993` |
-| Withdrawal and its audit in one statement (owner item 5) | `098bc42` | this candidate |
+| Withdrawal and its audit in one statement (owner item 5) | `098bc42` | CI run 39 green on `a628e6c` |
+| Save Draft / Submit concurrency (owner release blocker, section 5a) | this commit | this candidate |
 
 Check: `4372945`, `7a39854`, `9e7551e`, `c8f9b3c` and `e43f7c7` are all
 ancestors of the candidate. The Settings files equal `1dfb993` except
@@ -152,6 +153,62 @@ validator fail.
 without its audit record") cover both clients under the same failures, plus
 the reason and permission checks.
 
+## 5a. Save Draft and Submit under concurrency (owner release blocker)
+
+**Defect (in `a628e6c`).** Save Draft and Submit read the status, rejected a
+Submitted record, then **deleted and reinserted the item rows** and finally
+updated the parent with no status condition. A request that read Draft just
+before another member submitted could still replace the submitted counts, and
+(Save Draft) return the record to Draft with no reason and no withdrawal audit.
+
+**Now.**
+- **AWS-native (staging, production).** One transaction
+  (`PostgresDataClient.transaction`, `saveReconciliationLocked`):
+  1. `select … for update` locks the reconciliation;
+  2. only a Draft proceeds; Submitted or Certified returns 409 before anything
+     is written;
+  3. the stored expected quantities are re-read under the lock;
+  4. the items are deleted and reinserted;
+  5. the parent is updated with `status = 'Draft'` as its condition.
+
+  A competing request waits on the lock, then sees the committed status. It
+  cannot return a submission to Draft, change its counts, or overwrite another
+  submission; it gets an actionable 409. Any failure rolls the item rows back.
+  No schema change.
+- **Bridge client (Supabase, no request transaction).** Compare-and-set on
+  `updated_at`: the row is claimed (Draft, unchanged since read) **before any
+  item row is touched**, and the final update requires the claim. A write that
+  lands before the claim gets a 409 with nothing written. *Residual
+  limitation:* two bridge requests whose claims both succeed in sequence while
+  their item writes overlap cannot be fully serialized without a database
+  function. Staging and production run AWS-native; the bridge client is the
+  local development path.
+- A concurrent start of the same cycle's reconciliation (unique cycle key) now
+  returns 409 instead of 500.
+- Withdrawal is unchanged: a separate operation that is administrator-only,
+  requires a reason, and is audited in one statement (section 5).
+
+**Real-PostgreSQL proof.** `scripts/validate-local-reconciliation-concurrency.ts`
+is run by `validate-clean-bootstrap` on the fully migrated schema. It drives
+the **real route handler and the real AWS-native data client** (row-level
+security as `authenticated`) with real Armorer and Administrator role
+assignments. A third connection holds the row lock so that the requests queue
+deterministically:
+
+| # | Case | Result |
+|---|---|---|
+| 1 | Save Draft queued behind a Submit | 409; status Submitted, submitter, notes and counts intact |
+| 2 | Two Submits | The first wins; the second gets 409; submitter and counts are the first's |
+| 3 | Save Draft or Submit on a Submitted record | 409; nothing changes |
+| 4 | Withdrawal | Armorer 403; no reason 400; administrator 200 (status only, counts kept) with one `ammunition_reconciliation_withdrawn` audit row; the draft can then be edited |
+| 5 | Audit history | Earlier rows never change; each race adds exactly one accepted save's audited writes (parent update, item delete/insert) by the winner; refused requests add nothing |
+
+A mutation check (accepting a Submitted record under the lock) makes it fail.
+Route tests cover the bridge compare-and-set (a competing write before the
+claim, and after it), the outcome-to-status mapping of the transactional path,
+and the concurrent cycle start. `PostgresDataClient.transaction` has its own
+unit test (commit, and rollback on failure).
+
 ## 6. Staging deployment plan (only after G1, G2 and G4 pass)
 
 All steps run from the owner's Windows workstation, on a clean checkout of the
@@ -200,6 +257,9 @@ other Lane C changes.
      writes its custody event and audit row. There is no
      administrative-correction control.
    - **Reconciliation:** Armorer A1 submits and Armorer A2 certifies (S22g).
+     With two browser sessions on the same Draft, A1 submits and then A2
+     saves a draft: A2 gets the "submitted and awaiting certification" 409,
+     and A1's counts stand.
      On a second submission, the Administrator withdraws it with a reason, and
      the audit log shows `ammunition_reconciliation_withdrawn` with that
      reason. An Armorer sees no Withdraw button, and a direct POST returns 403.

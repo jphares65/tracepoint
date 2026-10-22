@@ -389,7 +389,7 @@ test("C-32: a save based on an older ledger is refused instead of overwriting th
 const reconciliationTables = (status = "Draft", submittedBy: string | null = null) => ({
   department_rules: [],
   ammunition_lots: [{ id: "lot-1", department_id: D, category: "Duty", caliber: "9mm", manufacturer: "X", lot_number: "L1", quantity_on_hand: 500, is_active: true }, { id: "lot-foreign", department_id: "dept-2", quantity_on_hand: 10 }],
-  ammunition_reconciliations: [{ id: "rec-1", department_id: D, cycle_name: "Spring", cycle_year: 2026, status, created_by: ARMORER, submitted_by: submittedBy }],
+  ammunition_reconciliations: [{ id: "rec-1", department_id: D, cycle_name: "Spring", cycle_year: 2026, status, created_by: ARMORER, submitted_by: submittedBy, updated_at: "2026-10-20T10:00:00.000000Z" }],
   ammunition_reconciliation_items: [{ reconciliation_id: "rec-1", department_id: D, lot_id: "lot-1", expected_quantity: 500, physical_quantity: 480, variance: -20, explanation: "Range issue not logged" }],
 });
 
@@ -561,6 +561,90 @@ test("C-R1: a withdrawal is never left without its audit record", async () => {
   (globalThis as any).__armoryAccess.context.permissions = ["manage_firearms", "manage_inspections"];
   assert.equal((await post(body)).status, 403, "the permission is still required");
   assert.equal(executed.length, before, "nothing is executed without the permission");
+});
+
+test("C-R1 race (bridge client): a competing write between the read and the save is a 409 and the counts stay", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const counted = [{ lotId: "lot-1", physicalQuantity: 300, explanation: "recount" }];
+  // Runs `competing` just before the n-th update of the reconciliation row.
+  const interleave = (db: ReturnType<typeof createDb>, n: number, competing: () => void) => {
+    const from = db.from;
+    let updates = 0;
+    (db as any).from = (table: string) => {
+      const builder = from(table);
+      if (table === "ammunition_reconciliations") {
+        const update = builder.update;
+        builder.update = (value: Row) => { updates += 1; if (updates === n) competing(); return update(value); };
+      }
+      return builder;
+    };
+  };
+  const submittedBy = (db: ReturnType<typeof createDb>, user: string) => () => Object.assign(db.tables.ammunition_reconciliations[0], {
+    status: "Submitted", submitted_by: user, updated_at: "2026-10-22T09:00:00.000001Z",
+  });
+
+  // Another armorer submits after this Save Draft read the Draft, before it claims the row.
+  let db = world(reconciliationTables("Draft"), CHIEF);
+  interleave(db, 1, submittedBy(db, OFFICER));
+  let response = await post({ action: "save", reconciliationId: "rec-1", items: counted });
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.match(response.body.error, /saved or submitted this reconciliation while you were editing/);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, OFFICER);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "the submitted counts are untouched");
+  assert.equal(db.writes.filter((write) => write.table === "ammunition_reconciliation_items").length, 0, "no item row was written");
+
+  // A competing Submit after the claim: the final update does not land.
+  db = world(reconciliationTables("Draft"), CHIEF);
+  interleave(db, 2, submittedBy(db, OFFICER));
+  response = await post({ action: "submit", reconciliationId: "rec-1", items: counted });
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, OFFICER, "the other submission is not overwritten");
+
+  // Uncontested: the claim and the save both land.
+  db = world(reconciliationTables("Draft"), CHIEF);
+  response = await post({ action: "submit", reconciliationId: "rec-1", items: counted });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, CHIEF);
+  assert.equal(db.tables.ammunition_reconciliation_items.length, 1);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 300);
+});
+
+test("C-R1 race (AWS-native client): Save Draft and Submit run in one transaction, and each outcome has its status", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const outcomes: [unknown, number, RegExp | null][] = [
+    [{ outcome: "conflict", status: "Submitted" }, 409, /submitted and awaiting certification/],
+    [{ outcome: "conflict", status: "Certified" }, 409, /cannot be changed/],
+    [{ outcome: "invalid", error: "Every ammunition lot requires a physical count before submission." }, 400, /physical count/],
+    [{ outcome: "not_found" }, 404, null],
+    [{ outcome: "saved" }, 200, null],
+  ];
+  for (const [outcome, status, message] of outcomes) {
+    const db = world(reconciliationTables("Draft"), CHIEF);
+    let transactions = 0;
+    (db as any).transaction = async () => { transactions += 1; return outcome; };
+    const response = await post({ action: "save", reconciliationId: "rec-1", items: [] });
+    assert.equal(response.status, status, JSON.stringify(response.body));
+    if (message) assert.match(response.body.error, message);
+    assert.equal(transactions, 1);
+    assert.equal(db.writes.length, 0, "the transactional path does not also write through the table client");
+  }
+});
+
+test("C-R1 race: two people starting the same cycle's reconciliation get a 409, not a 500", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const db = world(reconciliationTables("Draft"), CHIEF);
+  db.tables.ammunition_reconciliations.length = 0;
+  db.tables.department_rules.push({ department_id: D, spring_cycle_start: "01-01", spring_cycle_end: "12-31", fall_cycle_start: "12-31", fall_cycle_end: "12-31" });
+  const from = db.from;
+  (db as any).from = (table: string) => table === "ammunition_reconciliations"
+    ? { insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: "23505", message: "duplicate key" } }) }) }) }
+    : from(table);
+  const response = await call(route, "POST", "/api/armory/ammunition/reconciliations", { action: "save", items: [] });
+  assert.equal(response.status, 409, JSON.stringify(response.body));
+  assert.match(response.body.error, /just started this cycle/);
 });
 
 // B8a

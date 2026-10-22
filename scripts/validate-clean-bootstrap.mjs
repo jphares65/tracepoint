@@ -582,6 +582,16 @@ try {
     throw new Error(`AWS-native reconciliation withdrawal failed: ${error.message}`, { cause: error });
   }
 
+  try {
+    const { stdout } = await execFileAsync(process.execPath, ["--import", "tsx", "scripts/validate-local-reconciliation-concurrency.ts"], {
+      env: { ...process.env, TRACEPOINT_VALIDATION_DATABASE: JSON.stringify({ port, password: "local-bootstrap-only" }) },
+      timeout: 180000, maxBuffer: 1 << 24,
+    });
+    process.stdout.write(stdout);
+  } catch (error) {
+    throw new Error(`AWS-native reconciliation concurrency failed: ${error.stderr || error.stdout || error.message}`, { cause: error });
+  }
+
   console.log(`Clean bootstrap passed: ${migrationFiles.length} ordered migrations and ${awsMigrationFiles.length} AWS-native migrations; permission and retirement matrices passed; disposable database removed.`);
 } finally {
   if (client) await client.end().catch(() => {});
