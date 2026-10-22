@@ -13,7 +13,7 @@ test("UX-RB-4 / SV-28: the record page sends the restricted contract or the ordi
   assert.doesNotMatch(page, /canCorrectCustody/);
   assert.match(page, /const custodyActions = custodyPageActions\(custody\?\.operations\);/);
   assert.match(page, /operation === "restricted"\s*\n\s*\/\/[^\n]*\n\s*\? restrictedCustodyRequest\(\{ action: direction,/);
-  assert.match(page, /: custodyTransferRequest\(\{ direction, toHolderUserId: checkOutToUserId,/);
+  assert.match(page, /: custodyTransferRequest\(\{ direction, toHolderUserId: transferDestination === "TEMPORARY" \? temporaryRecipientId : checkOutToUserId,/);
   assert.match(page, /custodyActions\.checkIn && <button/);
   assert.match(page, /custodyActions\.checkOut && firearm\.active_assignment && <button/);
   assert.match(page, /\{custodyEventSummary\(event\)\}/);

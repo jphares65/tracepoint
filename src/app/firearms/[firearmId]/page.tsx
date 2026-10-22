@@ -143,7 +143,9 @@ export default function FirearmRecordPage() {
   const [notFound, setNotFound] = useState(false);
   const [custody, setCustody] = useState<CustodyResponse | null>(null);
   const [storageLocations, setStorageLocations] = useState<StorageLocation[]>([]);
-  const [transferDestination, setTransferDestination] = useState<"SECURE_STORAGE" | "OFFICER" | null>(null);
+  const [transferDestination, setTransferDestination] = useState<"SECURE_STORAGE" | "OFFICER" | "TEMPORARY" | null>(null);
+  // Temporary custody: the officer chosen to hold the firearm (the assignment does not change).
+  const [temporaryRecipientId, setTemporaryRecipientId] = useState("");
   const [selectedStorageLocationId, setSelectedStorageLocationId] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [transferNotes, setTransferNotes] = useState("");
@@ -242,8 +244,12 @@ export default function FirearmRecordPage() {
   const custodyActions = custodyPageActions(custody?.operations);
   const checkOutToUserId = custody?.operations?.transfer?.checkOutToUserId ?? firearm?.active_assignment?.assigned_to_user_id ?? null;
 
-  function openCustodyTransfer(destination: "SECURE_STORAGE" | "OFFICER") {
+  const temporaryRecipients = custody?.operations?.transfer?.recipients ?? [];
+  const canCheckOutTemporary = Boolean(custody?.operations?.transfer?.canCheckOutTemporary) && temporaryRecipients.length > 0;
+
+  function openCustodyTransfer(destination: "SECURE_STORAGE" | "OFFICER" | "TEMPORARY") {
     setTransferDestination(destination);
+    setTemporaryRecipientId("");
     setTransferError("");
     setTransferNotice("");
     setTransferKey(crypto.randomUUID());
@@ -263,7 +269,12 @@ export default function FirearmRecordPage() {
       setTransferError("This firearm has no active assignment to return custody to.");
       return;
     }
-    const operation = transferDestination === "SECURE_STORAGE" ? custodyActions.checkIn : custodyActions.checkOut;
+    if (transferDestination === "TEMPORARY" && !temporaryRecipients.some((recipient) => recipient.userId === temporaryRecipientId)) {
+      setTransferError("Choose the officer who will hold the firearm.");
+      return;
+    }
+    // Temporary custody is always the ordinary transfer (028).
+    const operation = transferDestination === "SECURE_STORAGE" ? custodyActions.checkIn : transferDestination === "TEMPORARY" ? (canCheckOutTemporary ? "transfer" : null) : custodyActions.checkOut;
     if (!operation) {
       setTransferError("You can no longer perform this custody action. Reload the firearm record.");
       return;
@@ -279,7 +290,7 @@ export default function FirearmRecordPage() {
         // UX-RB-4: the restricted custody contract the route and database accept (031).
         ? restrictedCustodyRequest({ action: direction, storageLocationId: selectedStorageLocationId, reason: transferReason, notes: transferNotes, idempotencyKey })
         // SV-28: the ordinary transfer (028); never an administrative correction.
-        : custodyTransferRequest({ direction, toHolderUserId: checkOutToUserId, storageLocationId: selectedStorageLocationId, reason: transferReason, notes: transferNotes, idempotencyKey });
+        : custodyTransferRequest({ direction, toHolderUserId: transferDestination === "TEMPORARY" ? temporaryRecipientId : checkOutToUserId, storageLocationId: selectedStorageLocationId, reason: transferReason, notes: transferNotes, idempotencyKey });
       const response = await fetch(`/api/armory/firearms/${encodeURIComponent(firearm.id)}/custody`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -293,7 +304,8 @@ export default function FirearmRecordPage() {
       setTransferReason("");
       setTransferNotes("");
       setTransferKey("");
-      setTransferNotice(direction === "CHECK_IN" ? "Checked in to secure storage." : "Checked out to the assigned officer.");
+      const recipientName = temporaryRecipients.find((recipient) => recipient.userId === temporaryRecipientId)?.name;
+      setTransferNotice(direction === "CHECK_IN" ? "Checked in to secure storage." : transferDestination === "TEMPORARY" ? `Temporary custody recorded: ${recipientName ?? "the officer"} now holds this firearm. The assignment did not change.` : "Checked out to the assigned officer.");
     } catch (error) {
       setTransferError(error instanceof Error ? error.message : "Custody could not be updated.");
     } finally {
@@ -626,10 +638,11 @@ export default function FirearmRecordPage() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     {custodyActions.checkIn && <button type="button" disabled={transferBusy} onClick={() => openCustodyTransfer("SECURE_STORAGE")} className="rounded-xl bg-violet-600 px-3 py-2 text-[12px] font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50">Transfer to Secure Storage</button>}
                     {custodyActions.checkOut && firearm.active_assignment && <button type="button" disabled={transferBusy} onClick={() => openCustodyTransfer("OFFICER")} className="rounded-xl border border-violet-500/40 px-3 py-2 text-[12px] font-semibold text-violet-200 transition hover:border-violet-400 hover:text-white disabled:opacity-50">Return to Assigned Officer</button>}
+                    {canCheckOutTemporary && <button type="button" disabled={transferBusy} onClick={() => openCustodyTransfer("TEMPORARY")} className="rounded-xl border border-violet-500/40 px-3 py-2 text-[12px] font-semibold text-violet-200 transition hover:border-violet-400 hover:text-white disabled:opacity-50">Temporary Custody to an Officer</button>}
                   </div>
                   {transferDestination && <div className="mt-4 rounded-2xl border border-violet-500/25 bg-slate-950/60 p-4">
-                    <p className="text-[13px] font-bold text-white">{transferDestination === "SECURE_STORAGE" ? "Transfer to Secure Storage" : "Return to Assigned Officer"}</p>
-                    {transferDestination === "SECURE_STORAGE" ? <label className="mt-3 block text-[11px] font-semibold text-slate-400">Secure-storage location<select value={selectedStorageLocationId} onChange={(event) => setSelectedStorageLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select a location</option>{storageLocations.map((location) => <option key={location.id} value={location.id}>{location.name}{location.description ? ` — ${location.description}` : ""}</option>)}</select></label> : <p className="mt-3 text-[12px] text-slate-300">Custody will return to <span className="font-semibold text-white">{getAssignedOfficerDisplayName(firearm.active_assignment!)}</span>. The firearm assignment will not change.</p>}
+                    <p className="text-[13px] font-bold text-white">{transferDestination === "SECURE_STORAGE" ? "Transfer to Secure Storage" : transferDestination === "TEMPORARY" ? "Temporary Custody to an Officer" : "Return to Assigned Officer"}</p>
+                    {transferDestination === "TEMPORARY" ? <><label className="mt-3 block text-[11px] font-semibold text-slate-400">Officer who will hold the firearm<select value={temporaryRecipientId} onChange={(event) => setTemporaryRecipientId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select an officer</option>{temporaryRecipients.map((recipient) => <option key={recipient.userId} value={recipient.userId}>{recipient.name}{recipient.badgeNumber ? ` · Badge ${recipient.badgeNumber}` : ""}</option>)}</select></label><p className="mt-2 text-[12px] text-slate-300">{firearm.active_assignment ? <>The assignment stays with <span className="font-semibold text-white">{getAssignedOfficerDisplayName(firearm.active_assignment)}</span>; only who holds the firearm changes, and it is recorded in custody history.</> : "This firearm has no assignment; only who holds it changes, and it is recorded in custody history."}</p></> : transferDestination === "SECURE_STORAGE" ? <label className="mt-3 block text-[11px] font-semibold text-slate-400">Secure-storage location<select value={selectedStorageLocationId} onChange={(event) => setSelectedStorageLocationId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"><option value="">Select a location</option>{storageLocations.map((location) => <option key={location.id} value={location.id}>{location.name}{location.description ? ` — ${location.description}` : ""}</option>)}</select></label> : <p className="mt-3 text-[12px] text-slate-300">Custody will return to <span className="font-semibold text-white">{getAssignedOfficerDisplayName(firearm.active_assignment!)}</span>. The firearm assignment will not change.</p>}
                     {/* SV-31: storage locations are managed on their own screen; linked only for users the database lets manage them (034). */}
                     {transferDestination === "SECURE_STORAGE" && custody?.operations?.canManageStorageLocations && <Link href={STORAGE_LOCATIONS_HREF} className="mt-2 inline-block text-[11px] font-semibold text-violet-300 hover:text-white">Manage storage locations</Link>}
                     {transferDestination === "SECURE_STORAGE" && storageLocations.length === 0 && <p className="mt-2 text-[12px] text-amber-300">No active secure-storage locations are configured for this agency. {custody?.operations?.canManageStorageLocations ? "Add one under Manage storage locations before transferring custody." : "Ask an authorized armory administrator to create one before transferring custody."}</p>}

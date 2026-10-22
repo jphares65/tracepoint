@@ -81,16 +81,16 @@ const now = new Date("2026-10-22T12:00:00Z");
 const ops = { canCheckInPermission: true, canCheckOutPermission: true, assignedToUserId: officer, restrictions: [], holderType: "OFFICER", holderUserId: officer, now };
 
 test("SV-28: ordinary operations follow the firearm's state", () => {
-  assert.deepEqual(custodyTransferOperations(ops), { canCheckIn: true, canCheckOut: false, checkOutToUserId: officer });
-  assert.deepEqual(custodyTransferOperations({ ...ops, holderType: "SECURE_STORAGE", holderUserId: null }), { canCheckIn: false, canCheckOut: true, checkOutToUserId: officer });
+  assert.deepEqual(custodyTransferOperations(ops), { canCheckIn: true, canCheckOut: false, checkOutToUserId: officer, canCheckOutTemporary: true });
+  assert.deepEqual(custodyTransferOperations({ ...ops, holderType: "SECURE_STORAGE", holderUserId: null }), { canCheckIn: false, canCheckOut: true, checkOutToUserId: officer, canCheckOutTemporary: true });
   // No custody recorded yet: either direction initializes it (028 INITIALIZE).
-  assert.deepEqual(custodyTransferOperations({ ...ops, holderType: null, holderUserId: null }), { canCheckIn: true, canCheckOut: true, checkOutToUserId: officer });
+  assert.deepEqual(custodyTransferOperations({ ...ops, holderType: null, holderUserId: null }), { canCheckIn: true, canCheckOut: true, checkOutToUserId: officer, canCheckOutTemporary: true });
   // Held by someone other than the assignee: it can be returned to the assignee.
   assert.equal(custodyTransferOperations({ ...ops, holderUserId: "20000000-0000-4000-8000-000000000002" }).canCheckOut, true);
 });
 
 test("SV-28: ordinary operations need the permission, an assignee for check-out, and no in-effect no-possession restriction", () => {
-  assert.deepEqual(custodyTransferOperations({ ...ops, canCheckInPermission: false, canCheckOutPermission: false, holderType: null }), { canCheckIn: false, canCheckOut: false, checkOutToUserId: officer });
+  assert.deepEqual(custodyTransferOperations({ ...ops, canCheckInPermission: false, canCheckOutPermission: false, holderType: null }), { canCheckIn: false, canCheckOut: false, checkOutToUserId: officer, canCheckOutTemporary: false });
   assert.equal(custodyTransferOperations({ ...ops, assignedToUserId: null, holderType: "SECURE_STORAGE" }).canCheckOut, false);
   const noCarry = { is_active: true, restriction_type: "no_carry", no_possession_permitted: true, effective_start: "2026-01-01T00:00:00Z", expires_at: null };
   assert.equal(custodyTransferOperations({ ...ops, holderType: "SECURE_STORAGE", restrictions: [noCarry] }).canCheckOut, false);

@@ -109,5 +109,5 @@ test("UX-RB-4: another officer without custody permission sees no operations", a
   const { db } = createDb(tables);
   (globalThis as any).__custodyAccess = { ok: true, context: { db, departmentId: department, userId: "20000000-0000-4000-8000-000000000099", permissions: ["firearm_custody.view_history"] } };
   const body = await (await GET(new Request("http://x") as any, { params: Promise.resolve({ firearmId: firearm }) })).json();
-  assert.deepEqual(body.operations, { canCheckIn: false, canCheckOut: false, transfer: { canCheckIn: false, canCheckOut: false, checkOutToUserId: officer }, canManageStorageLocations: false });
+  assert.deepEqual(body.operations, { canCheckIn: false, canCheckOut: false, transfer: { canCheckIn: false, canCheckOut: false, checkOutToUserId: officer, canCheckOutTemporary: false, recipients: [] }, canManageStorageLocations: false });
 });

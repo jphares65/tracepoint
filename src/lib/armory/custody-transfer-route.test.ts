@@ -32,6 +32,7 @@ function createDb(tables: Record<string, any[]>, failure?: { code: string; messa
       eq: (column: string, value: any) => { filters.push((row) => String(row[column]) === String(value)); return builder; },
       is: (column: string, value: any) => { filters.push((row) => (row[column] ?? null) === value); return builder; },
       order: () => builder,
+      in: (column: string, values: any[]) => { filters.push((row) => values.includes(row[column])); return builder; },
       maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
       then: (resolve: any) => resolve({ data: rows(), error: null }),
     };
@@ -56,13 +57,15 @@ const unrestricted = (): Record<string, any[]> => ({
   firearm_current_custody: [{ department_id: department, firearm_id: firearm, holder_type: "OFFICER", holder_user_id: officer }],
   firearm_custody_events: [],
   firearm_possession_restrictions: [],
+  department_memberships: [{ department_id: department, user_id: officer, is_active: true }, { department_id: department, user_id: custodian, is_active: true }],
+  profiles: [{ id: officer, full_name: "Olive Officer" }, { id: custodian, full_name: "Casey Custodian" }],
 });
 
 async function harness(tables: Record<string, any[]>, permissions: string[], userId = custodian, failure?: { code: string; message: string }) {
   const { GET, POST } = await import("../../app/api/armory/firearms/[firearmId]/custody/route.ts");
   const { custodyPageActions } = await import("./custody-transfer.ts");
   const { db, rpcs } = createDb(tables, failure);
-  (globalThis as any).__custodyAccess = { ok: true, context: { db, departmentId: department, userId, permissions } };
+  (globalThis as any).__custodyAccess = { ok: true, context: { db, admin: db, departmentId: department, userId, permissions } };
   const params = { params: Promise.resolve({ firearmId: firearm }) };
   const getResponse = () => GET(new Request("http://x") as any, params);
   const get = async () => (await getResponse()).json();
@@ -81,7 +84,7 @@ test("SV-28 reproduction and fix: an authorized custodian transfers an unrestric
   assert.equal(before.operations.canCheckIn, false);
   assert.equal(before.operations.canCheckOut, false);
   // SV-28: the ordinary transfer is exposed and chosen by the page.
-  assert.deepEqual(before.operations.transfer, { canCheckIn: true, canCheckOut: false, checkOutToUserId: officer });
+  assert.deepEqual(before.operations.transfer, { canCheckIn: true, canCheckOut: false, checkOutToUserId: officer, canCheckOutTemporary: true, recipients: [{ userId: custodian, name: "Casey Custodian", badgeNumber: null }] }, "the officer holding it is not offered as a recipient");
   assert.deepEqual(custodyPageActions(before.operations), { checkIn: "transfer", checkOut: null });
 
   const checkIn = await post(custodyTransferRequest({ direction: "CHECK_IN", storageLocationId: location, reason: "End of shift", notes: "Locker 4", idempotencyKey: key(1) }));
@@ -174,7 +177,7 @@ test("SV-28: on a Duty Only firearm the page prefers the restricted operation, a
   // A custodian with check-out but no restricted-custody permission: the ordinary
   // transfer, to the assigned officer only (the same holder 031 would set).
   const custodianOps = (await (await harness(dutyOnly(), ["firearm_custody.check_out", "firearm_custody.view_history"])).get()).operations;
-  assert.deepEqual(custodianOps.transfer, { canCheckIn: false, canCheckOut: true, checkOutToUserId: officer });
+  assert.deepEqual(custodianOps.transfer, { canCheckIn: false, canCheckOut: true, checkOutToUserId: officer, canCheckOutTemporary: false, recipients: [] }, "no temporary custody under Duty Only");
   assert.equal(custodianOps.canCheckOut, false);
 });
 
@@ -182,7 +185,7 @@ test("SV-28: a No Carry firearm can be checked in but not checked out by the ord
   const tables = unrestricted();
   tables.firearm_possession_restrictions.push({ department_id: department, firearm_id: firearm, is_active: true, restriction_type: "no_carry", duty_only: false, no_possession_permitted: true, effective_start: "2026-01-01T00:00:00Z", expires_at: null });
   const { get } = await harness(tables, ["firearm_custody.check_in", "firearm_custody.check_out", "firearm_custody.view_history"]);
-  assert.deepEqual((await get()).operations.transfer, { canCheckIn: true, canCheckOut: false, checkOutToUserId: officer });
+  assert.deepEqual((await get()).operations.transfer, { canCheckIn: true, canCheckOut: false, checkOutToUserId: officer, canCheckOutTemporary: false, recipients: [] }, "no temporary custody under No Carry");
 });
 
 test("SV-31: GET says whether the caller may manage storage locations (the permission 034 checks)", async () => {
@@ -192,4 +195,55 @@ test("SV-31: GET says whether the caller may manage storage locations (the permi
   assert.equal((await viewer.get()).operations.canManageStorageLocations, false);
   const admin = await harness(unrestricted(), ["administer_department"]);
   assert.equal((await admin.get()).operations.canManageStorageLocations, true);
+});
+
+test("Owner item 2/3: temporary custody goes only to an active member of this agency, and the assignment is not touched", async () => {
+  const { custodyTransferRequest } = await import("./custody-transfer.ts");
+  const outsider = "20000000-0000-4000-8000-000000000009";
+  const inactive = "20000000-0000-4000-8000-000000000004";
+  const tables = unrestricted();
+  tables.department_memberships.push({ department_id: department, user_id: inactive, is_active: false }, { department_id: "10000000-0000-4000-8000-000000000002", user_id: outsider, is_active: true });
+  const { get, post, rpcs } = await harness(tables, ["firearm_custody.check_out", "firearm_custody.check_in"]);
+  const offered = (await get()).operations.transfer.recipients.map((recipient: any) => recipient.userId);
+  assert.deepEqual(offered, [custodian], "only active members of this agency, not the current holder");
+  for (const recipient of [outsider, inactive]) {
+    const refused = await post(custodyTransferRequest({ direction: "CHECK_OUT", toHolderUserId: recipient, reason: "Temporary", idempotencyKey: crypto.randomUUID() }));
+    assert.equal(refused.status, 400);
+    assert.equal((await refused.json()).error, "The selected officer is not an active member of this agency.");
+  }
+  assert.equal(rpcs.length, 0, "refused before the database");
+  const accepted = await post(custodyTransferRequest({ direction: "CHECK_OUT", toHolderUserId: custodian, reason: "Loaner", idempotencyKey: key(30) }));
+  assert.equal(accepted.status, 200);
+  assert.equal(rpcs[0].args.p_administrative_correction, false);
+  assert.deepEqual(tables.firearm_assignments, [{ department_id: department, firearm_id: firearm, assigned_to_user_id: officer, returned_at: null }]);
+});
+
+test("Owner item 1: storage-location management uses the database's permission on every layer", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const [route, panel, link] = await Promise.all([
+    readFile("src/app/api/armory/storage-locations/route.ts", "utf8"),
+    readFile("src/app/settings/components/SecureStorageLocationsPanel.tsx", "utf8"),
+    readFile("src/lib/armory/storage-location-link.ts", "utf8"),
+  ]);
+  assert.doesNotMatch(route, /manage_firearms/);
+  assert.equal(route.match(/hasAnyServerPermission\(resolved\.context, \["firearm_custody\.manage_storage_locations"\]\)/g)?.length, 3, "create, update, deactivate");
+  assert.match(panel, /const canManage = hasPermission\(STORAGE_LOCATION_MANAGEMENT_PERMISSION\);/);
+  assert.doesNotMatch(panel, /manage_firearms/);
+  assert.match(link, /STORAGE_LOCATION_MANAGEMENT_PERMISSION: TracePointPermission = "firearm_custody\.manage_storage_locations"/);
+  const sql = (await readFile("database/aws/028_firearm_custody_phase_a.sql", "utf8")) + (await readFile("database/aws/034_firearm_storage_location_management.sql", "utf8"));
+  for (const name of ["create_firearm_storage_location", "update_firearm_storage_location", "deactivate_firearm_storage_location"]) {
+    const start = sql.lastIndexOf(`create or replace function public.${name}(`);
+    assert.ok(start >= 0, name);
+    const body = sql.slice(start, sql.indexOf("end $$", start));
+    assert.match(body, /has_department_permission\(v_department_id, 'firearm_custody\.manage_storage_locations'\)/, name);
+    assert.doesNotMatch(body, /manage_firearms/, name);
+  }
+});
+
+test("Owner item 2: the page offers temporary custody explicitly and says the assignment does not change", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile("src/app/firearms/[firearmId]/page.tsx", "utf8");
+  assert.match(page, />Temporary Custody to an Officer<\/button>/);
+  assert.match(page, /The assignment stays with/);
+  assert.match(page, /toHolderUserId: transferDestination === "TEMPORARY" \? temporaryRecipientId : checkOutToUserId/);
 });

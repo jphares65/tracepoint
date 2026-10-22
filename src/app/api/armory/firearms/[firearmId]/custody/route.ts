@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { parseRestrictedCustodyRequest, restrictedCustodyOperations } from "@/lib/armory/restricted-custody";
-import { custodyRequestKind, custodyTransferFailure, custodyTransferOperations, custodyTransferPermissions, parseCustodyTransferRequest } from "@/lib/armory/custody-transfer";
+import { custodyRecipients, custodyRequestKind, custodyTransferFailure, custodyTransferOperations, custodyTransferPermissions, parseCustodyTransferRequest } from "@/lib/armory/custody-transfer";
 
 type RouteContext = { params: Promise<{ firearmId: string }> };
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -48,7 +48,18 @@ export async function GET(_: NextRequest, { params }: RouteContext) {
     holderUserId: current.data?.holder_user_id,
   });
   const canManageStorageLocations = hasAnyServerPermission(context, ["firearm_custody.manage_storage_locations"]);
-  return NextResponse.json({ current: current.data, events: events.data ?? [], restrictions: restrictions.data ?? [], operations: { ...operations, transfer, canManageStorageLocations } }, { headers: { "Cache-Control": "no-store" } });
+  // Who may receive temporary custody: active members of this agency only (028's rule).
+  let recipients: ReturnType<typeof custodyRecipients> = [];
+  if (transfer.canCheckOutTemporary) {
+    const members = await context.db.from("department_memberships").select("user_id,is_active,badge_number").eq("department_id", context.departmentId).eq("is_active", true);
+    if (members.error) return NextResponse.json({ error: members.error.message }, { status: 500 });
+    const ids = (members.data ?? []).map((row: { user_id: string }) => row.user_id);
+    const profiles = ids.length ? await context.admin.from("profiles").select("id,full_name").in("id", ids) : { data: [], error: null };
+    if (profiles.error) return NextResponse.json({ error: profiles.error.message }, { status: 500 });
+    const names = new Map<string, string | null>((profiles.data ?? []).map((row: { id: string; full_name: string | null }) => [row.id, row.full_name]));
+    recipients = custodyRecipients(members.data ?? [], names, current.data?.holder_user_id);
+  }
+  return NextResponse.json({ current: current.data, events: events.data ?? [], restrictions: restrictions.data ?? [], operations: { ...operations, transfer: { ...transfer, recipients }, canManageStorageLocations } }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
@@ -69,6 +80,13 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       return permissionDeniedResponse(transfer.args.p_to_holder_type === "OFFICER"
         ? "Checking a firearm out to an officer requires the firearm custody check-out permission."
         : "Checking a firearm in to secure storage requires the firearm custody check-in permission.");
+    }
+    // Item 3: the recipient must be an active member of this agency (checked
+    // here for a clear message; 028 enforces the same rule).
+    if (transfer.args.p_to_holder_type === "OFFICER") {
+      const recipient = await context.db.from("department_memberships").select("user_id").eq("department_id", context.departmentId).eq("user_id", transfer.args.p_to_holder_user_id).eq("is_active", true).maybeSingle();
+      if (recipient.error) return NextResponse.json({ error: recipient.error.message }, { status: 500 });
+      if (!recipient.data) return NextResponse.json({ error: "The selected officer is not an active member of this agency.", code: "invalid_officer" }, { status: 400 });
     }
     const result = await context.db.rpc("transfer_firearm_custody", transfer.args);
     if (result.error) {

@@ -143,6 +143,7 @@ export function custodyTransferFailure(error: { code?: string | null; message?: 
 type Restriction = {
   is_active?: boolean | null;
   no_possession_permitted?: boolean | null;
+  duty_only?: boolean | null;
   restriction_type?: string | null;
   effective_start?: string | null;
   expires_at?: string | null;
@@ -173,17 +174,37 @@ export function custodyTransferOperations(input: {
     (restriction.no_possession_permitted === true || restriction.restriction_type === "no_carry"));
   const assignee = input.assignedToUserId ?? null;
   const assigneeHolds = input.holderType === "OFFICER" && Boolean(assignee) && input.holderUserId === assignee;
+  const dutyOnly = input.restrictions.some((restriction) => inEffect(restriction, now) &&
+    (restriction.restriction_type === "duty_only" || (restriction.duty_only === true && restriction.no_possession_permitted !== true)));
   return {
     canCheckIn: input.canCheckInPermission && input.holderType !== "SECURE_STORAGE",
     canCheckOut: input.canCheckOutPermission && Boolean(assignee) && !noPossession && !assigneeHolds,
     checkOutToUserId: assignee,
+    // Temporary custody to another active member of the agency (028). The
+    // assignment does not change. Not offered while a restriction governs who
+    // may hold the firearm (No Carry, or Duty Only's restricted workflow).
+    canCheckOutTemporary: input.canCheckOutPermission && !noPossession && !dutyOnly,
   };
+}
+
+export type CustodyRecipient = { userId: string; name: string; badgeNumber?: string | null };
+
+/** Active members of the agency who may receive temporary custody, excluding the current holder. */
+export function custodyRecipients(
+  members: Array<{ user_id: string; is_active?: boolean | null; badge_number?: string | null }>,
+  names: Map<string, string | null>,
+  currentHolderUserId: string | null | undefined,
+): CustodyRecipient[] {
+  return members
+    .filter((member) => member.is_active !== false && member.user_id !== currentHolderUserId)
+    .map((member) => ({ userId: member.user_id, name: names.get(member.user_id)?.trim() || "Unnamed member", badgeNumber: member.badge_number ?? null }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export type CustodyOperations = {
   canCheckIn?: boolean;
   canCheckOut?: boolean;
-  transfer?: { canCheckIn?: boolean; canCheckOut?: boolean; checkOutToUserId?: string | null };
+  transfer?: { canCheckIn?: boolean; canCheckOut?: boolean; checkOutToUserId?: string | null; canCheckOutTemporary?: boolean; recipients?: CustodyRecipient[] };
   canManageStorageLocations?: boolean;
 };
 

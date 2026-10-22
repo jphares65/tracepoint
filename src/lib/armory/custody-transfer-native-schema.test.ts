@@ -127,3 +127,29 @@ test("SV-28: Duty Only allows the ordinary transfer to the assignee; No Carry re
   assert.ok((await transfer(custodyTransferRequest({ direction: "CHECK_IN", storageLocationId: location, reason: "No carry", idempotencyKey: key(9) }))).ok);
   assert.deepEqual(await transfer(custodyTransferRequest({ direction: "CHECK_OUT", toHolderUserId: officer, reason: "x", idempotencyKey: key(10) })), { ok: false, status: 409, error: "This firearm is restricted No Carry and cannot be checked out to an officer." });
 });
+
+test("Owner item 2/3: temporary custody to another officer leaves the assignment intact, is limited to active members of the same agency, and is fully audited", async () => {
+  const otherDepartment = "10000000-0000-4000-8000-000000000002";
+  const inactive = "20000000-0000-4000-8000-000000000004";
+  const otherAgencyOfficer = "20000000-0000-4000-8000-000000000005";
+  await client.query("insert into public.departments(id,name,slug) values($1,'B','b')", [otherDepartment]);
+  await client.query("insert into public.profiles(id,full_name,email) values($1,'Inactive','i@example.test'),($2,'Other agency','o@example.test')", [inactive, otherAgencyOfficer]);
+  await client.query("insert into public.department_memberships values($1,$2,false),($3,$4,true)", [department, inactive, otherDepartment, otherAgencyOfficer]);
+  // Earlier tests left No Carry in force; temporary custody is not offered or allowed under it.
+  await client.query("update public.firearm_possession_restrictions set is_active=false where firearm_id=$1", [firearm]);
+  const assignmentBefore = (await client.query("select * from public.firearm_assignments where firearm_id=$1", [firearm])).rows;
+  await actAs(custodian);
+  for (const [recipient, label] of [[inactive, "inactive member"], [otherAgencyOfficer, "member of another agency"], [outsider, "non-member"]] as const) {
+    const refused = await transfer(custodyTransferRequest({ direction: "CHECK_OUT", toHolderUserId: recipient, reason: "Temporary", idempotencyKey: crypto.randomUUID() }));
+    assert.deepEqual(refused, { ok: false, status: 400, error: "The officer is not an active member of this agency." }, label);
+  }
+  const before = await holder();
+  const temporary = await transfer(custodyTransferRequest({ direction: "CHECK_OUT", toHolderUserId: checkInOnly, reason: "Loaner while assigned officer's sidearm is repaired", notes: "Return by Friday", idempotencyKey: key(20) }));
+  assert.ok(temporary.ok, JSON.stringify(temporary));
+  assert.deepEqual(await holder(), { holder_type: "OFFICER", holder_user_id: checkInOnly, storage_location_id: null });
+  assert.deepEqual((await client.query("select * from public.firearm_assignments where firearm_id=$1", [firearm])).rows, assignmentBefore, "the permanent assignment is unchanged");
+  const event = (await client.query("select action_type, from_holder_type, from_holder_user_id, from_storage_location_id, to_holder_type, to_holder_user_id, initiating_user_id, assignment_id, reason, notes from public.firearm_custody_events where id=$1", [temporary.ok && temporary.id])).rows[0];
+  assert.deepEqual(event, { action_type: "TRANSFER", from_holder_type: before.holder_type, from_holder_user_id: before.holder_user_id, from_storage_location_id: before.storage_location_id, to_holder_type: "OFFICER", to_holder_user_id: checkInOnly, initiating_user_id: custodian, assignment_id: assignment, reason: "Loaner while assigned officer's sidearm is repaired", notes: "Return by Friday" });
+  const audit = (await client.query("select actor_user_id, previous_value->>'holder_type' as previous_holder, new_value->>'holder_user_id' as new_holder, new_value->>'assignment_id' as assignment_id, details->>'custody_event_id' as event_id from public.audit_events where action='firearm_custody_transferred' order by ctid desc limit 1")).rows[0];
+  assert.deepEqual(audit, { actor_user_id: custodian, previous_holder: before.holder_type, new_holder: checkInOnly, assignment_id: assignment, event_id: temporary.ok ? String(temporary.id) : "" });
+});

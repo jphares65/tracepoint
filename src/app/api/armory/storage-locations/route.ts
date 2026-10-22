@@ -15,7 +15,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
-  if (!hasAnyServerPermission(resolved.context, ["firearm_custody.manage_storage_locations", "manage_firearms"])) return permissionDeniedResponse("Storage-location permission is required.");
+  if (!hasAnyServerPermission(resolved.context, ["firearm_custody.manage_storage_locations"])) return permissionDeniedResponse("Storage-location permission is required.");
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const name = text(body.name);
   if (!name) return NextResponse.json({ error: "A storage location name is required." }, { status: 400 });
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
-  if (!hasAnyServerPermission(resolved.context, ["firearm_custody.manage_storage_locations", "manage_firearms"])) return permissionDeniedResponse("Storage-location permission is required.");
+  if (!hasAnyServerPermission(resolved.context, ["firearm_custody.manage_storage_locations"])) return permissionDeniedResponse("Storage-location permission is required.");
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
   const locationId = text(body.locationId); const name = text(body.name);
   if (!uuid.test(locationId ?? "") || !name) return NextResponse.json({ error: "A location and name are required." }, { status: 400 });
@@ -39,7 +39,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const resolved = await resolveServerAccess();
   if (!resolved.ok) return accessFailureResponse(resolved);
-  if (!hasAnyServerPermission(resolved.context, ["firearm_custody.manage_storage_locations", "manage_firearms"])) return permissionDeniedResponse("Storage-location permission is required.");
+  if (!hasAnyServerPermission(resolved.context, ["firearm_custody.manage_storage_locations"])) return permissionDeniedResponse("Storage-location permission is required.");
   const locationId = text((await request.json().catch(() => ({})) as Record<string, unknown>).locationId);
   if (!uuid.test(locationId ?? "")) return NextResponse.json({ error: "A valid location is required." }, { status: 400 });
   const result = await resolved.context.db.rpc("deactivate_firearm_storage_location", { p_location_id: locationId });
