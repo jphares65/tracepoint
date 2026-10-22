@@ -336,7 +336,7 @@ export async function POST(request: NextRequest) {
   const items = Array.isArray(body.items) ? body.items : [];
 
 
-  if (!["save", "submit", "certify"].includes(action)) {
+  if (!["save", "submit", "certify", "withdraw"].includes(action)) {
     return NextResponse.json(
       { error: "Unsupported reconciliation action." },
       { status: 400 },
@@ -368,6 +368,37 @@ export async function POST(request: NextRequest) {
         ? body.notes.trim()
         : null;
     const now = new Date().toISOString();
+
+    // C-R1: a submitted count is withdrawn only on purpose. Withdrawing
+    // changes the status alone; the submitted counts stay as they were.
+    if (action === "withdraw") {
+      const { data: withdrawn, error: withdrawError } = reconciliationId
+        ? await admin
+            .from("ammunition_reconciliations")
+            .update({
+              status: "Draft",
+              submitted_at: null,
+              submitted_by: null,
+              updated_at: now,
+            })
+            .eq("id", reconciliationId)
+            .eq("department_id", departmentId)
+            .eq("status", "Submitted")
+            .select("id")
+            .maybeSingle()
+        : { data: null, error: null };
+
+      if (withdrawError) throw new Error(withdrawError.message);
+
+      if (!withdrawn) {
+        return NextResponse.json(
+          { error: "Only a submitted reconciliation can be withdrawn to draft. Reload to see its current status." },
+          { status: 409 },
+        );
+      }
+
+      return NextResponse.json({ ok: true, reconciliationId });
+    }
 
     if (action === "certify") {
       // Certification is read-only over the submitted counts, and the person
@@ -512,6 +543,15 @@ export async function POST(request: NextRequest) {
     if (reconciliation.status === "Certified") {
       return NextResponse.json(
         { error: "Certified reconciliations cannot be changed." },
+        { status: 409 },
+      );
+    }
+
+    // C-R1: Save Draft or a second Submit used to rewrite a submitted count
+    // and, for Save Draft, silently return it to Draft.
+    if (reconciliation.status === "Submitted") {
+      return NextResponse.json(
+        { error: "This reconciliation is submitted and awaiting certification. Withdraw it to draft before changing the counts." },
         { status: 409 },
       );
     }

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -79,6 +79,8 @@ export default function AmmunitionReconciliationPage() {
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -159,12 +161,13 @@ export default function AmmunitionReconciliationPage() {
     );
   }
 
-  async function save(action: "save" | "submit" | "certify") {
+  async function save(action: "save" | "submit" | "certify" | "withdraw") {
+    if (savingRef.current) return;
     const incomplete = items.some(
       (item) => item.physicalQuantity === null,
     );
 
-    if (action !== "save" && incomplete) {
+    if ((action === "submit" || action === "certify") && incomplete) {
       setError(
         "Every ammunition lot requires a physical count before submission.",
       );
@@ -176,14 +179,16 @@ export default function AmmunitionReconciliationPage() {
         (item.variance ?? 0) !== 0 && !item.explanation.trim(),
     );
 
-    if (action !== "save" && unexplainedVariance) {
+    if ((action === "submit" || action === "certify") && unexplainedVariance) {
       setError(
         "Every discrepancy requires an explanation before submission.",
       );
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
+    setConfirmWithdraw(false);
     setError(null);
     setMessage(null);
 
@@ -209,7 +214,9 @@ export default function AmmunitionReconciliationPage() {
           ? "Reconciliation draft saved."
           : action === "submit"
             ? "Reconciliation submitted."
-            : "Reconciliation certified.",
+            : action === "withdraw"
+              ? "Reconciliation withdrawn to draft. Its counts can be changed and submitted again."
+              : "Reconciliation certified.",
       );
 
       await load();
@@ -220,9 +227,16 @@ export default function AmmunitionReconciliationPage() {
           : "The reconciliation could not be saved.",
       );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
+
+  // C-R1: once submitted, the counts are the certifier's to review. They
+  // change only after an explicit, confirmed withdrawal to draft.
+  const countsLocked =
+    payload?.active?.status === "Certified" ||
+    payload?.active?.status === "Submitted";
 
   return (
     <TracePointShell activePage="Armory">
@@ -358,6 +372,7 @@ export default function AmmunitionReconciliationPage() {
                             </td>
                             <td className="px-3 py-4">
                               <input
+                                aria-label={`Physical count for lot ${item.lotNumber}`}
                                 value={item.physicalQuantity ?? ""}
                                 onChange={(event) =>
                                   updatePhysical(
@@ -367,9 +382,7 @@ export default function AmmunitionReconciliationPage() {
                                 }
                                 type="number"
                                 min="0"
-                                disabled={
-                                  payload.active?.status === "Certified"
-                                }
+                                disabled={countsLocked}
                                 className="w-28 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
                               />
                             </td>
@@ -400,9 +413,7 @@ export default function AmmunitionReconciliationPage() {
                                     ? "Required for discrepancy"
                                     : "Optional"
                                 }
-                                disabled={
-                                  payload.active?.status === "Certified"
-                                }
+                                disabled={countsLocked}
                                 className="min-w-64 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
                               />
                             </td>
@@ -423,19 +434,57 @@ export default function AmmunitionReconciliationPage() {
 
                   {payload.active?.status !== "Certified" && (
                     <div className="mt-5 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void save("save")}
-                        disabled={saving}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-slate-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-600 disabled:opacity-50"
-                      >
-                        {saving ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                        Save Draft
-                      </button>
+                      {payload.active?.status !== "Submitted" ? (
+                        <button
+                          type="button"
+                          onClick={() => void save("save")}
+                          disabled={saving}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-slate-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-600 disabled:opacity-50"
+                        >
+                          {saving ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                          Save Draft
+                        </button>
+                      ) : confirmWithdraw ? (
+                        <div
+                          role="group"
+                          aria-label="Confirm withdrawal"
+                          className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-800 bg-amber-950/35 px-4 py-2 text-sm text-amber-100"
+                        >
+                          <span>
+                            Withdraw this count from certification? It returns
+                            to Draft so the counts can be changed.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void save("withdraw")}
+                            disabled={saving}
+                            className="rounded-xl bg-amber-600 px-3 py-1.5 font-bold text-white disabled:opacity-50"
+                          >
+                            Withdraw to draft
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmWithdraw(false)}
+                            disabled={saving}
+                            className="rounded-xl border border-slate-600 px-3 py-1.5 font-semibold text-slate-200"
+                          >
+                            Keep submitted
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmWithdraw(true)}
+                          disabled={saving}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-slate-600 px-4 py-2.5 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                        >
+                          Withdraw to draft…
+                        </button>
+                      )}
 
                       {payload.active?.status !== "Submitted" ? (
                         <button

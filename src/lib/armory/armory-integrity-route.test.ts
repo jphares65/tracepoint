@@ -384,6 +384,39 @@ test("ARM-23: expected quantities come from the lots, a variance needs a reason,
   assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "certify does not rewrite the counts");
 });
 
+test("C-R1: Save Draft or a second Submit cannot pull a submitted count back from the certifier; Withdraw is explicit", async () => {
+  const route = "../../app/api/armory/ammunition/reconciliations/route.ts";
+  const post = (body: unknown) => call(route, "POST", "/api/armory/ammunition/reconciliations", body);
+  const counted = [{ lotId: "lot-1", physicalQuantity: 300, explanation: "recount" }];
+
+  let db = world(reconciliationTables("Submitted", ARMORER));
+  const draft = await post({ action: "save", reconciliationId: "rec-1", items: counted });
+  assert.equal(draft.status, 409);
+  assert.match(draft.body.error, /awaiting certification/);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "the submitted counts are untouched");
+
+  db = world(reconciliationTables("Submitted", ARMORER), CHIEF);
+  const resubmit = await post({ action: "submit", reconciliationId: "rec-1", items: counted });
+  assert.equal(resubmit.status, 409);
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER, "a second submit cannot take over the submission");
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480);
+
+  db = world(reconciliationTables("Submitted", ARMORER));
+  const withdrawn = await post({ action: "withdraw", reconciliationId: "rec-1", items: counted });
+  assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.body));
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Draft");
+  assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, null);
+  assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "withdrawing changes the status only");
+
+  db = world(reconciliationTables("Draft"));
+  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1" })).status, 409);
+  db = world(reconciliationTables("Certified", ARMORER));
+  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1" })).status, 409);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Certified");
+});
+
 // B8a
 async function inMode<T>(mode: string | undefined, run: () => Promise<T>) {
   const previous = process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE;
