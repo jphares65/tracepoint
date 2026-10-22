@@ -413,29 +413,9 @@ function NavigationLinks({
     enabledFeatureSet,
     isSuperAdmin,
   );
-  const activeGroupLabel = navItems.find(
-    (item): item is NavigationGroup =>
-      isNavigationGroup(item) &&
-      groupContainsPath(pathname, item, permissions, enabledFeatureSet),
-  )?.label;
   const [openGroups, setOpenGroups] = useState<Set<string>>(
-    () => new Set(activeGroupLabel ? [activeGroupLabel] : []),
+    () => new Set(),
   );
-
-  useEffect(() => {
-    if (!activeGroupLabel) return;
-
-    const groupTimer = window.setTimeout(() => {
-      setOpenGroups((current) => {
-        if (current.has(activeGroupLabel)) return current;
-        const next = new Set(current);
-        next.add(activeGroupLabel);
-        return next;
-      });
-    }, 0);
-
-    return () => window.clearTimeout(groupTimer);
-  }, [activeGroupLabel]);
 
   function toggleGroup(label: string) {
     setOpenGroups((current) => toggleExpandedGroup(current, label));
