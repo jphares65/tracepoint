@@ -158,8 +158,8 @@ try {
 
     $previousService = Assert-StagingRuntimeHealth
     $previousTaskDefinition = [string]$previousService.taskDefinition
-    # Revision 191 runs 22e543d8 (digest sha256:f6189050...), deployed 2026-10-22 and observed read-only before this release.
-    if ($previousTaskDefinition -notmatch ':191$') { throw "Expected the reviewed pre-release staging task revision 191; found '$previousTaskDefinition'." }
+    # Revision 192 runs 45311041 (digest sha256:8a164d0b...), registered 2026-10-22 13:56 EDT; observed read-only on 2026-10-22 16:26 EDT before this release.
+    if ($previousTaskDefinition -notmatch ':192$') { throw "Expected the reviewed pre-release staging task revision 192; found '$previousTaskDefinition'." }
     $null = Assert-RdsPitr
 
     $imageTag = Get-ReviewedImageTag -Environment staging -Commit $ApplicationCommit
