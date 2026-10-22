@@ -214,10 +214,22 @@ type ChecklistItem = {
   showCanBeDrivenOnDefect?: boolean;
 };
 
-type ChecklistAnswer = {
-  value: string | null; // null or missing means unanswered
+type ChecklistAnswer<T extends string> = {
+  value: T | null; // null or missing means unanswered
   note?: string;
   canBeDriven?: boolean;
+};
+
+type ChecklistProps<T extends string> = {
+  items: readonly ChecklistItem[];
+  options: readonly SegmentOption<T>[];
+  defectValue: T;
+  answers: Readonly<Record<string, ChecklistAnswer<T> | undefined>>;
+  onAnswer: (itemId: string, answer: ChecklistAnswer<T>) => void;
+  summary: ReactNode;
+  submitLabel: string;
+  busy?: boolean;
+  onSubmit: () => void;
 };
 
 <Checklist
@@ -250,7 +262,8 @@ bottom navigation and safe area; the checklist itself scrolls. All answer option
 the 44px touch target, use visible labels, support keyboard operation and announce missing required items.
 The component supports the shared 1280px desktop, 768px tablet and 375px phone acceptance viewports;
 the page must not gain horizontal scrolling. The inspection screen continues using the same route and
-request contract as its verified baseline.
+request contract as its verified baseline. Its implementation and unit/accessibility tests remain an
+R2 design-system deliverable; until that lands, Codex must not create a local `Checklist` replacement.
 
 ## Accessibility expectations (all components and every modernized screen)
 
