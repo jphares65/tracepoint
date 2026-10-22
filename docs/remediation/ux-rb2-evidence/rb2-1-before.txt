@@ -1,0 +1,60 @@
+TAP version 13
+# Subtest: UX-RB2-1 an item without Pass, Defect or Critical is refused; nothing is saved and the vehicle is unchanged
+not ok 1 - UX-RB2-1 an item without Pass, Defect or Critical is refused; nothing is saved and the vehicle is unchanged
+  ---
+  duration_ms: 285.668803
+  type: 'test'
+  location: '/home/user/tracepoint/src/lib/fleet/fleet-integrity.test.ts:2:35075'
+  failureType: 'testCodeFailure'
+  error: |-
+    {"id":"tires"}
+    
+    201 !== 400
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 400
+  actual: 201
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint/src/lib/fleet/fleet-integrity.test.ts:492:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: UX-RB2-1 required equipment needs an explicit answer too; its record's status is not substituted
+not ok 2 - UX-RB2-1 required equipment needs an explicit answer too; its record's status is not substituted
+  ---
+  duration_ms: 7.792559
+  type: 'test'
+  location: '/home/user/tracepoint/src/lib/fleet/fleet-integrity.test.ts:2:36162'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    201 !== 400
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 400
+  actual: 201
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint/src/lib/fleet/fleet-integrity.test.ts:507:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: UX-RB2-1 explicit answers keep their meaning: a Defect on a critical item is still Critical
+ok 3 - UX-RB2-1 explicit answers keep their meaning: a Defect on a critical item is still Critical
+  ---
+  duration_ms: 8.494021
+  type: 'test'
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 1
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 623.791786

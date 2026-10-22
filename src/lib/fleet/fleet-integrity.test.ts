@@ -477,3 +477,48 @@ test("F3 inspection audit entries pending for more than 24 hours alert fleet man
   }
   for (const permissions of [["manage_fleet_maintenance"], ["manage_fleet_rules"], ["perform_fleet_inspections"], []]) assert.deepEqual(await alerts(permissions), [], `${permissions} sees no audit queue alert`);
 });
+
+// UX-RB2-1 (contract row C33): the server never turns an unanswered checklist
+// item into an answer. Before, a missing or unknown condition was saved as Pass
+// (or Defect/Critical from the equipment record) and could leave the vehicle
+// Available after a zero-touch submission.
+test("UX-RB2-1 an item without Pass, Defect or Critical is refused; nothing is saved and the vehicle is unchanged", async () => {
+  const { json, inspections } = await load();
+  for (const unanswered of [{ id: "tires" }, { id: "tires", condition: "" }, { id: "tires", condition: "pass" }, { id: "tires", condition: null }, { id: "tires", condition: "Not Inspected" }]) {
+    const db = createDb(fleet([vehicle({ status: "Maintenance" })]));
+    asInspector(db);
+    const list = checklist().map((item) => (item.id === "tires" ? unanswered : item));
+    const { status, body } = await inspect(inspections, json, list as any);
+    assert.equal(status, 400, JSON.stringify(unanswered));
+    assert.equal(body.code, "inspection_items_not_answered");
+    assert.deepEqual(body.items, [{ id: "tires", label: "Tires and wheels" }]);
+    assert.match(body.error, /Choose Pass, Defect or Critical for: Tires and wheels/);
+    assert.equal(db.tables.fleet_vehicle_inspections.length, 0);
+    assert.equal(db.tables.fleet_work_orders.length, 0);
+    assert.equal(db.tables.fleet_vehicles[0].status, "Maintenance");
+  }
+});
+
+test("UX-RB2-1 required equipment needs an explicit answer too; its record's status is not substituted", async () => {
+  const { json, inspections } = await load();
+  const db = createDb({ ...fleet([vehicle()]), fleet_vehicle_equipment: [{ id: "eq1", department_id: "dept-1", vehicle_id: V, category: "Medical", name: "AED", serial_number: null, status: "In Service", is_required: true, is_critical: true }] });
+  asInspector(db);
+  const omitted = await inspect(inspections, json, [...checklist(), { id: "equipment:eq1" }] as any);
+  assert.equal(omitted.status, 400);
+  assert.deepEqual(omitted.body.items, [{ id: "equipment:eq1", label: "Medical: AED" }]);
+  assert.equal(db.tables.fleet_vehicle_inspections.length, 0);
+  const answered = await inspect(inspections, json, [...checklist(), { id: "equipment:eq1", condition: "Pass" }]);
+  assert.equal(answered.status, 201);
+  assert.equal(answered.body.inspection.result, "Passed");
+  assert.equal(db.tables.fleet_vehicle_inspections[0].checklist.find((item: any) => item.id === "equipment:eq1").condition, "Pass");
+});
+
+test("UX-RB2-1 explicit answers keep their meaning: a Defect on a critical item is still Critical", async () => {
+  const { json, inspections } = await load();
+  const db = createDb({ ...fleet([vehicle()]), fleet_vehicle_equipment: [{ id: "eq1", department_id: "dept-1", vehicle_id: V, category: "Medical", name: "AED", serial_number: null, status: "Missing", is_required: true, is_critical: true }] });
+  asInspector(db);
+  const { status, body } = await inspect(inspections, json, [...checklist(), { id: "equipment:eq1", condition: "Defect", note: "missing pads" }]);
+  assert.equal(status, 201);
+  assert.equal(body.inspection.result, "Failed");
+  assert.equal(body.inspection.critical_defect_count, 1);
+});

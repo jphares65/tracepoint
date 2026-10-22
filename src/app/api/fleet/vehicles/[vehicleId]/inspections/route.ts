@@ -134,29 +134,40 @@ export async function POST(
     );
   }
 
-  const checklist = expected
-    .filter(
-      (expectedItem: any) =>
-        expectedItem.required !== false || submitted.has(expectedItem.id),
-    )
-    .map((expectedItem) => {
-      const item: any = submitted.get(expectedItem.id) ?? {};
-      return {
-        ...expectedItem,
-        condition: allowedConditions.has(item?.condition)
-          ? item.condition === "Defect" && expectedItem.critical === true
-            ? "Critical"
-            : item.condition
-          : expectedItem.existingStatus === "Out of Service"
-            ? "Critical"
-            : ["Missing", "Attention"].includes(expectedItem.existingStatus)
-              ? expectedItem.critical === true
-                ? "Critical"
-                : "Defect"
-              : "Pass",
-        note: text(item?.note, 1000) || null,
-      };
-    });
+  const inspected = expected.filter(
+    (expectedItem: any) =>
+      expectedItem.required !== false || submitted.has(expectedItem.id),
+  );
+  // UX-RB2-1 (C33): every item needs an explicit Pass, Defect or Critical. An
+  // unanswered item is never saved as Pass or inferred from the equipment record.
+  const unanswered = inspected.filter(
+    (expectedItem: any) =>
+      !allowedConditions.has((submitted.get(expectedItem.id) as any)?.condition),
+  );
+  if (unanswered.length) {
+    return NextResponse.json(
+      {
+        error: `Choose Pass, Defect or Critical for: ${unanswered
+          .map((item: any) => item.label)
+          .join(", ")}`,
+        code: "inspection_items_not_answered",
+        items: unanswered.map((item: any) => ({ id: item.id, label: item.label })),
+      },
+      { status: 400 },
+    );
+  }
+
+  const checklist = inspected.map((expectedItem) => {
+    const item: any = submitted.get(expectedItem.id);
+    return {
+      ...expectedItem,
+      condition:
+        item.condition === "Defect" && expectedItem.critical === true
+          ? "Critical"
+          : item.condition,
+      note: text(item?.note, 1000) || null,
+    };
+  });
   if (!checklist.length)
     return NextResponse.json(
       { error: "The agency inspection checklist is empty." },
