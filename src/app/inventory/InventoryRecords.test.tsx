@@ -118,11 +118,11 @@ test("D-62 + D-65: outstanding checkouts name the holder, and a double-clicked r
   assert.match(posts(calls, "/returns")[0].body.idempotencyKey, UUID);
 });
 
-function servePage(onPost: (call: Call) => Promise<Response> | Response) {
+function servePage(onPost: (call: Call) => Promise<Response> | Response, access: { canManage: boolean; canAdjust: boolean } = { canManage: true, canAdjust: true }) {
   return serve((call) => {
     if (call.method === "POST") return onPost(call);
-    if (call.url.startsWith("/api/inventory/items")) return Response.json({ items, canManage: true });
-    if (call.url.startsWith("/api/inventory/locations")) return Response.json({ locations, canManage: true });
+    if (call.url.startsWith("/api/inventory/items")) return Response.json({ items, ...access });
+    if (call.url.startsWith("/api/inventory/locations")) return Response.json({ locations, canManage: access.canManage });
     if (call.url.startsWith("/api/inventory/balances")) return Response.json({ balances });
     if (call.url.startsWith("/api/inventory/checkouts")) return Response.json({ checkouts: [] });
     return Response.json(recipients);
@@ -189,4 +189,17 @@ test("D-70: a count correction can add to or remove from any item, with a reason
   fireEvent.click(within(panel).getByRole("button", { name: /Record correction/ }));
   await waitFor(() => assert.equal(posts(calls, "/api/inventory/transactions").length, 1));
   assert.equal(posts(calls, "/api/inventory/transactions")[0].body.quantity, -2);
+});
+
+test("Owner decision: stock controls appear only for users the server lets adjust or manage", async () => {
+  servePage(() => Response.json({}), { canManage: false, canAdjust: false });
+  render(<InventoryPage />);
+  await screen.findAllByText("Radios");
+  for (const name of [/Add Item/, /Receive Stock/, /Move Stock/, /Issue \/ Adjust/]) assert.equal(screen.queryByRole("button", { name }), null, String(name));
+  cleanup();
+  servePage(() => Response.json({}), { canManage: false, canAdjust: true });
+  render(<InventoryPage />);
+  await screen.findAllByText("Radios");
+  assert.equal(screen.queryByRole("button", { name: /Add Item/ }), null, "adjusting does not grant item management");
+  assert.ok(screen.getByRole("button", { name: /Issue \/ Adjust/ }));
 });

@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 
+import { RECONCILIATION_WITHDRAW_PERMISSIONS } from "@/lib/armory/reconciliation-withdraw";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -294,6 +295,7 @@ export async function GET() {
       access: {
         canManage,
         canCertify: workspace.active?.submittedByUserId !== user.id,
+        canWithdraw: hasAnyServerPermission(resolved.context, RECONCILIATION_WITHDRAW_PERMISSIONS),
       },
     });
   } catch (loadError) {
@@ -369,10 +371,34 @@ export async function POST(request: NextRequest) {
         : null;
     const now = new Date().toISOString();
 
-    // C-R1: a submitted count is withdrawn only on purpose. Withdrawing
-    // changes the status alone; the submitted counts stay as they were.
+    // C-R1: a submitted count is withdrawn only on purpose. Owner decision: it
+    // needs a management permission (RECONCILIATION_WITHDRAW_PERMISSIONS), a
+    // reason, and an audit record. Withdrawing changes the status alone; the
+    // submitted counts stay as they were.
     if (action === "withdraw") {
-      const { data: withdrawn, error: withdrawError } = reconciliationId
+      if (!hasAnyServerPermission(resolved.context, RECONCILIATION_WITHDRAW_PERMISSIONS)) {
+        return NextResponse.json(
+          { error: "Withdrawing a submitted reconciliation requires agency administrator permission." },
+          { status: 403 },
+        );
+      }
+      const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 1000) : "";
+      if (!reason) {
+        return NextResponse.json(
+          { error: "Enter a reason for withdrawing the submitted reconciliation." },
+          { status: 400 },
+        );
+      }
+      const { data: submission, error: submissionError } = reconciliationId
+        ? await admin
+            .from("ammunition_reconciliations")
+            .select("id,status,submitted_at,submitted_by")
+            .eq("id", reconciliationId)
+            .eq("department_id", departmentId)
+            .maybeSingle()
+        : { data: null, error: null };
+      if (submissionError) throw new Error(submissionError.message);
+      const { data: withdrawn, error: withdrawError } = submission?.status === "Submitted"
         ? await admin
             .from("ammunition_reconciliations")
             .update({
@@ -394,6 +420,30 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { error: "Only a submitted reconciliation can be withdrawn to draft. Reload to see its current status." },
           { status: 409 },
+        );
+      }
+
+      const { error: auditError } = await admin.from("audit_events").insert({
+        department_id: departmentId,
+        actor_user_id: user.id,
+        action: "ammunition_reconciliation_withdrawn",
+        entity_type: "ammunition_reconciliation",
+        entity_id: reconciliationId,
+        summary: reason,
+        previous_value: { status: "Submitted", submitted_at: submission?.submitted_at ?? null, submitted_by: submission?.submitted_by ?? null },
+        new_value: { status: "Draft" },
+      });
+      if (auditError) {
+        // No unaudited withdrawal: put the submission back.
+        await admin
+          .from("ammunition_reconciliations")
+          .update({ status: "Submitted", submitted_at: submission?.submitted_at ?? null, submitted_by: submission?.submitted_by ?? null, updated_at: now })
+          .eq("id", reconciliationId)
+          .eq("department_id", departmentId)
+          .eq("status", "Draft");
+        return NextResponse.json(
+          { error: "The withdrawal could not be recorded in the audit log, so the reconciliation stays submitted." },
+          { status: 500 },
         );
       }
 

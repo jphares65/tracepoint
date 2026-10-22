@@ -17,7 +17,7 @@ afterEach(cleanup);
 
 const item = { lotId: "lot-1", category: "Duty", caliber: "9mm", manufacturer: "X", lotNumber: "L1", expectedQuantity: 500, physicalQuantity: 480, variance: -20, explanation: "Range issue" };
 const active = (status: string) => ({ id: "rec-1", cycleName: "Spring", cycleYear: 2026, cycleStart: "2026-03-01", cycleEnd: "2026-05-31", status, notes: null, createdAt: "2026-03-02T00:00:00Z", submittedAt: status === "Draft" ? null : "2026-03-03T00:00:00Z", certifiedAt: null, createdByName: "A", submittedByName: "A", certifiedByName: null, items: [item] });
-function serve(status: string, canCertify = false) {
+function serve(status: string, canCertify = false, canWithdraw = true) {
   const posts: any[] = [];
   let current = status;
   globalThis.fetch = (async (_url: string, init?: RequestInit) => {
@@ -27,7 +27,7 @@ function serve(status: string, canCertify = false) {
       if (body.action === "withdraw") current = "Draft";
       return Response.json({ ok: true });
     }
-    return Response.json({ access: { canManage: true, canCertify }, currentCycle: { name: "Spring", year: 2026, start: "2026-03-01", end: "2026-05-31", isOpen: true }, active: active(current), history: [] });
+    return Response.json({ access: { canManage: true, canCertify, canWithdraw }, currentCycle: { name: "Spring", year: 2026, start: "2026-03-01", end: "2026-05-31", isOpen: true }, active: active(current), history: [] });
   }) as typeof fetch;
   return posts;
 }
@@ -49,11 +49,21 @@ test("C-R1: withdrawing to draft is a confirmed, separate action", async () => {
   assert.equal(posts.length, 0);
   fireEvent.click(screen.getByRole("button", { name: /Withdraw to draft/ }));
   const confirm = screen.getByRole("button", { name: "Withdraw to draft" });
+  assert.equal((confirm as HTMLButtonElement).disabled, true, "a reason is required");
+  fireEvent.change(screen.getByLabelText("Reason for withdrawal"), { target: { value: "Recount of lot L1 requested" } });
   fireEvent.click(confirm);
   fireEvent.click(confirm);
   await waitFor(() => assert.equal(posts.length, 1));
   assert.equal(posts[0].action, "withdraw");
+  assert.equal(posts[0].reason, "Recount of lot L1 requested");
   assert.ok(await screen.findByText(/withdrawn to draft/));
   assert.ok(await screen.findByRole("button", { name: /Save Draft/ }));
   assert.equal((screen.getByLabelText("Physical count for lot L1") as HTMLInputElement).disabled, false);
+});
+
+test("Owner decision: without the management permission there is no withdraw control", async () => {
+  serve("Submitted", false, false);
+  render(<ReconciliationPage />);
+  assert.ok(await screen.findByText("Submitted for command certification."));
+  assert.equal(screen.queryByRole("button", { name: /Withdraw to draft/ }), null);
 });

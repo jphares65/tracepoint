@@ -116,6 +116,8 @@ export default function InventoryPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [canManageInventory, setCanManageInventory] = useState(false);
+  // Owner decision: stock movement controls only for users the server lets adjust.
+  const [canAdjustInventory, setCanAdjustInventory] = useState(false);
   const [createLocationTarget, setCreateLocationTarget] =
     useState<LocationCreateTarget>(null);
   const activeLocations = useMemo(
@@ -160,6 +162,7 @@ export default function InventoryPage() {
       setCanManageInventory(
         Boolean(itemPayload.canManage ?? locationPayload.canManage),
       );
+      setCanAdjustInventory(itemPayload.canAdjust === true);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -322,36 +325,42 @@ export default function InventoryPage() {
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white sm:max-w-sm"
             />
             <div className="flex flex-wrap gap-2">
-              <ActionButton
-                active={action === "item"}
-                onClick={() => {
-                  setItemForm(blankItem);
-                  setAction(action === "item" ? null : "item");
-                }}
-              >
-                <Plus size={14} /> Add Item
-              </ActionButton>
-              <ActionButton
-                active={action === "receive"}
-                onClick={() => openMovement("receive")}
-              >
-                Receive Stock
-              </ActionButton>
-              <ActionButton
-                active={action === "transfer"}
-                onClick={() => openMovement("transfer")}
-              >
-                Move Stock
-              </ActionButton>
-              <ActionButton
-                active={action === "adjust"}
-                onClick={() => {
-                  setStockAdjustment(adjustment());
-                  setAction(action === "adjust" ? null : "adjust");
-                }}
-              >
-                Issue / Adjust
-              </ActionButton>
+              {canManageInventory ? (
+                <ActionButton
+                  active={action === "item"}
+                  onClick={() => {
+                    setItemForm(blankItem);
+                    setAction(action === "item" ? null : "item");
+                  }}
+                >
+                  <Plus size={14} /> Add Item
+                </ActionButton>
+              ) : null}
+              {canAdjustInventory ? (
+                <>
+                  <ActionButton
+                    active={action === "receive"}
+                    onClick={() => openMovement("receive")}
+                  >
+                    Receive Stock
+                  </ActionButton>
+                  <ActionButton
+                    active={action === "transfer"}
+                    onClick={() => openMovement("transfer")}
+                  >
+                    Move Stock
+                  </ActionButton>
+                  <ActionButton
+                    active={action === "adjust"}
+                    onClick={() => {
+                      setStockAdjustment(adjustment());
+                      setAction(action === "adjust" ? null : "adjust");
+                    }}
+                  >
+                    Issue / Adjust
+                  </ActionButton>
+                </>
+              ) : null}
               <ActionButton
                 active={action === "more"}
                 onClick={() => setAction(action === "more" ? null : "more")}
@@ -422,7 +431,7 @@ export default function InventoryPage() {
 
         {action ? (
           <section className="grid gap-4 lg:grid-cols-2">
-            {action === "item" ? (
+            {action === "item" && canManageInventory ? (
               <Panel
                 title={
                   itemForm.id ? "Edit inventory item" : "Add inventory item"
@@ -566,7 +575,7 @@ export default function InventoryPage() {
                 </form>
               </Panel>
             ) : null}
-            {action === "receive" || action === "transfer" ? (
+            {(action === "receive" || action === "transfer") && canAdjustInventory ? (
               <Panel
                 title={action === "receive" ? "Receive stock" : "Move stock"}
               >
@@ -708,7 +717,7 @@ export default function InventoryPage() {
                 ) : null}
               </Panel>
             ) : null}
-            {action === "adjust" ? (
+            {action === "adjust" && canAdjustInventory ? (
               <Panel title="Issue or adjust stock">
                 <form className="grid gap-3" onSubmit={submitAdjustment}>
                   <Label

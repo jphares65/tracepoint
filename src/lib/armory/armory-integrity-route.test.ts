@@ -448,17 +448,31 @@ test("C-R1: Save Draft or a second Submit cannot pull a submitted count back fro
   assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, ARMORER, "a second submit cannot take over the submission");
   assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480);
 
+  // Owner decision: withdrawal needs the management permission, a reason, and an audit record.
   db = world(reconciliationTables("Submitted", ARMORER));
-  const withdrawn = await post({ action: "withdraw", reconciliationId: "rec-1", items: counted });
+  const unauthorized = await post({ action: "withdraw", reconciliationId: "rec-1", reason: "Recount" });
+  assert.equal(unauthorized.status, 403);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  const admin = ["manage_firearms", "manage_inspections", "administer_department"];
+  db = world(reconciliationTables("Submitted", ARMORER), CHIEF, admin);
+  const noReason = await post({ action: "withdraw", reconciliationId: "rec-1", reason: "  " });
+  assert.equal(noReason.status, 400);
+  assert.equal(db.tables.ammunition_reconciliations[0].status, "Submitted");
+  const withdrawn = await post({ action: "withdraw", reconciliationId: "rec-1", items: counted, reason: "Recount of lot L1 requested" });
   assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn.body));
   assert.equal(db.tables.ammunition_reconciliations[0].status, "Draft");
   assert.equal(db.tables.ammunition_reconciliations[0].submitted_by, null);
   assert.equal(db.tables.ammunition_reconciliation_items[0].physical_quantity, 480, "withdrawing changes the status only");
+  const audit = (db.tables.audit_events ?? []).filter((row: Row) => row.action === "ammunition_reconciliation_withdrawn");
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].actor_user_id, CHIEF);
+  assert.equal(audit[0].summary, "Recount of lot L1 requested");
+  assert.equal(audit[0].previous_value.submitted_by, ARMORER);
 
-  db = world(reconciliationTables("Draft"));
-  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1" })).status, 409);
-  db = world(reconciliationTables("Certified", ARMORER));
-  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1" })).status, 409);
+  db = world(reconciliationTables("Draft"), CHIEF, admin);
+  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1", reason: "x" })).status, 409);
+  db = world(reconciliationTables("Certified", ARMORER), CHIEF, admin);
+  assert.equal((await post({ action: "withdraw", reconciliationId: "rec-1", reason: "x" })).status, 409);
   assert.equal(db.tables.ammunition_reconciliations[0].status, "Certified");
 });
 

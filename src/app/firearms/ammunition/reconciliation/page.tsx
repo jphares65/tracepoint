@@ -52,6 +52,8 @@ type Payload = {
   access: {
     canManage: boolean;
     canCertify: boolean;
+    // Owner decision: withdrawal needs a management permission and a reason.
+    canWithdraw?: boolean;
   };
   currentCycle: {
     name: string;
@@ -81,6 +83,7 @@ export default function AmmunitionReconciliationPage() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -186,6 +189,11 @@ export default function AmmunitionReconciliationPage() {
       return;
     }
 
+    if (action === "withdraw" && !withdrawReason.trim()) {
+      setError("Enter a reason for withdrawing the submitted reconciliation.");
+      return;
+    }
+
     savingRef.current = true;
     setSaving(true);
     setConfirmWithdraw(false);
@@ -201,6 +209,7 @@ export default function AmmunitionReconciliationPage() {
           body: JSON.stringify({
             action,
             reconciliationId: payload?.active?.id ?? null,
+            ...(action === "withdraw" ? { reason: withdrawReason.trim() } : {}),
             notes,
             items,
           }),
@@ -208,6 +217,7 @@ export default function AmmunitionReconciliationPage() {
       );
 
       if (!response.ok) throw new Error(await readError(response));
+      if (action === "withdraw") setWithdrawReason("");
 
       setMessage(
         action === "save"
@@ -456,12 +466,23 @@ export default function AmmunitionReconciliationPage() {
                         >
                           <span>
                             Withdraw this count from certification? It returns
-                            to Draft so the counts can be changed.
+                            to Draft so the counts can be changed. The reason is
+                            recorded in the audit log.
                           </span>
+                          <label className="flex w-full flex-col gap-1 text-xs font-semibold">
+                            Reason for withdrawal
+                            <textarea
+                              value={withdrawReason}
+                              onChange={(event) => setWithdrawReason(event.target.value)}
+                              rows={2}
+                              maxLength={1000}
+                              className="rounded-xl border border-amber-800 bg-slate-950 px-3 py-2 text-sm font-normal text-white"
+                            />
+                          </label>
                           <button
                             type="button"
                             onClick={() => void save("withdraw")}
-                            disabled={saving}
+                            disabled={saving || !withdrawReason.trim()}
                             className="rounded-xl bg-amber-600 px-3 py-1.5 font-bold text-white disabled:opacity-50"
                           >
                             Withdraw to draft
@@ -475,7 +496,7 @@ export default function AmmunitionReconciliationPage() {
                             Keep submitted
                           </button>
                         </div>
-                      ) : (
+                      ) : payload.access.canWithdraw ? (
                         <button
                           type="button"
                           onClick={() => setConfirmWithdraw(true)}
@@ -484,7 +505,7 @@ export default function AmmunitionReconciliationPage() {
                         >
                           Withdraw to draft…
                         </button>
-                      )}
+                      ) : null}
 
                       {payload.active?.status !== "Submitted" ? (
                         <button
