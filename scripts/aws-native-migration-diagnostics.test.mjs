@@ -90,11 +90,11 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /action === "diagnose"/);
   assert.match(runner, /requestedEnvironment !== "staging"/);
   assert.match(runner, /MIGRATION_DRIFT/);
-  // Staging apply: contiguous 001-063, at least 001-047 recorded (047 applied by eb637823) and possibly part of
-  // 048-063 (048 by the staging lineage, or a resumed apply), exactly the rest pending; nothing pending is refused.
+  // Staging apply: contiguous 001-065, at least 001-063 recorded (049-063 applied by ec027f50) and possibly 064
+  // (a resumed apply), exactly the rest pending; nothing pending is refused.
   assert.match(runner, /versions\.length !== STAGING_RELEASE_LAST/);
-  assert.match(runner, /const STAGING_RELEASE_LAST = 63;/);
-  assert.match(runner, /const STAGING_RELEASE_FIRST_RECORDED = 47;/);
+  assert.match(runner, /const STAGING_RELEASE_LAST = 65;/);
+  assert.match(runner, /const STAGING_RELEASE_FIRST_RECORDED = 63;/);
   assert.match(runner, /report\.applied\.length < STAGING_RELEASE_FIRST_RECORDED/);
   assert.match(runner, /STAGING_RELEASE_PENDING\.slice\(report\.applied\.length - STAGING_RELEASE_FIRST_RECORDED\)/);
   assert.match(runner, /STAGING_RELEASE_NOTHING_PENDING/);
@@ -103,9 +103,8 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /set lock_timeout = '\$\{MIGRATION_LOCK_TIMEOUT\}'/);
   assert.match(runner, /retried: false \}\)\);\s+throw error;/);
   assert.doesNotMatch(runner, /RETRYABLE_LOCK_ERRORS|MIGRATION_LOCK_ATTEMPTS|retrying:/);
-  assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"048_activate_fleet_inventory_catalog\.sql",\s+"049_equipment_out_of_service_lifecycle\.sql",/);
-  assert.match(runner, /"063_armory_audit_and_access\.sql",\s+\]\)/);
-  assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"04[2-6]_/);
+  assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"064_armorer_storage_location_permission\.sql",\s+"065_inventory_idempotency_and_recipients\.sql",\s+\]\)/);
+  assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"0[0-5][0-9]_|STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"06[0-3]_/);
   assert.match(runner, /await import\("\.\/aws-native-migration-diagnostics\.mjs"\)/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed/);
