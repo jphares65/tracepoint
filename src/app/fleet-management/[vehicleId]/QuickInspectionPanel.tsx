@@ -76,6 +76,7 @@ export default function QuickInspectionPanel({
   inspections,
   rules,
   equipment,
+  canInspect = true,
   onSaved,
 }: {
   vehicleId: string;
@@ -83,6 +84,8 @@ export default function QuickInspectionPanel({
   inspections: any[];
   rules: any;
   equipment: any[];
+  // UX-RB2-3 (D-R1): false when the agency's inspection rules refuse this user.
+  canInspect?: boolean;
   onSaved: () => Promise<void>;
 }) {
   const configuredSource =
@@ -295,14 +298,21 @@ export default function QuickInspectionPanel({
             </p>
           </div>
 
-          <button
-            onClick={() => setActive((value) => !value)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-500"
-          >
-            <ClipboardCheck size={15} />
-            {active ? "Close Inspection" : "Start Inspection"}
-          </button>
+          {canInspect ? (
+            <button
+              onClick={() => setActive((value) => !value)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-500"
+            >
+              <ClipboardCheck size={15} />
+              {active ? "Close Inspection" : "Start Inspection"}
+            </button>
+          ) : null}
         </div>
+        {!canInspect ? (
+          <p className="mt-4 rounded-xl border border-slate-700 bg-slate-950/40 p-3 text-xs text-slate-400">
+            Your agency&apos;s inspection rules do not include your role, so you can view this vehicle&apos;s inspections but not submit one. A fleet manager can change who inspects in Fleet Rules.
+          </p>
+        ) : null}
 
         {message ? (
           <div
@@ -326,7 +336,7 @@ export default function QuickInspectionPanel({
           </div>
         ) : null}
 
-        {active ? (
+        {active && canInspect ? (
           <div className="mt-5 space-y-4 border-t border-slate-800 pt-5">
             <div className="grid gap-3 sm:grid-cols-3">
               <label>

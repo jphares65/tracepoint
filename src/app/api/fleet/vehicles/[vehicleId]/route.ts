@@ -5,7 +5,7 @@ import {
   createObjectStore,
 } from "@/lib/storage/object-store";
 import { accessFailureResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
-import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canViewFleetCosts, canViewNetworkDetails, findOpenCriticalWorkOrders, findSafetyHold, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canSubmitFleetInspection, canViewFleetCosts, canViewNetworkDetails, findOpenCriticalWorkOrders, findSafetyHold, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
@@ -108,6 +108,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     safetyHold,
     canManage: canManageFleet(context, detail.rules),
     canMaintain: canPerformFleetMaintenance(context, detail.rules),
+    // UX-RB2-3 (D-R1, contract row C34): the same rules the inspection and
+    // issue-report POSTs apply, so the page offers only what will be accepted.
+    canInspect: canSubmitFleetInspection(context, detail.rules),
+    canReportIssue: canPerformFleetMaintenance(context, detail.rules) || canSubmitFleetInspection(context, detail.rules),
     canConfigure: canConfigureFleet(context),
     canViewNetworkDetails: canViewNetworkDetails(context, detail.rules),
     roleCodes: context.roleCodes,
