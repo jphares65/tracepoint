@@ -23,6 +23,8 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
+import Link from "next/link";
+import { STORAGE_LOCATIONS_HREF, canLinkToStorageLocationManagement } from "@/lib/armory/storage-location-link";
 import { formatDateTime } from "@/lib/format/date";
 import { useTracePointAccess } from "@/lib/tracepoint/useTracePointAccess";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
@@ -382,6 +384,8 @@ export default function FirearmsPage() {
   const canManageStorageLocations =
     hasPermission("firearm_custody.manage_storage_locations") ||
     hasPermission("manage_firearms");
+  // SV-31: link to storage-location management for users the database lets manage them (034).
+  const canOpenStorageLocationManagement = canLinkToStorageLocationManagement(hasPermission);
   const normalizedStorageLocationQuery = storageLocationQuery.trim().toLocaleLowerCase();
   const filteredStorageLocations = useMemo(
     () => storageLocations.filter((location) =>
@@ -1932,9 +1936,16 @@ The firearm will be removed from active inventory and future operational selecti
                           <div className="mt-4 border-t border-slate-700 pt-4">
                             {restrictedUseMode === "storage" && (
                               <div className="min-w-0">
-                                <label className="block text-xs font-semibold text-slate-300" htmlFor="restricted-storage-location">
-                                  Secure Storage
-                                </label>
+                                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                  <label className="block text-xs font-semibold text-slate-300" htmlFor="restricted-storage-location">
+                                    Secure Storage
+                                  </label>
+                                  {canOpenStorageLocationManagement && (
+                                    <Link href={STORAGE_LOCATIONS_HREF} className="text-xs font-semibold text-amber-300 hover:text-white">
+                                      Manage storage locations
+                                    </Link>
+                                  )}
+                                </div>
                                 <div className="relative mt-1 min-w-0">
                                   <input
                                     id="restricted-storage-location"

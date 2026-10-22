@@ -87,13 +87,21 @@ export function restrictedCustodyOperations(input: {
 
 type CustodyEvent = { action_type?: string | null; reason?: string | null; notes?: string | null; to_holder_type?: string | null };
 
-/** History line: what happened and the officer's reason/notes (031 stores the action code in `reason`). */
+/**
+ * History line: what happened and the officer's reason/notes. 031 (restricted)
+ * stores the action code in `reason`; 028 (ordinary transfer, SV-28) stores the
+ * free-text reason.
+ */
 export function custodyEventSummary(event: CustodyEvent) {
   const what = event.reason === "CHECK_IN" || (event.action_type === "TRANSFER" && event.to_holder_type === "SECURE_STORAGE")
     ? "Checked in to secure storage"
-    : event.reason === "CHECK_OUT" || (event.action_type === "TRANSFER" && event.to_holder_type === "OFFICER")
+    : event.reason === "CHECK_OUT"
       ? "Returned to assigned officer"
-      : String(event.action_type ?? "Custody change").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+      : event.action_type === "TRANSFER" && event.to_holder_type === "OFFICER"
+        ? "Checked out to officer"
+        : event.action_type === "INITIALIZE"
+          ? event.to_holder_type === "SECURE_STORAGE" ? "Custody first recorded in secure storage" : "Custody first recorded with officer"
+          : String(event.action_type ?? "Custody change").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
   const legacyReason = event.reason && event.reason !== "CHECK_IN" && event.reason !== "CHECK_OUT" ? event.reason : null;
   const detail = [legacyReason, clean(event.notes)].filter(Boolean).join(" — ");
   return detail ? `${what} · ${detail}` : what;

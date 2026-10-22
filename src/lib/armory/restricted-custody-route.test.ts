@@ -19,6 +19,9 @@ const department = "10000000-0000-4000-8000-000000000001";
 const officer = "20000000-0000-4000-8000-000000000001";
 const firearm = "30000000-0000-4000-8000-000000000001";
 const location = "50000000-0000-4000-8000-000000000001";
+// SV-28 adds `transfer` and `canManageStorageLocations` to `operations`; these
+// tests check the restricted (031) keys, which keep their meaning.
+const restrictedOps = (operations: any) => ({ canCheckIn: operations.canCheckIn, canCheckOut: operations.canCheckOut });
 
 function createDb(tables: Record<string, any[]>) {
   const rpcs: any[] = [];
@@ -62,31 +65,36 @@ test("UX-RB-4: transfers in both directions through the real route with the page
   const get = async () => (await GET(new Request("http://x") as any, params)).json();
   const post = (body: unknown) => POST(new Request("http://x", { method: "POST", body: JSON.stringify(body) }) as any, params);
 
-  assert.deepEqual((await get()).operations, { canCheckIn: true, canCheckOut: false });
+  assert.deepEqual(restrictedOps((await get()).operations), { canCheckIn: true, canCheckOut: false });
 
   const checkIn = await post(restrictedCustodyRequest({ action: "CHECK_IN", storageLocationId: location, reason: "End of shift", notes: "Locker 4", idempotencyKey: "60000000-0000-4000-8000-000000000001" }));
   assert.equal(checkIn.status, 200);
   assert.deepEqual(rpcs[0], { name: "operate_restricted_firearm_custody", args: { p_firearm_id: firearm, p_action: "CHECK_IN", p_storage_location_id: location, p_notes: "End of shift — Locker 4", p_idempotency_key: "60000000-0000-4000-8000-000000000001" } });
-  assert.deepEqual((await get()).operations, { canCheckIn: false, canCheckOut: true });
+  assert.deepEqual(restrictedOps((await get()).operations), { canCheckIn: false, canCheckOut: true });
 
   const checkOut = await post(restrictedCustodyRequest({ action: "CHECK_OUT", reason: "Start of shift", idempotencyKey: "60000000-0000-4000-8000-000000000002" }));
   assert.equal(checkOut.status, 200);
   assert.equal(rpcs[1].args.p_action, "CHECK_OUT");
   assert.equal(rpcs[1].args.p_storage_location_id, null);
-  assert.deepEqual((await get()).operations, { canCheckIn: true, canCheckOut: false });
+  assert.deepEqual(restrictedOps((await get()).operations), { canCheckIn: true, canCheckOut: false });
   // History is shown to history-permission holders (2c7bc51), e.g. a supervisor.
   (globalThis as any).__custodyAccess = { ok: true, context: { db, departmentId: department, userId: "20000000-0000-4000-8000-000000000002", permissions: ["firearm_custody.view_history"] } };
   const history = await get();
   assert.deepEqual(history.events.map((event: any) => event.notes), ["Start of shift", "End of shift — Locker 4"]);
-  assert.deepEqual(history.operations, { canCheckIn: false, canCheckOut: false });
+  assert.deepEqual(restrictedOps(history.operations), { canCheckIn: false, canCheckOut: false });
 });
 
-test("UX-RB-4: the RC record page's body is refused before reaching the database", async () => {
+test("UX-RB-4 / SV-28: the RC record page's body is an ordinary transfer; without check-in permission it is refused before the database", async () => {
+  // Before SV-28 this body was refused with 400 for everyone (the staging
+  // defect). It is now the ordinary-transfer operation (028), which needs
+  // firearm_custody.check_in; see custody-transfer-route.test.ts for the
+  // authorized path.
   const { POST } = await import("../../app/api/armory/firearms/[firearmId]/custody/route.ts");
   const { db, rpcs } = createDb({ firearm_current_custody: [{}], firearm_custody_events: [] });
   (globalThis as any).__custodyAccess = { ok: true, context: { db, departmentId: department, userId: officer, permissions: [] } };
   const response = await POST(new Request("http://x", { method: "POST", body: JSON.stringify({ toHolderType: "SECURE_STORAGE", toStorageLocationId: location, reason: "End of shift", idempotencyKey: "60000000-0000-4000-8000-000000000003", administrativeCorrection: false }) }) as any, { params: Promise.resolve({ firearmId: firearm }) });
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 403);
+  assert.match((await response.json()).error, /check-in permission/);
   assert.equal(rpcs.length, 0);
 });
 
@@ -101,5 +109,5 @@ test("UX-RB-4: another officer without custody permission sees no operations", a
   const { db } = createDb(tables);
   (globalThis as any).__custodyAccess = { ok: true, context: { db, departmentId: department, userId: "20000000-0000-4000-8000-000000000099", permissions: ["firearm_custody.view_history"] } };
   const body = await (await GET(new Request("http://x") as any, { params: Promise.resolve({ firearmId: firearm }) })).json();
-  assert.deepEqual(body.operations, { canCheckIn: false, canCheckOut: false });
+  assert.deepEqual(body.operations, { canCheckIn: false, canCheckOut: false, transfer: { canCheckIn: false, canCheckOut: false, checkOutToUserId: officer }, canManageStorageLocations: false });
 });

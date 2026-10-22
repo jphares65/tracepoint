@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { parseRestrictedCustodyRequest, restrictedCustodyOperations } from "@/lib/armory/restricted-custody";
+import { custodyRequestKind, custodyTransferFailure, custodyTransferOperations, custodyTransferPermissions, parseCustodyTransferRequest } from "@/lib/armory/custody-transfer";
 
 type RouteContext = { params: Promise<{ firearmId: string }> };
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -16,7 +17,10 @@ export async function GET(_: NextRequest, { params }: RouteContext) {
   if (assignmentError) return NextResponse.json({ error: assignmentError.message }, { status: 500 });
   const canOperateOwn = assignment?.assigned_to_user_id === context.userId;
   const canReadHistory = hasAnyServerPermission(context, ["firearm_custody.view_history", "manage_firearms", "manage_firearm_restrictions", "manage_restricted_firearm_custody"]);
-  if (!canOperateOwn && !canReadHistory) return permissionDeniedResponse("Custody access is required.");
+  // SV-28: ordinary custody transfer (028) is authorized by these permissions.
+  const canTransferIn = hasAnyServerPermission(context, custodyTransferPermissions("SECURE_STORAGE"));
+  const canTransferOut = hasAnyServerPermission(context, custodyTransferPermissions("OFFICER"));
+  if (!canOperateOwn && !canReadHistory && !canTransferIn && !canTransferOut) return permissionDeniedResponse("Custody access is required.");
   const [current, events, restrictions] = await Promise.all([
     context.db.from("firearm_current_custody").select("*").eq("department_id", context.departmentId).eq("firearm_id", firearmId).maybeSingle(),
     canReadHistory ? context.db.from("firearm_custody_events").select("*").eq("department_id", context.departmentId).eq("firearm_id", firearmId).order("occurred_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
@@ -33,7 +37,18 @@ export async function GET(_: NextRequest, { params }: RouteContext) {
     holderType: current.data?.holder_type,
     holderUserId: current.data?.holder_user_id,
   });
-  return NextResponse.json({ current: current.data, events: events.data ?? [], restrictions: restrictions.data ?? [], operations }, { headers: { "Cache-Control": "no-store" } });
+  // SV-28: the ordinary transfer, by 028's rule. SV-31: whether the caller may
+  // manage storage locations (034 requires firearm_custody.manage_storage_locations).
+  const transfer = custodyTransferOperations({
+    canCheckInPermission: canTransferIn,
+    canCheckOutPermission: canTransferOut,
+    assignedToUserId: assignment?.assigned_to_user_id,
+    restrictions: restrictions.data ?? [],
+    holderType: current.data?.holder_type,
+    holderUserId: current.data?.holder_user_id,
+  });
+  const canManageStorageLocations = hasAnyServerPermission(context, ["firearm_custody.manage_storage_locations"]);
+  return NextResponse.json({ current: current.data, events: events.data ?? [], restrictions: restrictions.data ?? [], operations: { ...operations, transfer, canManageStorageLocations } }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
@@ -41,7 +56,27 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   if (!resolved.ok) return accessFailureResponse(resolved);
   const context = resolved.context;
   const { firearmId } = await params;
-  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+  const raw = await request.json().catch(() => null) as unknown;
+  const body = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  // SV-28: two operations. `action` is restricted Duty Only custody (031);
+  // `toHolderType` is an ordinary transfer (028), never an administrative correction.
+  const kind = custodyRequestKind(body);
+  if (kind.kind === "invalid") return NextResponse.json({ error: kind.error, code: "invalid_custody_request" }, { status: 400 });
+  if (kind.kind === "transfer") {
+    const transfer = parseCustodyTransferRequest(firearmId, body);
+    if (!transfer.ok) return NextResponse.json({ error: transfer.error, code: transfer.code }, { status: 400 });
+    if (!hasAnyServerPermission(context, custodyTransferPermissions(transfer.args.p_to_holder_type))) {
+      return permissionDeniedResponse(transfer.args.p_to_holder_type === "OFFICER"
+        ? "Checking a firearm out to an officer requires the firearm custody check-out permission."
+        : "Checking a firearm in to secure storage requires the firearm custody check-in permission.");
+    }
+    const result = await context.db.rpc("transfer_firearm_custody", transfer.args);
+    if (result.error) {
+      const failure = custodyTransferFailure(result.error);
+      return NextResponse.json({ error: failure.error }, { status: failure.status });
+    }
+    return NextResponse.json({ ok: true, custodyEventId: result.data });
+  }
   const parsed = parseRestrictedCustodyRequest(firearmId, body);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
   const result = await context.db.rpc("operate_restricted_firearm_custody", { p_firearm_id: firearmId, p_action: parsed.action, p_storage_location_id: parsed.storageLocationId, p_notes: parsed.notes, p_idempotency_key: parsed.idempotencyKey });
