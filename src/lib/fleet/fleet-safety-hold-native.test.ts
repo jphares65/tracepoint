@@ -6,7 +6,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { localPostgresPort } from "../../test-support/local-postgres-port.mjs";
 
-// database/aws/056 on top of 053: the safety hold clearance guard, the baseline,
+// database/aws/057 on top of 054: the safety hold clearance guard, the baseline,
 // the critical-inspection hold whatever the automation settings, and the
 // inspection audit outbox keeping its defect work order for reconciliation.
 const require = createRequire(import.meta.url);
@@ -63,7 +63,7 @@ before(async () => {
   await client.query("insert into public.department_memberships values ($1,$3,true),($1,$4,true),($1,$5,true),($2,$6,true)", [A, B, inspector, manager, mechanic, foreignManager]);
   await client.query("insert into public.member_permissions values ($1,$2,'perform_fleet_inspections'),($1,$3,'manage_fleet'),($1,$4,'manage_fleet_maintenance'),($5,$6,'manage_fleet')", [A, inspector, manager, mechanic, B, foreignManager]);
   await client.query("insert into public.fleet_vehicles(id,department_id,status) values ($1,$4,'Available'),($2,$4,'Out of Service'),($3,$4,'Out of Service'),($5,$4,'Available'),($6,$4,'Available'),($7,$4,'Available')", [released, openCritical, unrecorded, A, verified, staleInspection, automationOff]);
-  await client.query(await migration("053_fleet_inspection_audit_outbox.sql"));
+  await client.query(await migration("054_fleet_inspection_audit_outbox.sql"));
   // Existing history: a completed critical work order only (released by the previous rules, no evidence of resolution),
   // an open one (with a passing inspection after it), a critical inspection with no defect work order, a completed critical
   // work order verified by a later passing inspection, and a passing inspection older than the critical work order.
@@ -90,13 +90,13 @@ const clearance = (vehicleId: string) => client.query("select safety_hold_cleare
 const clear = (subject: string, department: string, vehicleId: string, clearedBy: string | null, reason: string | null, at = "now()") =>
   as(subject, department, (query) => query(`update public.fleet_vehicles set safety_hold_cleared_at = ${at}, safety_hold_cleared_by = $2, safety_hold_clearance_reason = $3 where id = $1 returning safety_hold_cleared_at`, [vehicleId, clearedBy, reason]));
 
-test("migration 056 is repeatable and baselines, once and audited, only vehicles with a later passing inspection", async () => {
-  const sql = await migration("056_fleet_safety_hold_clearance.sql");
+test("migration 057 is repeatable and baselines, once and audited, only vehicles with a later passing inspection", async () => {
+  const sql = await migration("057_fleet_safety_hold_clearance.sql");
   await client.query(sql);
   const baseline = await clearance(verified);
   assert.ok(baseline.safety_hold_cleared_at);
   assert.equal(baseline.safety_hold_cleared_by, null);
-  assert.match(String(baseline.safety_hold_clearance_reason), /^Baseline at migration 056: an inspection on \d{4}-\d{2}-\d{2} recorded no critical defects after the latest critical condition/);
+  assert.match(String(baseline.safety_hold_clearance_reason), /^Baseline at migration 057: an inspection on \d{4}-\d{2}-\d{2} recorded no critical defects after the latest critical condition/);
   assert.equal((await clearance(released)).safety_hold_cleared_at, null, "a completed critical work order alone is not evidence");
   assert.equal((await clearance(openCritical)).safety_hold_cleared_at, null, "an open critical work order is not baselined, even after a passing inspection");
   assert.equal((await clearance(unrecorded)).safety_hold_cleared_at, null, "a critical inspection without a later passing one is not baselined");
@@ -105,7 +105,7 @@ test("migration 056 is repeatable and baselines, once and audited, only vehicles
   assert.equal(audit.rows.length, 1);
   const [row] = audit.rows as Array<Record<string, unknown> & { details: { reason: unknown; hold: { source: string }; evidence: { inspection_id: string } } }>;
   assert.deepEqual([row.department_id, row.actor_user_id, row.action, row.entity_type, row.entity_id], [A, null, "fleet_safety_hold_cleared", "fleet_vehicle", verified]);
-  assert.match(String(row.summary), /migration 056 \(system\)/);
+  assert.match(String(row.summary), /migration 057 \(system\)/);
   assert.equal(row.details.reason, baseline.safety_hold_clearance_reason);
   assert.equal(row.details.hold.source, "work_order");
   const evidence = await client.query("select id from public.fleet_vehicle_inspections where vehicle_id = $1 and critical_defect_count = 0", [verified]);

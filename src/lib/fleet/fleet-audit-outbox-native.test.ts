@@ -76,7 +76,7 @@ const inspect = (query: (sql: string, values?: unknown[]) => Promise<Record<stri
 const denied = { code: "42501" };
 
 test("migration 043 is repeatable and installs the inspection outbox trigger", async () => {
-  const sql = await readFile("database/aws/053_fleet_inspection_audit_outbox.sql", "utf8");
+  const sql = await readFile("database/aws/054_fleet_inspection_audit_outbox.sql", "utf8");
   await client.query(sql);
   await client.query(sql);
   const trigger = await client.query("select tgenabled from pg_trigger where tgname = 'fleet_vehicle_inspections_audit_outbox' and tgrelid = 'public.fleet_vehicle_inspections'::regclass");

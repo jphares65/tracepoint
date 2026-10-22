@@ -12,12 +12,13 @@ $script:StagingReleaseBranches = @(
     'claude/staging-release-agency-documents',
     # Same candidate with the image-archive and Windows PowerShell 5.1 release fixes (2026-10-18).
     'claude/staging-rc-agency-documents-20261018',
-    # The staging lineage with the defect remediation renumbered to 048-062 (2026-10-21).
+    # The staging lineage with the defect remediation renumbered after it, to 049-063 (2026-10-22).
     'claude/integration-defects-rebased-20261021'
 )
-# The staging release applies 047-062 on top of the recorded 001-046 (database/aws/MANIFEST.json).
-$script:StagingRecordedThrough = 46
-$script:StagingReleaseLast = 62
+# The staging release applies 048-063 on top of the recorded 001-047 (database/aws/MANIFEST.json); 048 is the
+# staging lineage's own and may already be recorded.
+$script:StagingRecordedThrough = 47
+$script:StagingReleaseLast = 63
 
 function Get-ReviewedImageTag {
     [CmdletBinding()]
@@ -194,7 +195,7 @@ function Assert-MigrationLedgerReport {
     foreach ($version in $expectedVersions) {
         if ($appliedByVersion.ContainsKey($version) -eq $pendingByVersion.ContainsKey($version)) { throw "Migration ledger has a gap or overlap at version $version." }
     }
-    if ($filesByVersion.Count -ne $script:StagingReleaseLast -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql' -or $filesByVersion[47] -cne '047_fleet_inventory_feature_catalog.sql') { throw "Reviewed staging release requires the manifest-listed AWS migration set 001-$('{0:d3}' -f $script:StagingReleaseLast), preserving the Agency Documents lineage at 038-047." }
+    if ($filesByVersion.Count -ne $script:StagingReleaseLast -or $filesByVersion[38] -cne '038_agency_documents_template_builder.sql' -or $filesByVersion[42] -cne '042_default_module_entitlements.sql' -or $filesByVersion[43] -cne '043_range_workspace_authenticated_writes.sql' -or $filesByVersion[44] -cne '044_cognito_password_global_scope.sql' -or $filesByVersion[45] -cne '045_password_operation_resolution.sql' -or $filesByVersion[46] -cne '046_agency_documents_module_toggle.sql' -or $filesByVersion[47] -cne '047_fleet_inventory_feature_catalog.sql' -or $filesByVersion[48] -cne '048_activate_fleet_inventory_catalog.sql') { throw "Reviewed staging release requires the manifest-listed AWS migration set 001-$('{0:d3}' -f $script:StagingReleaseLast), preserving the Agency Documents lineage at 038-048." }
     # Every file must be the one database/aws/MANIFEST.json allocates at the reviewed commit, byte for byte.
     $manifest = Get-AwsMigrationManifest -RepositoryRoot $RepositoryRoot -Commit $MigrationCommit
     if (@($manifest.migrations).Count -ne $filesByVersion.Count) { throw 'Migration files do not match database/aws/MANIFEST.json.' }
@@ -202,13 +203,13 @@ function Assert-MigrationLedgerReport {
         $version = [int]$entry.version
         if ($filesByVersion[$version] -cne [string]$entry.filename -or $hashesByVersion[$version] -cne [string]$entry.sha256Crlf) { throw "Migration $('{0:d3}' -f $version) does not match database/aws/MANIFEST.json." }
     }
-    # Staging records 001-046 (the staging lineage; 046 applied by 75499335 on 2026-10-20); the release applies
-    # the rest, 047-062, as a contiguous continuation of the recorded prefix.
+    # Staging records 001-047 (the staging lineage; 047 applied by eb637823 on 2026-10-21); the release applies
+    # the rest, 048-063, as a contiguous continuation of the recorded prefix.
     foreach ($version in 1..$script:StagingRecordedThrough) {
         if (-not $appliedByVersion.ContainsKey($version)) { throw "Migration $('{0:d3}' -f $version) of the recorded staging lineage is not applied." }
     }
     if ($appliedByVersion.Count -and $pendingByVersion.Count -and (($appliedByVersion.Keys | Measure-Object -Maximum).Maximum -gt ($pendingByVersion.Keys | Measure-Object -Minimum).Minimum)) { throw 'Migration ledger is not a contiguous applied prefix.' }
-    if ($Expectation -eq 'before-apply' -and $pendingByVersion.Count -eq 0) { throw 'Apply requires pending migrations from 047-062; nothing is pending.' }
+    if ($Expectation -eq 'before-apply' -and $pendingByVersion.Count -eq 0) { throw 'Apply requires pending migrations from 048-063; nothing is pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -232,18 +233,18 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)]$Report,
         [Parameter(Mandatory)][string]$ApplicationCommit,
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-        # The migrations one release applied: 047-062 by default (this release, or the part it applied);
-        # 046 by 75499335; 043-045 by e3b06e6a.
-        [ValidateRange(43, 62)][int[]]$Versions = @(47..62)
+        # The migrations one release applied: 049-063 by default (this release, or the part it applied);
+        # 048 by 22e543d8 when the staging lineage's release applied it; 047 by eb637823; 046 by 75499335; 043-045 by e3b06e6a.
+        [ValidateRange(43, 63)][int[]]$Versions = @(49..63)
     )
     # Every migration a release applies must be recorded by its commit, in this environment, as an apply.
     # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
     # 042 was recorded by an earlier staging release (its content is still verified by Assert-MigrationLedgerReport).
     $known = @(@(43, '043_range_workspace_authenticated_writes.sql'), @(44, '044_cognito_password_global_scope.sql'), @(45, '045_password_operation_resolution.sql'), @(46, '046_agency_documents_module_toggle.sql'), @(47, '047_fleet_inventory_feature_catalog.sql'),
-        @(48, '048_equipment_out_of_service_lifecycle.sql'), @(49, '049_account_access_remediation.sql'), @(50, '050_fleet_field_write_authorization.sql'), @(51, '051_equipment_self_custody.sql'),
-        @(52, '052_range_packet_ready_is_not_final.sql'), @(53, '053_fleet_inspection_audit_outbox.sql'), @(54, '054_personnel_import_preservation.sql'), @(55, '055_fleet_inspection_eligibility.sql'),
-        @(56, '056_fleet_safety_hold_clearance.sql'), @(57, '057_training_record_visibility.sql'), @(58, '058_equipment_separated_holder.sql'), @(59, '059_training_closeout_records.sql'),
-        @(60, '060_range_instructor_line_actions.sql'), @(61, '061_armory_separation_of_duties.sql'), @(62, '062_armory_audit_and_access.sql'))
+        @(48, '048_activate_fleet_inventory_catalog.sql'), @(49, '049_equipment_out_of_service_lifecycle.sql'), @(50, '050_account_access_remediation.sql'), @(51, '051_fleet_field_write_authorization.sql'),
+        @(52, '052_equipment_self_custody.sql'), @(53, '053_range_packet_ready_is_not_final.sql'), @(54, '054_fleet_inspection_audit_outbox.sql'), @(55, '055_personnel_import_preservation.sql'),
+        @(56, '056_fleet_inspection_eligibility.sql'), @(57, '057_fleet_safety_hold_clearance.sql'), @(58, '058_training_record_visibility.sql'), @(59, '059_equipment_separated_holder.sql'),
+        @(60, '060_training_closeout_records.sql'), @(61, '061_range_instructor_line_actions.sql'), @(62, '062_armory_separation_of_duties.sql'), @(63, '063_armory_audit_and_access.sql'))
     # Built with a loop: piping the pairs would unroll a single selected pair into its two elements.
     $expected = [System.Collections.Generic.List[object]]::new()
     foreach ($pair in $known) { if ($Versions -contains [int]$pair[0]) { $expected.Add($pair) } }

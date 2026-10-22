@@ -6,7 +6,7 @@ import test from "node:test";
 
 // database/aws/MANIFEST.json allocates every AWS-native migration number. It
 // stops two branches from taking the same number (047 was claimed by the
-// staging lineage and B6; 038-046 by the staging lineage and the remediation)
+// staging lineage and B6; 038-046 and 048 by the staging lineage and the remediation)
 // and an applied migration from being edited after the fact.
 const directory = path.resolve("database/aws");
 const manifest = JSON.parse(readFileSync(path.join(directory, "MANIFEST.json"), "utf8"));
@@ -37,7 +37,7 @@ test("manifest versions are contiguous, unique and never reuse a reserved number
 
 test("applied history is the staging lineage, recorded with the CRLF image checksums", () => {
   const applied = manifest.migrations.filter((entry) => entry.stagingLedger === "applied");
-  assert.deepEqual(applied.map((entry) => entry.version), Array.from({ length: 46 }, (_, index) => index + 1));
-  assert.equal(applied.at(-1).filename, "046_agency_documents_module_toggle.sql");
-  assert.ok(manifest.migrations.filter((entry) => entry.stagingLedger !== "applied").every((entry) => entry.version > 46));
+  assert.deepEqual(applied.map((entry) => entry.version), Array.from({ length: 47 }, (_, index) => index + 1));
+  assert.equal(applied.at(-1).filename, "047_fleet_inventory_feature_catalog.sql");
+  assert.ok(manifest.migrations.filter((entry) => entry.stagingLedger !== "applied").every((entry) => entry.version > 47));
 });

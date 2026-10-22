@@ -158,7 +158,7 @@ test("an item on a retired vehicle can change status, but nothing new can be pla
 });
 
 test("migration 049 is repeatable", async () => {
-  const sql = await readFile("database/aws/058_equipment_separated_holder.sql", "utf8");
+  const sql = await readFile("database/aws/059_equipment_separated_holder.sql", "utf8");
   await owner.query(sql);
   await owner.query(sql);
   assert.equal((await owner.query("select count(*)::int n from pg_policies where tablename='profiles' and policyname='profiles_select_self_or_department_admin'")).rows[0].n, 1);

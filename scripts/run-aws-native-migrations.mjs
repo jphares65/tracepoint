@@ -93,47 +93,47 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
-// The staging release: the Fleet/Inventory catalog rows (047) that production's Agency Documents unit also
-// applies, then the defect-remediation sequence renumbered after the staging lineage (048-062; see
-// database/aws/MANIFEST.json). Staging's ledger records 001-046 (046 applied by 75499335 on 2026-10-20); 047
-// may already be recorded by the Agency Documents release. Its apply must find a contiguous 001-046 to 001-061
-// recorded and exactly the rest of this list pending; anything else stops before any SQL. Each migration commits
-// on its own, so an apply interrupted part-way (for example a deadlock with live traffic) resumes from the next
-// file with the same runner.
+// The staging release: the staging lineage's Fleet/Inventory catalog activation (048) that production's Agency
+// Documents unit also applies, then the defect-remediation sequence renumbered after the staging lineage (049-063;
+// see database/aws/MANIFEST.json). Staging's ledger records 001-047 (047 applied by eb637823 on 2026-10-21); 048
+// may already be recorded by the staging lineage's own release. Its apply must find a contiguous 001-047 to
+// 001-062 recorded and exactly the rest of this list pending; anything else stops before any SQL. Each migration
+// commits on its own, so an apply interrupted part-way (for example a deadlock with live traffic) resumes from the
+// next file with the same runner.
 export const STAGING_RELEASE_PENDING = Object.freeze([
-  "047_fleet_inventory_feature_catalog.sql",
-  "048_equipment_out_of_service_lifecycle.sql",
-  "049_account_access_remediation.sql",
-  "050_fleet_field_write_authorization.sql",
-  "051_equipment_self_custody.sql",
-  "052_range_packet_ready_is_not_final.sql",
-  "053_fleet_inspection_audit_outbox.sql",
-  "054_personnel_import_preservation.sql",
-  "055_fleet_inspection_eligibility.sql",
-  "056_fleet_safety_hold_clearance.sql",
-  "057_training_record_visibility.sql",
-  "058_equipment_separated_holder.sql",
-  "059_training_closeout_records.sql",
-  "060_range_instructor_line_actions.sql",
-  "061_armory_separation_of_duties.sql",
-  "062_armory_audit_and_access.sql",
+  "048_activate_fleet_inventory_catalog.sql",
+  "049_equipment_out_of_service_lifecycle.sql",
+  "050_account_access_remediation.sql",
+  "051_fleet_field_write_authorization.sql",
+  "052_equipment_self_custody.sql",
+  "053_range_packet_ready_is_not_final.sql",
+  "054_fleet_inspection_audit_outbox.sql",
+  "055_personnel_import_preservation.sql",
+  "056_fleet_inspection_eligibility.sql",
+  "057_fleet_safety_hold_clearance.sql",
+  "058_training_record_visibility.sql",
+  "059_equipment_separated_holder.sql",
+  "060_training_closeout_records.sql",
+  "061_range_instructor_line_actions.sql",
+  "062_armory_separation_of_duties.sql",
+  "063_armory_audit_and_access.sql",
 ]);
-const STAGING_RELEASE_FIRST_RECORDED = 46;
-const STAGING_RELEASE_LAST = 62;
+const STAGING_RELEASE_FIRST_RECORDED = 47;
+const STAGING_RELEASE_LAST = 63;
 function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
   if (report.ledger !== "present" || versions.length !== STAGING_RELEASE_LAST || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-062.");
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-063.");
   }
   if (report.applied.length === STAGING_RELEASE_LAST) {
-    throw new Error("STAGING_RELEASE_NOTHING_PENDING: 001-062 are already recorded.");
+    throw new Error("STAGING_RELEASE_NOTHING_PENDING: 001-063 are already recorded.");
   }
   if (report.applied.length < STAGING_RELEASE_FIRST_RECORDED || report.applied.length > STAGING_RELEASE_LAST || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-046, including the Agency Documents lineage and module entitlements, must all be recorded, followed only by a contiguous part of 047-062.");
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-047, including the Agency Documents lineage, module entitlements and the Fleet/Inventory catalog rows, must all be recorded, followed only by a contiguous part of 048-063.");
   }
   const expected = STAGING_RELEASE_PENDING.slice(report.applied.length - STAGING_RELEASE_FIRST_RECORDED);
   if (report.pending.length !== expected.length || report.pending.some((file, index) => file.filename !== expected[index])) {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly the remaining 047-062 pending.");
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly the remaining 048-063 pending.");
   }
 }
 async function report(client, files) {
@@ -306,7 +306,7 @@ async function applyRangeWorkspaceHotfix(client, files) {
 let files;
 let client;
 try {
-  if (!["status", "inspect", "diagnose", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|diagnose|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039-040|agency-documents-038-047> <staging|production>");
+  if (!["status", "inspect", "diagnose", "mobile-preflight", "range-workspace-hotfix", "baseline", "reconcile", "apply", ...liveOwnerActions].includes(action)) throw new Error("Usage: run-aws-native-migrations.mjs <status|inspect|diagnose|mobile-preflight|range-workspace-hotfix|baseline|reconcile|apply|precheck|inventory-035-037|password-scope-039-040|agency-documents-038-048> <staging|production>");
   if (!["staging", "production"].includes(requestedEnvironment)) throw new Error("A staging or production environment is required.");
   if (action === "mobile-preflight" && requestedEnvironment !== "production") throw new Error("Mobile production preflight is production-only.");
   if (action === "diagnose" && requestedEnvironment !== "staging") throw new Error("Migration diagnostics are staging-only.");
@@ -347,7 +347,7 @@ try {
     console.log(JSON.stringify(await withLock(client, () => applyInventoryUnit(client, files))));
   } else if (action === "password-scope-039-040") {
     console.log(JSON.stringify(await withLock(client, () => applyPasswordScopeResolutionUnit(client, files, passwordScopeResolutions))));
-  } else if (action === "agency-documents-038-047") {
+  } else if (action === "agency-documents-038-048") {
     console.log(JSON.stringify(await withLock(client, () => applyAgencyDocumentsUnit(client, files))));
   } else await withLock(client, async () => {
     const before = await ledgerRows(client);

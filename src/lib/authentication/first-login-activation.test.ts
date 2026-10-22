@@ -42,7 +42,7 @@ before(async()=>{
     grant execute on function public.is_platform_admin() to authenticated;
     grant select on public.department_memberships to authenticated;
   `);
-  await admin.query(await readFile('database/aws/049_account_access_remediation.sql','utf8'));
+  await admin.query(await readFile('database/aws/050_account_access_remediation.sql','utf8'));
   runtime=new pg.Pool({host:'127.0.0.1',port,user:'tracepoint_runtime',password:'synthetic-runtime-only',database:'postgres'});
 });
 after(async()=>{await runtime?.end();await admin?.end();await server?.stop();if(directory)await rm(directory,{recursive:true,force:true,maxRetries:10,retryDelay:100});});

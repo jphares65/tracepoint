@@ -281,11 +281,11 @@ test("live release units pin the exact repository migration files and route only
   for (const pins of Object.values(liveReleaseUnits)) {
     for (const pin of pins) assert.equal(normalizedSha256(await readFile(path.join(directory, pin.filename), "utf8")), pin.sha256, pin.filename);
   }
-  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039-040", "agency-documents-038-047"]);
+  assert.deepEqual(liveOwnerActions, ["precheck", "inventory-035-037", "password-scope-039-040", "agency-documents-038-048"]);
   assert.deepEqual(liveReleaseUnits["inventory-035-037"].map(file => file.version), [35, 36, 37]);
   assert.deepEqual(liveReleaseUnits["password-scope-039-040"].map(file => file.version), [44, 45]);
   // 042 (default module entitlements) would enable every module for every production agency: no unit may include it.
-  assert.deepEqual(liveReleaseUnits["agency-documents-038-047"].map(file => file.version), [38, 39, 40, 41, 46, 47]);
+  assert.deepEqual(liveReleaseUnits["agency-documents-038-048"].map(file => file.version), [38, 39, 40, 41, 46, 47, 48]);
   for (const pins of Object.values(liveReleaseUnits)) assert.ok(pins.every(pin => pin.version !== 42));
   const files = [{ version: 35, filename: "035_inventory_phase1.sql", contents: "begin;\nselect 1;\ncommit;\n" }];
   assert.throws(() => selectUnitFiles("inventory-035-037", files), /LIVE_RELEASE_UNIT_FILE_MISMATCH: 035_inventory_phase1\.sql/);
@@ -300,14 +300,14 @@ test("live release units pin the exact repository migration files and route only
   assert.match(runner, /action === "precheck"\) \{\s*console\.log\(JSON\.stringify\(await runLivePrecheck\(client\)\)\);/);
   assert.match(runner, /action === "inventory-035-037"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyInventoryUnit\(client, files\)\)\)\);/);
   assert.match(runner, /action === "password-scope-039-040"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyPasswordScopeResolutionUnit\(client, files, passwordScopeResolutions\)\)\)\);/);
-  assert.match(runner, /action === "agency-documents-038-047"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyAgencyDocumentsUnit\(client, files\)\)\)\);/);
+  assert.match(runner, /action === "agency-documents-038-048"\) \{\s*console\.log\(JSON\.stringify\(await withLock\(client, \(\) => applyAgencyDocumentsUnit\(client, files\)\)\)\);/);
   const units = await readFile(new URL("./aws-native-live-release-units.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(units, /insert into public\.tracepoint_aws_schema_migrations|ensureLedger/);
 
   const publisher = await readFile(new URL("./apply-app-migrations.ps1", import.meta.url), "utf8");
   assert.match(publisher, /\$liveOwnerActions -and \$Environment -ne 'production'\) \{ throw 'Live final-database actions are production-only\.' \}/);
   assert.match(publisher, /\$liveDatabaseChangeActions -and -not \$AuthorizeLiveDatabaseChange\) \{ throw/);
-  assert.match(publisher, /\$liveDatabaseChangeActions = @\('inventory-035-037','password-scope-039-040','agency-documents-038-047'\)/);
+  assert.match(publisher, /\$liveDatabaseChangeActions = @\('inventory-035-037','password-scope-039-040','agency-documents-038-048'\)/);
   // Each image build archives only its own Dockerfile, so the required set
   // follows the build environment. A required Dockerfile that is missing
   // fails the read below; it is never skipped.
@@ -1304,13 +1304,14 @@ test("final migration stages contain the recursive local runtime dependency clos
   }
 });
 
-test("migration versions are unique and 038-047 hold the reconciled lineage with unchanged contents", async () => {
+test("migration versions are unique and 038-048 hold the reconciled lineage with unchanged contents", async () => {
   // Agency Documents keeps 038-041 (recorded in the staging ledger). The release line's range-workspace and
   // password-scope migrations, applied to production without ledger rows, moved byte-for-byte to 043-045.
   // 042 is the staging line's default module entitlements migration. Hashes here are of LF content
   // (normalizedSha256), as the live release-unit pins record; staging's ledger records the SHA-256 of the
   // CRLF bytes of the core.autocrlf=true migration archive, checked below for 038 and 042.
-  // 046 adds the default-off Agency Documents module toggle to the catalog; 047 the Fleet/Inventory catalog rows.
+  // 046 adds the default-off Agency Documents module toggle to the catalog; 047 the Fleet/Inventory catalog rows;
+  // 048 activates those rows where production imported them inactive.
   const directory = new URL("../database/aws/", import.meta.url);
   const names = (await readdir(directory)).filter((name) => /^\d{3}_.*\.sql$/.test(name)).sort();
   const versions = names.map((name) => Number(name.slice(0, 3)));
@@ -1326,13 +1327,14 @@ test("migration versions are unique and 038-047 hold the reconciled lineage with
     45: ["045_password_operation_resolution.sql", "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b"],
     46: ["046_agency_documents_module_toggle.sql", "f308741ec52ab2947cc5cf8a08bde0e20e0dd7d89c25b633ccc0c714f1457f4b"],
     47: ["047_fleet_inventory_feature_catalog.sql", "b1ca090ad5fb0f5b09f20cb6620cc59737b03303798bd0c21b911906138338ab"],
+    48: ["048_activate_fleet_inventory_catalog.sql", "a62ff9e684fb9f5ce1ba79d1ca59e9b1cbc00c8989967dfd643df7c4fdcc20ea"],
   };
   for (const [version, [filename, sha256]] of Object.entries(expected)) {
     assert.ok(names.includes(filename), `${filename} is version ${version}`);
     assert.equal(normalizedSha256(await readFile(new URL(filename, directory), "utf8")), sha256, `${filename} contents are unchanged`);
   }
-  // 048-062 are the defect-remediation sequence renumbered after the staging lineage (database/aws/MANIFEST.json).
-  assert.deepEqual(versions, Array.from({ length: 62 }, (_, index) => index + 1), "migrations are 001-062 contiguous");
+  // 049-063 are the defect-remediation sequence renumbered after the staging lineage (database/aws/MANIFEST.json).
+  assert.deepEqual(versions, Array.from({ length: 63 }, (_, index) => index + 1), "migrations are 001-063 contiguous");
   assert.equal(names.find((name) => name.startsWith("042_")), "042_default_module_entitlements.sql", "042 holds the default module entitlements");
   const crlfSha256 = async (filename) => createHash("sha256").update((await readFile(new URL(filename, directory), "utf8")).replace(/\r\n/g, "\n").replace(/\n/g, "\r\n")).digest("hex");
   assert.equal(await crlfSha256("038_agency_documents_template_builder.sql"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a", "038 staging ledger (CRLF archive) hash");
@@ -1384,7 +1386,8 @@ test("embedded Postgres applies the Agency Documents unit to a production-shaped
     owner = new pg.Client({ ...config, database: "tracepoint", user: "tracepoint_migrator", password: "owner-local-only" });
     await owner.connect();
     // Production's shape: the 015-era entitlement tables with no 042 triggers or default_enabled column, some
-    // agencies with partial entitlement rows, Fleet and Inventory data but no fleet/inventory catalog rows.
+    // agencies with partial entitlement rows, Fleet and Inventory data, and fleet/inventory catalog rows imported
+    // inactive (so set_platform_entitlement refuses them until 048 runs).
     await owner.query(`
       create table public.departments(id uuid primary key, name text not null);
       create table public.profiles(id uuid primary key, email text, full_name text);
@@ -1406,6 +1409,7 @@ test("embedded Postgres applies the Agency Documents unit to a production-shaped
       create function public.has_department_permission(p_department_id uuid, p_code text) returns boolean language sql stable as $$ select true $$;
       insert into public.departments values ('00000000-0000-0000-0000-00000000000a', 'Alpha PD'), ('00000000-0000-0000-0000-00000000000b', 'Bravo PD');
       insert into public.feature_catalog(code, display_name, sort_order) values ('firearms', 'Firearms', 60), ('ammunition', 'Ammunition', 10);
+      insert into public.feature_catalog(code, display_name, sort_order, is_active) values ('fleet', 'Fleet', 55, false), ('inventory', 'Inventory', 65, false);
       insert into public.department_features(department_id, feature_code, is_enabled) values
         ('00000000-0000-0000-0000-00000000000a', 'firearms', true), ('00000000-0000-0000-0000-00000000000a', 'ammunition', true),
         ('00000000-0000-0000-0000-00000000000b', 'firearms', true);
@@ -1422,7 +1426,8 @@ test("embedded Postgres applies the Agency Documents unit to a production-shaped
     const precheck = await runLivePrecheck(owner, options);
     assert.deepEqual(precheck.readiness.agencyDocuments, { ready: true, blockers: [] });
     const documents = precheck.precheck.agency_documents;
-    assert.deepEqual(documents.feature_catalog_codes, ["ammunition", "firearms"]);
+    assert.deepEqual(documents.feature_catalog_codes, ["ammunition", "firearms", "fleet", "inventory"]);
+    assert.deepEqual(documents.inactive_feature_catalog_codes, ["fleet", "inventory"]);
     assert.equal(documents.module_entitlement_triggers, 0);
     assert.equal(documents.department_features_rows, 3);
     assert.deepEqual(documents.agencies.map(agency => [agency.name, agency.entitlements, Number(agency.fleet_vehicles), Number(agency.inventory_items)]), [
@@ -1433,7 +1438,7 @@ test("embedded Postgres applies the Agency Documents unit to a production-shaped
     const result = await applyAgencyDocumentsUnit(owner, files, options);
     assert.equal(result.status, "APPLIED");
     assert.equal(result.ledger_modified, false);
-    assert.deepEqual(result.files.map(file => file.version), [38, 39, 40, 41, 46, 47]);
+    assert.deepEqual(result.files.map(file => file.version), [38, 39, 40, 41, 46, 47, 48]);
     assert.equal(result.postconditions.tables_present, 6);
     assert.equal(result.postconditions.policies_present, 12);
     assert.equal(result.postconditions.entitlements_unchanged, true);

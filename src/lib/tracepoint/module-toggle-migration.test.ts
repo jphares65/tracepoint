@@ -93,3 +93,12 @@ test("the platform administrator turns Agency Documents on and off per agency, a
   const events = await owner.query("select previous_enabled, new_enabled, reason from public.department_feature_events where department_id = $1 and feature_code = 'agency_documents' order by created_at, id", [existing]);
   assert.deepEqual(events.rows.slice(1).map((row) => [row.previous_enabled, row.new_enabled, row.reason]), [[false, true, "Pilot agency"], [true, false, "Pilot ended"]]);
 });
+
+test("the Fleet/Inventory catalog migrations change no entitlement where 042 already ran", async () => {
+  const snapshot = async () => (await owner.query("select (select jsonb_agg(row_to_json(f) order by department_id, feature_code) from public.department_features f) as features, (select count(*)::int from public.department_feature_events) as events")).rows[0];
+  const before = await snapshot();
+  for (const name of ["047_fleet_inventory_feature_catalog.sql", "048_activate_fleet_inventory_catalog.sql"]) await owner.query(await migration(name));
+  assert.deepEqual(await snapshot(), before);
+  const { rows } = await owner.query("select code from public.feature_catalog where code in ('fleet', 'inventory') and is_active order by code");
+  assert.deepEqual(rows.map((row) => row.code), ["fleet", "inventory"]);
+});

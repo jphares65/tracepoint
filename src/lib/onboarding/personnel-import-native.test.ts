@@ -136,7 +136,7 @@ test("explicit Active=No from a user manager deactivates an officer and revokes 
 });
 
 test("migration 044 is repeatable and keeps the request-role grants", async () => {
-  await owner.query(await readFile("database/aws/054_personnel_import_preservation.sql", "utf8"));
+  await owner.query(await readFile("database/aws/055_personnel_import_preservation.sql", "utf8"));
   for (const signature of [
     "public.attach_existing_cognito_personnel_import(uuid,text,text,text,text,text,text)",
     "public.update_cognito_personnel_import(uuid,uuid,text,text,text,text,text,text,text)",

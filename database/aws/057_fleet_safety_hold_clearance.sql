@@ -51,7 +51,7 @@ begin
     ), cleared as (
       update public.fleet_vehicles v
       set safety_hold_cleared_at = now(),
-        safety_hold_clearance_reason = 'Baseline at migration 056: an inspection on ' || to_char(e.inspected_at at time zone 'UTC', 'YYYY-MM-DD')
+        safety_hold_clearance_reason = 'Baseline at migration 057: an inspection on ' || to_char(e.inspected_at at time zone 'UTC', 'YYYY-MM-DD')
           || ' recorded no critical defects after the latest critical condition, and no critical work order is open.'
       from evidence e
       where v.id = e.id
@@ -59,8 +59,8 @@ begin
     )
     insert into public.audit_events(department_id, actor_user_id, action, entity_type, entity_id, summary, details)
     select department_id, null, 'fleet_safety_hold_cleared', 'fleet_vehicle', id,
-      'Safety hold marked cleared by migration 056 (system): a later inspection recorded no critical defects.',
-      jsonb_build_object('baseline', '056', 'reason', safety_hold_clearance_reason,
+      'Safety hold marked cleared by migration 057 (system): a later inspection recorded no critical defects.',
+      jsonb_build_object('baseline', '057', 'reason', safety_hold_clearance_reason,
         'hold', jsonb_build_object('since', condition_at, 'source', source, 'record_id', condition_id),
         'evidence', jsonb_build_object('inspection_id', inspection_id, 'inspected_at', inspected_at, 'open_critical_work_orders', 0))
     from cleared;

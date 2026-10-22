@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 // ledgered apply path cannot target it. Each unit runs its pinned migration
 // files as one transaction and commits only after its postconditions hold.
 
-export const liveOwnerActions = Object.freeze(["precheck", "inventory-035-037", "password-scope-039-040", "agency-documents-038-047"]);
+export const liveOwnerActions = Object.freeze(["precheck", "inventory-035-037", "password-scope-039-040", "agency-documents-038-048"]);
 
 export const liveReleaseUnits = Object.freeze({
   "inventory-035-037": Object.freeze([
@@ -21,16 +21,18 @@ export const liveReleaseUnits = Object.freeze({
     { version: 44, filename: "044_cognito_password_global_scope.sql", sha256: "3916971b7ffee8e9aa0b44269ab251c1a6f780aae1b4ac9cbc450c98be3dc987" },
     { version: 45, filename: "045_password_operation_resolution.sql", sha256: "3a6e582e16afc402696ee162cbd046e27703a0dc0ed36701031ff84604033e6b" },
   ]),
-  // Agency Documents (038-041), its default-off module toggle (046) and the Fleet/Inventory catalog rows (047).
+  // Agency Documents (038-041), its default-off module toggle (046), the Fleet/Inventory catalog rows (047) and
+  // their activation (048; production imported them inactive).
   // 042 (default module entitlements) is deliberately absent: its triggers and backfill would enable every
   // module for every production agency.
-  "agency-documents-038-047": Object.freeze([
+  "agency-documents-038-048": Object.freeze([
     { version: 38, filename: "038_agency_documents_template_builder.sql", sha256: "e5d9731e6eef405945ca1c222c69bdd76559646fc97c393beec537cd656eee89" },
     { version: 39, filename: "039_document_template_analysis.sql", sha256: "894c51ea4d74e8e6d4a6b988a4bf3add34266cf5fde9a199f18a2660ecfa6086" },
     { version: 40, filename: "040_document_template_structured_bindings.sql", sha256: "908c2e8704c331d4122ee820143ab645f851761c9747b6d65dee8743e3007525" },
     { version: 41, filename: "041_document_template_write_authority.sql", sha256: "e0d5cb1b4abb1257debff25c6de00785e7853b9b5157b459cae592f8545ca06c" },
     { version: 46, filename: "046_agency_documents_module_toggle.sql", sha256: "f308741ec52ab2947cc5cf8a08bde0e20e0dd7d89c25b633ccc0c714f1457f4b" },
     { version: 47, filename: "047_fleet_inventory_feature_catalog.sql", sha256: "b1ca090ad5fb0f5b09f20cb6620cc59737b03303798bd0c21b911906138338ab" },
+    { version: 48, filename: "048_activate_fleet_inventory_catalog.sql", sha256: "a62ff9e684fb9f5ce1ba79d1ca59e9b1cbc00c8989967dfd643df7c4fdcc20ea" },
   ]),
 });
 
@@ -144,6 +146,7 @@ export const agencyDocumentsPrecheckSql = `select
     (to_regclass('public.feature_catalog') is not null and to_regclass('public.department_features') is not null
       and to_regclass('public.department_feature_events') is not null) as entitlement_tables_present,
     (select coalesce(jsonb_agg(code order by code), '[]'::jsonb) from public.feature_catalog) as feature_catalog_codes,
+    (select coalesce(jsonb_agg(code order by code), '[]'::jsonb) from public.feature_catalog where not is_active) as inactive_feature_catalog_codes,
     exists (select 1 from pg_attribute where attrelid = to_regclass('public.feature_catalog') and attname = 'default_enabled' and not attisdropped) as feature_catalog_default_enabled_present,
     (select count(*)::int from pg_trigger where not tgisinternal and tgname = any(${textArray(moduleEntitlementTriggers)})) as module_entitlement_triggers,
     (select count(*)::int from public.department_features) as department_features_rows,
@@ -496,10 +499,10 @@ export function assertAgencyDocumentsPostconditions(row) {
   return true;
 }
 
-// 038-041, 046 and 047 commit together or not at all. The entitlement table is locked so no platform admin
+// 038-041 and 046-048 commit together or not at all. The entitlement table is locked so no platform admin
 // toggle can land between the digest read and the commit.
 export async function applyAgencyDocumentsUnit(client, files, options = {}) {
-  const selected = selectUnitFiles("agency-documents-038-047", files);
+  const selected = selectUnitFiles("agency-documents-038-048", files);
   if (selected.some(file => file.version === 42)) throw new Error("LIVE_RELEASE_UNIT_INCLUDES_042");
   const before = await runLivePrecheck(client, options);
   if (!before.readiness.agencyDocuments.ready) {
@@ -520,7 +523,7 @@ export async function applyAgencyDocumentsUnit(client, files, options = {}) {
     throw error;
   }
   return {
-    action: "agency-documents-038-047",
+    action: "agency-documents-038-048",
     status: "APPLIED",
     executed_at: new Date().toISOString(),
     files: selected.map(({ version, filename, sha256 }) => ({ version, filename, sha256 })),
