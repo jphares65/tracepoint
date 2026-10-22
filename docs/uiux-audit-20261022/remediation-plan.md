@@ -341,3 +341,13 @@ These items need review once the source or a staging build (G6) is available:
 ## Live staging verification (2026-10-22)
 
 The owner's authenticated browser testing on staging `22e543d` confirmed SV-28 to SV-32. They are reconciled in [reconciliation/register-SV.md](reconciliation/register-SV.md) against the existing entries (C-63/C-R2, E-04/E-06/E-07/AE-R1/E-02, D-28, A-64/A-65/A-47, B6), with one new finding: the staging line narrowed ordinary firearm custody transfers to restricted-only.
+
+## 11. Open requirements carried forward (do not drop)
+
+These are owner requirements that the release candidate meets only with an interim measure. Each stays open until its database change is reviewed, applied and verified.
+
+| ID | Requirement | Interim state in the release candidate | To close | Lane |
+|---|---|---|---|---|
+| **R-WD-1** | A **dedicated permission** for withdrawing a submitted ammunition reconciliation (owner decision on C-R1, 2026-10-22: specific management permission, a reason, and an audit record) | Withdrawal is limited to `administer_department` (`src/lib/armory/reconciliation-withdraw.ts`, `RECONCILIATION_WITHDRAW_PERMISSIONS`). It needs a reason, and the withdrawal and its audit row are written in one statement. The administrator rule is enforced by the route only: at the database level, any `manage_firearms` holder can make the change under the 052 update policy and `audit_events_insert_managers`. | A migration that: adds the permission to the catalog (Administrator by default); makes the Submitted-to-Draft change require it (052 update policy or a security-definer function), with the audit row in the same transaction; and switches the route and the page's `canWithdraw` to it. A real-schema test with the permission granted and withheld. | B (migration) + A |
+
+Source: `docs/remediation/FINAL-CANDIDATE-20261022.md` §7 on `claude/integration-final-20261022`.
