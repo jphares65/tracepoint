@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mergeRangeWorkspace, applyConflictChoice, EMPTY_MERGEABLE_WORKSPACE } from "/home/user/tracepoint/src/lib/range/workspace-merge.ts";
+import { recoverWorkspace } from "/home/user/tracepoint/src/lib/range/workspace-device-copy.ts";
+
+const ws = (results: any[]) => ({ ...EMPTY_MERGEABLE_WORKSPACE, results });
+const r = (score: number, extra: Record<string, unknown> = {}) => ({
+  id: "result-a", rangeDayId: "day-1", drillId: "drill-1", runNumber: 1, officerId: "officer-a",
+  score, passed: score >= 42, finalPassed: score >= 42, deficiencyObserved: score < 42, notes: "", instructorId: "i-a", ...extra,
+});
+
+test("R4-H1: editing another field of a conflicted score, then a stale save, silently drops this device's score", () => {
+  // Conflict: this device 44, other device 46 (base 40). Workspace holds 46.
+  const { merged, conflicts } = mergeRangeWorkspace(ws([r(40)]), ws([r(44)]), ws([r(46, { instructorId: "i-b" })]));
+  assert.equal(conflicts.length, 1);
+  const synced = ws([r(46, { instructorId: "i-b" })]);
+  // Instructor edits only the notes on that row (batch save rebuilds the row from 46).
+  const local = ws([{ ...merged.results[0], notes: "glove", instructorId: "i-a" }]);
+  // Another device saved something unrelated meanwhile -> stale -> recovery.
+  const server = { ...synced, rangeRoster: [{ id: "roster-x", rangeDayId: "day-1", officerId: "officer-x" }] };
+  const out = recoverWorkspace({ base: synced, local, server, conflicts, accept: () => ({ ok: true }) });
+  // Faulty behaviour: the conflict holding 44 is gone and 44 is nowhere in the workspace.
+  assert.equal(out.conflicts.length, 0);
+  assert.ok(!out.workspace.results.some((x: any) => x.score === 44));
+});
+
+test("R4-M1: conflict keeps a stale 'server' after a later local edit; 'Use this device' yields 44 marked failed", () => {
+  const conflict = { collection: "results" as const, id: "result-a", local: r(44), server: r(46), base: r(40) };
+  // After the conflict, the instructor corrected the row to 30 (fail) and it saved; conflict still lists 44 vs 46.
+  const now = ws([r(30)]);
+  const [chosen] = applyConflictChoice(now, conflict, "local").results as any[];
+  assert.equal(chosen.score, 44);
+  assert.equal(chosen.passed, false, "a qualifying 44 stored as failed");
+  assert.equal(chosen.deficiencyObserved, true);
+  // and 'Keep other device's value' keeps 30, not the 46 the panel shows.
+  assert.equal((applyConflictChoice(now, conflict, "server").results[0] as any).score, 30);
+});
+
+test("R4-M2: field-level 'Use this device' leaves derived pass/deficiency fields from the other device (no later edits)", () => {
+  // Base 45 (pass). This device corrected to 43 (still pass). Other device entered 30 (fail).
+  const { merged, conflicts } = mergeRangeWorkspace(ws([r(45)]), ws([r(43)]), ws([r(30)]));
+  const [chosen] = applyConflictChoice(merged, conflicts[0], "local").results as any[];
+  assert.equal(chosen.score, 43);
+  assert.equal(chosen.passed, false, "43 qualifies (>=42) but is stored as failed");
+  assert.equal(chosen.finalPassed, false);
+  assert.equal(chosen.deficiencyObserved, true);
+});

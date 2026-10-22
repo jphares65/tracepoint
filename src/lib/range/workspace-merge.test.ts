@@ -31,7 +31,7 @@ test("UX-RB-5: the same score edited on both devices is a conflict; neither valu
   const local = { ...base(), results: [result("officer-a", 44)] };
   const { merged, conflicts } = mergeRangeWorkspace(start, local, server);
   assert.deepEqual(merged.results, [result("officer-a", 46)]);
-  assert.deepEqual(conflicts, [{ collection: "results", id: "result-officer-a", local: result("officer-a", 44), server: result("officer-a", 46), base: result("officer-a", 40) }]);
+  assert.deepEqual(conflicts, [{ collection: "results", id: "result-officer-a", local: result("officer-a", 44), server: result("officer-a", 46) }]);
   // Choosing this device puts its value back; it is then saved like any edit.
   assert.deepEqual(applyConflictChoice(merged, conflicts[0]).results, [result("officer-a", 44)]);
 });
@@ -74,15 +74,15 @@ test("UX-RB-6: a result is Saved only when the server holds exactly that version
   assert.deepEqual([...unsyncedIds(synced, [result("officer-a", 47), result("officer-b", 49)])], ["result-officer-a", "result-officer-b"]);
 });
 
-test("review M2/M3: one conflict per record, refreshed to the server's current value; a later edit wins", async () => {
+test("review M2 / ba6bccf R4-H1: each distinct value this device held is kept; agreement drops it", async () => {
   const { reconcileConflicts } = await import("./workspace-merge.ts");
   const W = (score: number) => ({ ...base(), results: [result("officer-a", score)] });
   const first = mergeRangeWorkspace(W(40), W(44), W(46)).conflicts;
   const second = mergeRangeWorkspace(W(46), W(48), W(47)).conflicts;
   const conflicts = reconcileConflicts(first, second, W(47));
-  assert.deepEqual(conflicts.map((conflict) => [conflict.id, conflict.local?.score, conflict.server?.score]), [["result-officer-a", 48, 47]]);
-  assert.deepEqual(reconcileConflicts(conflicts, [], W(48)), [], "agreement drops the conflict");
-  assert.equal(applyConflictChoice(W(47), conflicts[0], "server").results[0].score, 47);
+  assert.deepEqual(conflicts.map((conflict) => [conflict.local?.score, conflict.server?.score]), [[44, 47], [48, 47]], "neither of this device's values is lost");
+  assert.deepEqual(reconcileConflicts(conflicts, first, W(47)).length, 2, "the same value is listed once");
+  assert.deepEqual(reconcileConflicts(conflicts, [], W(48)).map((conflict) => conflict.local?.score), [44], "the value now in use drops its conflict");
 });
 
 test("review P8: records without a string id are never collapsed or duplicated", () => {
@@ -97,22 +97,18 @@ test("review P8: records without a string id are never collapsed or duplicated",
   assert.deepEqual(numeric.merged.results, [{ id: 7, score: 2 }]);
 });
 
-test("review R2-M1 / 3177a83 P1: a conflict stands until chosen; neither choice writes a stale value", () => {
-  const conflict = { collection: "results" as const, id: "result-officer-a", local: result("officer-a", 44), server: result("officer-a", 46) };
-  // The instructor later entered 48 (or a batch save rebuilt the row); the conflict is still listed and its 44 kept.
-  const now = { ...base(), results: [{ ...result("officer-a", 48), instructorId: "instructor-a" }] };
-  assert.equal(applyConflictChoice(now, conflict, "server").results[0].score, 48, "Keep other writes nothing");
+test("review R2-M1 / 3177a83 P1 / ba6bccf R4-H2: neither choice writes a stale value; this device's entry is applied whole", () => {
+  const conflict = { collection: "results" as const, id: "result-officer-a", local: { ...result("officer-a", 43), passed: true, deficiencyObserved: false }, server: { ...result("officer-a", 30), passed: false, deficiencyObserved: true } };
+  // The record changed after the conflict (later edit, or a rebuilt row); the conflict stands.
+  const now = { ...base(), results: [{ ...result("officer-a", 48), passed: true, instructorId: "instructor-a" }] };
+  assert.equal(applyConflictChoice(now, conflict, "server"), now, "Keep the current value writes nothing");
   const chosen = applyConflictChoice(now, conflict, "local").results[0];
-  assert.equal(chosen.score, 44, "Use this device writes the conflicting field");
-  assert.equal(chosen.instructorId, "instructor-a", "and keeps fields that were not in conflict");
+  assert.deepEqual([chosen.score, chosen.passed, chosen.deficiencyObserved], [43, true, false], "score and outcome come from the same entry");
 });
 
-test("review 3177a83 P2: choosing this device's value for one field keeps later edits to other fields", () => {
-  const day = (over: Record<string, unknown>) => ({ id: "day-1", departmentId: "agency-a", status: "In Progress", title: "Quals", ...over });
-  const conflict = { collection: "rangeDays" as const, id: "day-1", local: day({ aar: "Typed offline" }), server: day({ location: "Range B" }), base: day({}) };
-  const now = { ...base(), rangeDays: [day({ location: "Range B", instructorIds: ["i-2"] })] };
-  const [chosen] = applyConflictChoice(now, conflict, "local").rangeDays;
-  assert.equal(chosen.aar, "Typed offline");
-  assert.deepEqual(chosen.instructorIds, ["i-2"], "the instructor added after the conflict stays");
-  assert.equal(chosen.location, "Range B", "the other device's own change stays");
+test("review ba6bccf: a malfunction recorded on either entry stays listed whichever entry is kept", () => {
+  const conflict = { collection: "results" as const, id: "result-officer-a", local: { ...result("officer-a", 31), malfunctionIds: ["m-local"] }, server: result("officer-a", 46) };
+  const now = { ...base(), results: [{ ...result("officer-a", 46), malfunctionIds: ["m-other"] }] };
+  assert.deepEqual(applyConflictChoice(now, conflict, "server").results[0].malfunctionIds, ["m-other", "m-local"]);
+  assert.deepEqual(applyConflictChoice(now, conflict, "local").results[0].malfunctionIds, ["m-local", "m-other"]);
 });

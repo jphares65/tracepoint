@@ -78,11 +78,14 @@ test("review M1: with no workspace on the server yet, this device's work is repl
   assert.deepEqual(recovered.conflicts, []);
 });
 
-test("review M2: an earlier conflict on a record this device edited again is superseded by the new value", () => {
+test("review ba6bccf R4-H1: an earlier conflict survives a later edit and a recovery; it goes only when its value is in use", () => {
   const earlier = [{ collection: "results" as const, id: "result-1", local: score(44), server: score(46) }];
-  const recovered = recoverWorkspace({ base: ws({ results: [score(46)] }), local: ws({ results: [score(48)] }), server: ws({ results: [score(46)] }), conflicts: earlier, accept });
-  assert.equal(recovered.workspace.results[0].score, 48);
-  assert.deepEqual(recovered.conflicts, []);
+  const edited = { ...score(46), notes: "re-checked" };
+  const recovered = recoverWorkspace({ base: ws({ results: [score(46)] }), local: ws({ results: [edited] }), server: ws({ results: [score(46)] }), conflicts: earlier, accept });
+  assert.deepEqual(recovered.workspace.results[0], edited, "the later edit is replayed");
+  assert.deepEqual(recovered.conflicts.map((conflict) => [conflict.local?.score, conflict.server]), [[44, edited]], "the 44 is still offered, compared with the current entry");
+  const agreed = recoverWorkspace({ base: ws({ results: [score(46)] }), local: ws({ results: [score(44)] }), server: ws({ results: [score(46)] }), conflicts: earlier, accept });
+  assert.deepEqual(agreed.conflicts, [], "the instructor re-entered 44: nothing left to choose");
 });
 
 test("review R2-H2: each user and agency has its own record; another sign-in never overwrites it", () => {

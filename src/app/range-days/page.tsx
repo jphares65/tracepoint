@@ -13,6 +13,8 @@ import {
   EMPTY_MERGEABLE_WORKSPACE,
   UNKNOWN_BASE_REASON,
   applyConflictChoice,
+  conflictKey,
+  currentRecord,
   reconcileConflicts,
   unsyncedIds,
   type MergeableWorkspace,
@@ -3217,7 +3219,7 @@ export default function RangeDaysPage() {
   // conflicts are kept together so a reload cannot lose it.
   function resolveWorkspaceConflict(conflict: WorkspaceConflict, keepThisDevice: boolean) {
     const workspace = applyConflictChoice(latestWorkspaceState.current, conflict, keepThisDevice ? "local" : "server");
-    const conflicts = workspaceConflictsRef.current.filter((item) => item.collection !== conflict.collection || item.id !== conflict.id);
+    const conflicts = workspaceConflictsRef.current.filter((item) => conflictKey(item) !== conflictKey(conflict));
     workspaceConflictsRef.current = conflicts;
     setWorkspaceConflicts(conflicts);
     applyMergeableWorkspace(workspace);
@@ -3230,7 +3232,8 @@ export default function RangeDaysPage() {
       const drill = rangeDayDrills.find((item) => item.id === record.drillId);
       const value = (item: Record<string, unknown> | null) =>
         item ? formatResultMetric(item as unknown as ExtendedDrillRunResult, drill) || "recorded" : conflict.reason ? "none" : "removed";
-      return `${getUserName(String(record.officerId ?? ""))} · ${drill?.name ?? "Drill"} · Run ${String(record.runNumber ?? "")}: this device ${value(conflict.local)}, other device ${value(conflict.server)}`;
+      // Review ba6bccf R4-M1: compared with the record as it is now.
+      return `${getUserName(String(record.officerId ?? ""))} · ${drill?.name ?? "Drill"} · Run ${String(record.runNumber ?? "")}: this device ${value(conflict.local)}, now ${value(currentRecord(latestWorkspaceState.current, conflict))}`;
     }
     const label = { rangeDays: "Range day", drillLibrary: "Drill template", rangeDayDrills: "Drill", rangeRoster: "Roster entry", malfunctions: "Malfunction" }[conflict.collection];
     const name = record.title ?? record.name ?? (record.officerId ? getUserName(String(record.officerId)) : conflict.id);
@@ -4258,11 +4261,11 @@ export default function RangeDaysPage() {
   const workspaceConflictPanel = workspaceConflicts.length ? (
     <section role="alert" className="rounded-2xl border border-amber-500/40 bg-amber-500/[0.06] p-4 text-[12px] text-amber-100">
       <p className="font-semibold text-amber-200">
-        {workspaceConflicts.length} {workspaceConflicts.length === 1 ? "change was" : "changes were"} made on this device and on another device. The other device&apos;s value is in use until you choose.
+        {workspaceConflicts.length} {workspaceConflicts.length === 1 ? "change was" : "changes were"} made on this device and on another device. The current value stays in use until you choose. Using this device&apos;s value replaces the whole entry with this device&apos;s version.
       </p>
       <ul className="mt-3 space-y-2">
         {workspaceConflicts.map((conflict) => (
-          <li key={`${conflict.collection}:${conflict.id}`} className="flex flex-col gap-2 rounded-xl border border-amber-500/20 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <li key={conflictKey(conflict)} className="flex flex-col gap-2 rounded-xl border border-amber-500/20 p-3 sm:flex-row sm:items-center sm:justify-between">
             <span>
               {describeWorkspaceConflict(conflict)}
               {conflict.reason ? <span className="mt-1 block text-amber-200/80">Not saved: {conflict.reason}</span> : null}
@@ -4272,7 +4275,7 @@ export default function RangeDaysPage() {
                 {conflict.reason ? "Try this device\u2019s value again" : "Use this device\u2019s value"}
               </button>
               <button type="button" onClick={() => resolveWorkspaceConflict(conflict, false)} className="min-h-10 rounded-xl border border-slate-600 px-3 font-semibold text-slate-200 hover:bg-slate-800">
-                {conflict.reason ? "Discard this device\u2019s value" : "Keep other device\u2019s value"}
+                {conflict.reason ? "Discard this device\u2019s value" : "Keep the current value"}
               </button>
             </span>
           </li>

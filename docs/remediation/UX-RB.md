@@ -198,6 +198,24 @@ The third review is in `ux-rb-evidence/review-3177a83/`. All three proofs passed
 
 **Workflow semantics (flag).** Range conflicts now stay listed until the instructor resolves each one, even if the record is edited again in the meantime. This is safer than dropping them automatically, but it leaves more items to clear.
 
+### 3.7 Fourth independent review (of `ba6bccf`): simplified conflict model
+
+The fourth review is in `ux-rb-evidence/review-ba6bccf/`. All three proofs passed against `ba6bccf`.
+- **R4-H1.** Recovery still dropped an earlier conflict when its record had been edited again.
+- **R4-H2.** The field-level "Use this device's value" could combine this device's score with the other device's pass/fail fields, recording a false failure.
+- **R4-M1.** The panel compared against a stale value.
+
+Each round of finer-grained merging had added edge cases, so the conflict model is now deliberately simple:
+- A conflict holds this device's **whole** entry. It stays until the instructor chooses, or until the entry's current value equals this device's. Every distinct value this device held for an entry is kept: a later conflict on the same entry never replaces an earlier one.
+- The panel compares this device's value with the entry **as it is now**.
+- "Use this device's value" replaces the whole entry with this device's version, so a score and its outcome always come from one entry. The panel says so.
+- "Keep the current value" writes nothing.
+- Either way, a malfunction recorded on either entry stays listed on the kept score.
+
+**After** (`proofs-after.txt`): all three proofs fail on their assertions, so the defects are gone. The counterparts are in `workspace-merge.test.ts` and `workspace-device-copy.test.ts` ("ba6bccf R4-…").
+
+**Workflow semantics (flag).** "Use this device's value" now replaces the entry's other fields too, for example an instructor added to a range day after the conflict. This is an explicit, labelled choice, never automatic.
+
 ## 4. Staging verification (add to `STAGING-VERIFICATION.md` §4)
 
 | Step | Action | Expected | Automated |

@@ -45,7 +45,8 @@ test("UX-RB-5: conflicts are shown with both values and a choice", async () => {
   const source = await page();
   assert.match(source, /\{workspaceConflictPanel\}/);
   assert.match(source, /conflict\.reason \? "Try this device\\u2019s value again" : "Use this device\\u2019s value"/);
-  assert.match(source, /conflict\.reason \? "Discard this device\\u2019s value" : "Keep other device\\u2019s value"/);
+  assert.match(source, /conflict\.reason \? "Discard this device\\u2019s value" : "Keep the current value"/);
+  assert.match(source, /this device \$\{value\(conflict\.local\)\}, now \$\{value\(currentRecord\(latestWorkspaceState\.current, conflict\)\)\}/, "review ba6bccf R4-M1");
 });
 
 test("UX-RB-6: impossible values are stopped on the officer's row; pills reflect the server", async () => {

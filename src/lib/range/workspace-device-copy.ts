@@ -150,13 +150,12 @@ export function recoverWorkspace(input: {
   const unknownBase = !input.base && !input.serverEmpty;
   const merge = mergeRangeWorkspace(input.base ?? input.server, input.local, input.server, { unknownBase });
   const { workspace, refused } = withoutRefusedChanges(merge.merged, merge.applied, input.server, input.accept);
-  // A record edited again on this device after an earlier conflict now holds the newer value.
-  const refusedKeys = new Set(refused.map((conflict) => `${conflict.collection}:${conflict.id}`));
-  const replayed = new Set(merge.applied.map((change) => `${change.collection}:${change.id}`).filter((key) => !refusedKeys.has(key)));
-  const earlier = input.conflicts.filter((conflict) => !replayed.has(`${conflict.collection}:${conflict.id}`));
+  // Review ba6bccf R4-H1: an earlier conflict is never dropped because its
+  // record was edited again; it stands until chosen, or until the record's
+  // current value equals this device's.
   return {
     workspace,
-    conflicts: reconcileConflicts(earlier, [...merge.conflicts, ...refused], input.server),
+    conflicts: reconcileConflicts(input.conflicts, [...merge.conflicts, ...refused], workspace),
     applied: merge.applied.length - refused.length,
     heldBack: refused.length,
   };
