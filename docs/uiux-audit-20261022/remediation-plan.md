@@ -337,3 +337,7 @@ These items need review once the source or a staging build (G6) is available:
 | Date and time parsing | DC and DC2 formats; this is known to be breaking | C1, C2, C31 |
 | Offline and poor connectivity | No reviewed behaviour; the web equivalent is RNG-02 (deferred) | — |
 | Accessibility, tap targets, terminology parity with the web glossary, and status colours | Field use outdoors, with gloves | README §4 |
+
+## Live staging verification (2026-10-22)
+
+The owner's authenticated browser testing on staging `22e543d` confirmed SV-28 to SV-32. They are reconciled in [reconciliation/register-SV.md](reconciliation/register-SV.md) against the existing entries (C-63/C-R2, E-04/E-06/E-07/AE-R1/E-02, D-28, A-64/A-65/A-47, B6), with one new finding: the staging line narrowed ordinary firearm custody transfers to restricted-only.
