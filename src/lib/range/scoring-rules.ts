@@ -77,3 +77,11 @@ export function resolveRunOutcome({
       passed === false || (departmentStandardPassed === false && remediationRequired === true),
   };
 }
+
+/** UX-RB-6: the result field a typed measurement is stored in, by scoring format. */
+export function measurementField(scoringFormat: string): "score" | "timeSeconds" | "hitCount" | null {
+  if (scoringFormat === "Qualification" || scoringFormat === "Points") return "score";
+  if (scoringFormat === "Time") return "timeSeconds";
+  if (scoringFormat === "Hit Count") return "hitCount";
+  return null;
+}
