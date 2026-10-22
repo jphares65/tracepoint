@@ -313,9 +313,15 @@ export function previewRangeWorkspaceMutation(input: {
   nextWorkspace: unknown;
   canManage: boolean;
   canScore: boolean;
+  // The caller's agency from GET /range-workspace; with it, the agency and
+  // reference check runs here too (review R2-M3).
+  departmentId?: string | null;
 }): RangeWorkspaceMutationDecision {
   if (!input.canManage && !input.canScore) {
     return { ok: false, status: 403, error: "You do not have permission to update range records." };
+  }
+  if (input.departmentId && !validateTenantReferences(record(input.nextWorkspace), input.departmentId)) {
+    return { ok: false, status: 403, error: "The range workspace contains records outside your agency." };
   }
   return changeDecision(record(input.existingWorkspace), record(input.nextWorkspace), input.canManage);
 }

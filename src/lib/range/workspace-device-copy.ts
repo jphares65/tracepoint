@@ -1,7 +1,8 @@
 // UX-RB-5 (review H2): this device's copy of the range workspace and the sync
 // point it belongs to are one record, written with one setItem, so a reload can
-// never pair a local copy with another tab's merge base. The record names the
-// user and agency it belongs to; a copy for anyone else is never shown or merged.
+// never pair a local copy with another tab's merge base. There is one record per
+// user and agency (review R2-H2): signing in as someone else, or switching
+// agency, never shows, merges or overwrites another record.
 import {
   mergeRangeWorkspace,
   reconcileConflicts,
@@ -11,6 +12,15 @@ import {
 } from "./workspace-merge.ts";
 
 export const RANGE_DAY_DEVICE_COPY_KEY = "tracepoint.rangeDays.device.v2";
+// Pre-UX-RB storage (one copy for everyone on the device) and its 65e1cd9 sync record.
+export const LEGACY_RANGE_DAY_KEYS = ["tracepoint.rangeDays.workspace.v1", "tracepoint.rangeDays.workspace.v1.sync"] as const;
+export const LEGACY_COPY_REASON = "Found on this device from an earlier version of TracePoint; it may have been entered by another user. Check it before using it.";
+
+export function deviceCopyKey(userId: string, departmentId: string | null) {
+  return `${RANGE_DAY_DEVICE_COPY_KEY}.${userId}.${departmentId ?? "unknown"}`;
+}
+const lastAgencyKey = (userId: string) => `${RANGE_DAY_DEVICE_COPY_KEY}.${userId}.last`;
+const legacyMarkerKey = (userId: string) => `${RANGE_DAY_DEVICE_COPY_KEY}.${userId}.legacy-listed`;
 
 export type RangeDayDeviceCopy = {
   version: 2;
@@ -25,13 +35,19 @@ export type RangeDayDeviceCopy = {
   conflicts: WorkspaceConflict[];
 };
 
-type StorageLike = Pick<Storage, "getItem" | "setItem">;
+type StorageLike = Pick<Storage, "getItem" | "setItem"> & Partial<Pick<Storage, "removeItem">>;
 
-export function readDeviceCopy(storage: StorageLike | null): RangeDayDeviceCopy | null {
+/**
+ * This user's record for the agency, or (with `departmentId` null, when the
+ * agency is not known yet) the record for the agency they last used.
+ */
+export function readDeviceCopy(storage: StorageLike | null, userId: string, departmentId: string | null): RangeDayDeviceCopy | null {
+  if (!storage || !userId) return null;
   try {
-    const stored = storage?.getItem(RANGE_DAY_DEVICE_COPY_KEY);
+    const agency = departmentId ?? storage.getItem(lastAgencyKey(userId)) ?? null;
+    const stored = storage.getItem(deviceCopyKey(userId, agency || null));
     const copy = stored ? (JSON.parse(stored) as RangeDayDeviceCopy) : null;
-    return copy && copy.version === 2 && typeof copy.userId === "string" ? copy : null;
+    return copy && copy.version === 2 && copy.userId === userId ? copy : null;
   } catch {
     return null;
   }
@@ -39,19 +55,81 @@ export function readDeviceCopy(storage: StorageLike | null): RangeDayDeviceCopy 
 
 /** Returns false when the copy could not be kept (for example storage is full). */
 export function writeDeviceCopy(storage: StorageLike | null, copy: RangeDayDeviceCopy) {
-  if (!storage) return false;
+  if (!storage || !copy.userId) return false;
   try {
-    storage.setItem(RANGE_DAY_DEVICE_COPY_KEY, JSON.stringify(copy));
+    storage.setItem(deviceCopyKey(copy.userId, copy.departmentId), JSON.stringify(copy));
+    if (copy.departmentId) storage.setItem(lastAgencyKey(copy.userId), copy.departmentId);
     return true;
   } catch {
     return false;
   }
 }
 
+/** A copy written before the agency was known; read once the agency is known (review L6). */
+export function takeUnknownAgencyCopy(storage: StorageLike | null, userId: string) {
+  const copy = readDeviceCopy(storage, userId, null) ;
+  if (!copy || copy.departmentId !== null) return null;
+  return {
+    copy,
+    discard: () => {
+      try {
+        storage?.removeItem?.(deviceCopyKey(userId, null));
+      } catch {
+        // Left in place; it is only listed again as differences.
+      }
+    },
+  };
+}
+
+/**
+ * Review R2-M4: a copy left under the pre-UX-RB keys, offered once per user.
+ * The old keys name no user or agency, so the copy is only ever listed as
+ * differences for the instructor to check, never applied. The old keys are left
+ * untouched.
+ */
+export function takeLegacyCopy(storage: StorageLike | null, userId: string) {
+  if (!storage || !userId) return null;
+  try {
+    if (storage.getItem(legacyMarkerKey(userId))) return null;
+    const stored = storage.getItem(LEGACY_RANGE_DAY_KEYS[0]);
+    if (!stored) return null;
+    return {
+      workspace: JSON.parse(stored) as unknown,
+      markListed: () => {
+        try {
+          storage.setItem(legacyMarkerKey(userId), new Date().toISOString());
+        } catch {
+          // Offered again next time.
+        }
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Records in an unattributed copy that differ from the workspace, as conflicts
+ * with `reason`. Nothing is applied. Records naming another agency are skipped.
+ */
+export function unattributedCopyConflicts(copy: MergeableWorkspace, workspace: MergeableWorkspace, reason: string, departmentId: string | null) {
+  const foreignDays = new Set(
+    copy.rangeDays
+      .filter((day) => departmentId && typeof day.departmentId === "string" && day.departmentId && day.departmentId !== departmentId)
+      .map((day) => String(day.id)),
+  );
+  return mergeRangeWorkspace(workspace, copy, workspace, { unknownBase: true }).conflicts
+    .filter((conflict) => {
+      const record = conflict.local ?? {};
+      return !foreignDays.has(String(conflict.collection === "rangeDays" ? record.id : record.rangeDayId));
+    })
+    .map((conflict) => ({ ...conflict, reason }));
+}
+
 /** A copy is used only for the same user, and only for the same agency once the agency is known. */
 export function usableDeviceCopy(copy: RangeDayDeviceCopy | null, owner: { userId: string; departmentId: string | null }) {
   if (!copy || !owner.userId || copy.userId !== owner.userId) return null;
-  if (owner.departmentId && copy.departmentId && copy.departmentId !== owner.departmentId) return null;
+  if (owner.departmentId && copy.departmentId !== owner.departmentId) return null;
   return copy;
 }
 
@@ -80,5 +158,6 @@ export function recoverWorkspace(input: {
     workspace,
     conflicts: reconcileConflicts(earlier, [...merge.conflicts, ...refused], input.server),
     applied: merge.applied.length - refused.length,
+    heldBack: refused.length,
   };
 }

@@ -11,14 +11,21 @@ import {
 } from "@/lib/range/workspace-client-state";
 import {
   EMPTY_MERGEABLE_WORKSPACE,
+  UNKNOWN_BASE_REASON,
   applyConflictChoice,
+  liveConflicts,
+  reconcileConflicts,
   unsyncedIds,
   type MergeableWorkspace,
   type WorkspaceConflict,
 } from "@/lib/range/workspace-merge";
 import {
+  LEGACY_COPY_REASON,
   RANGE_DAY_DEVICE_COPY_KEY,
   readDeviceCopy,
+  takeLegacyCopy,
+  takeUnknownAgencyCopy,
+  unattributedCopyConflicts,
   recoverWorkspace,
   usableDeviceCopy,
   writeDeviceCopy,
@@ -2495,13 +2502,15 @@ export default function RangeDaysPage() {
     async function loadWorkspace() {
       const remote = await fetchRemoteRangeDayWorkspace();
       if (!isMounted) return;
-      const stored = readDeviceCopy(deviceStorage());
+      const storage = deviceStorage();
 
       let initial: MergeableWorkspace;
       let conflicts: WorkspaceConflict[] = [];
+      let afterPersist = () => {};
 
       if (remote.ok) {
-        const copy = usableDeviceCopy(stored, { userId: currentUserId, departmentId: remote.departmentId });
+        // Review R2-H2: this user's record for this agency only.
+        const copy = usableDeviceCopy(readDeviceCopy(storage, currentUserId, remote.departmentId), { userId: currentUserId, departmentId: remote.departmentId });
         rangeWorkspaceBaseUpdatedAt = remote.updatedAt;
         rangeWorkspaceEpoch += 1;
         deviceDepartmentId.current = remote.departmentId;
@@ -2516,11 +2525,24 @@ export default function RangeDaysPage() {
             server: serverForm,
             serverEmpty: remote.workspace === null,
             conflicts: copy.conflicts ?? [],
-            accept: serverAcceptance(remote.workspace ?? {}),
+            accept: serverAcceptance(remote.workspace ?? {}, remote.departmentId),
           });
           initial = recovered.workspace;
           conflicts = recovered.conflicts;
         }
+        // Review L6 / R2-M4: a copy written before the agency was known, and one
+        // left by an earlier version, are listed as differences; never applied.
+        const unknownCopy = takeUnknownAgencyCopy(storage, currentUserId);
+        const legacy = canManageRangeDays || canScoreRangeDays ? takeLegacyCopy(storage, currentUserId) : null;
+        const unattributed = [
+          ...(unknownCopy ? unattributedCopyConflicts(toMergeableWorkspace(unknownCopy.copy.workspace, currentUserId), initial, UNKNOWN_BASE_REASON, remote.departmentId) : []),
+          ...(legacy ? unattributedCopyConflicts(toMergeableWorkspace(legacy.workspace, currentUserId), initial, LEGACY_COPY_REASON, remote.departmentId) : []),
+        ];
+        if (unattributed.length) conflicts = reconcileConflicts(conflicts, unattributed, initial);
+        afterPersist = () => {
+          unknownCopy?.discard();
+          legacy?.markListed();
+        };
         syncedWorkspace.current = serverForm;
         baseKnown.current = true;
         workspaceSyncBlockedRef.current = false;
@@ -2528,7 +2550,7 @@ export default function RangeDaysPage() {
       } else {
         // B-03: a copy whose server version is unknown is shown but never saved
         // until the server copy has been loaded and merged.
-        const copy = usableDeviceCopy(stored, { userId: currentUserId, departmentId: null });
+        const copy = usableDeviceCopy(readDeviceCopy(storage, currentUserId, null), { userId: currentUserId, departmentId: null });
         initial = toMergeableWorkspace(copy?.workspace, currentUserId);
         conflicts = copy?.conflicts ?? [];
         deviceDepartmentId.current = copy?.departmentId ?? null;
@@ -2543,7 +2565,7 @@ export default function RangeDaysPage() {
       setWorkspaceConflicts(conflicts);
       applyMergeableWorkspace(initial);
       // The merged copy and its sync point are written together (review H2).
-      persistDeviceCopy(initial, conflicts);
+      if (persistDeviceCopy(initial, conflicts)) afterPersist();
       setHasLoadedStoredWorkspace(true);
     }
 
@@ -2558,7 +2580,7 @@ export default function RangeDaysPage() {
   // Review H2: another tab writing this device's copy is shown, not silently raced.
   useEffect(() => {
     function onStorage(event: StorageEvent) {
-      if (event.key !== RANGE_DAY_DEVICE_COPY_KEY || !event.newValue) return;
+      if (!event.key?.startsWith(`${RANGE_DAY_DEVICE_COPY_KEY}.`) || !event.newValue) return;
       try {
         const copy = JSON.parse(event.newValue) as { tabId?: string };
         if (copy.tabId && copy.tabId !== RANGE_DAY_TAB_ID) setOtherTabActive(true);
@@ -2895,7 +2917,7 @@ export default function RangeDaysPage() {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const newRangeDayId = `range-${Date.now()}`;
+    const newRangeDayId = `range-${crypto.randomUUID()}`;
 
     const newRangeDay: PlannedRangeDay = {
       id: newRangeDayId,
@@ -2974,7 +2996,7 @@ export default function RangeDaysPage() {
     updateSelectedEquipmentChecklist([
       ...getRangeDayEquipment(selectedRangeDay),
       {
-        id: `equipment-${Date.now()}`,
+        id: `equipment-${crypto.randomUUID()}`,
         label: newEquipmentLabel.trim(),
         required: false,
         packed: false,
@@ -3056,7 +3078,7 @@ export default function RangeDaysPage() {
 
   // Review H1: the server's own decision for a merged workspace, so a replayed
   // change it would refuse is listed for the instructor instead of being sent.
-  function serverAcceptance(remoteWorkspace: Partial<StoredRangeDayWorkspace>) {
+  function serverAcceptance(remoteWorkspace: Partial<StoredRangeDayWorkspace>, departmentId: string | null) {
     const baseline = workspaceBaselineFor(remoteWorkspace, currentUserId);
     return (workspace: MergeableWorkspace) => {
       const decision = previewRangeWorkspaceMutation({
@@ -3064,6 +3086,7 @@ export default function RangeDaysPage() {
         nextWorkspace: workspaceSnapshotFor(workspace, baseline),
         canManage: canManageRangeDays,
         canScore: canScoreRangeDays,
+        departmentId,
       });
       return decision.ok ? { ok: true as const } : { ok: false as const, error: decision.error };
     };
@@ -3080,7 +3103,7 @@ export default function RangeDaysPage() {
 
   // Review H2: the local copy, its sync point and the conflicts are one record.
   function persistDeviceCopy(workspace: unknown = localCopy.current, conflicts = workspaceConflictsRef.current) {
-    if (!currentUserId) return;
+    if (!currentUserId) return false;
     localCopy.current = workspace;
     const kept = writeDeviceCopy(deviceStorage(), {
       version: 2,
@@ -3093,6 +3116,7 @@ export default function RangeDaysPage() {
       conflicts,
     });
     setDeviceCopyFailed(!kept);
+    return kept;
   }
 
   function createRangeDayWorkspaceSnapshot(): StoredRangeDayWorkspace {
@@ -3126,15 +3150,16 @@ export default function RangeDaysPage() {
         // Review H1: once per server version, reload and hold back the change
         // the server refused, so the rest of this device's work still saves.
         refusalRecoveredFor.current = rangeWorkspaceBaseUpdatedAt;
-        void recoverRangeWorkspace();
+        void recoverRangeWorkspace(error.message);
       }
       throw error;
     }
   }
 
   // UX-RB-5: load the server copy and replay this device's changes onto it.
-  // Used after a "changed on another device" refusal and when the first load failed.
-  async function recoverRangeWorkspace() {
+  // Used after a "changed on another device" refusal, after any other refusal
+  // (`refusal` is the server's message), and when the first load failed.
+  async function recoverRangeWorkspace(refusal?: string) {
     if (workspaceRecovering.current) return;
     workspaceRecovering.current = true;
     setWorkspaceRecoveryError("");
@@ -3146,17 +3171,29 @@ export default function RangeDaysPage() {
       }
       const serverForm = toMergeableWorkspace(remote.workspace, currentUserId);
       // A copy that belongs to another agency is never merged into this one.
+      // (The other agency's record stays in storage under its own key.)
       const sameAgency = !deviceDepartmentId.current || deviceDepartmentId.current === remote.departmentId;
-      const recovered = sameAgency
-        ? recoverWorkspace({
-            base: baseKnown.current ? syncedWorkspace.current : null,
-            local: latestWorkspaceState.current,
-            server: serverForm,
-            serverEmpty: remote.workspace === null,
-            conflicts: workspaceConflictsRef.current,
-            accept: serverAcceptance(remote.workspace ?? {}),
-          })
-        : { workspace: serverForm, conflicts: [] as WorkspaceConflict[] };
+      const recoverWith = (accept: ReturnType<typeof serverAcceptance>) => recoverWorkspace({
+        base: baseKnown.current ? syncedWorkspace.current : null,
+        local: latestWorkspaceState.current,
+        server: serverForm,
+        serverEmpty: remote.workspace === null,
+        conflicts: workspaceConflictsRef.current,
+        accept,
+      });
+      const serverRule = serverAcceptance(remote.workspace ?? {}, remote.departmentId);
+      // Review R2-M3: after a refusal this device could not predict, every
+      // unsynced change is held back (with the rule's own reason where it has
+      // one, else the server's message), so nothing keeps failing and each can
+      // be discarded or tried again.
+      const recovered = !sameAgency
+        ? { workspace: serverForm, conflicts: [] as WorkspaceConflict[], applied: 0, heldBack: 0 }
+        : recoverWith(refusal
+          ? (workspace) => {
+              const decision = serverRule(workspace);
+              return decision.ok ? { ok: false as const, error: refusal } : decision;
+            }
+          : serverRule);
       setLoadedWorkspaceBaseline(remote.workspace ?? {});
       rangeWorkspaceBaseUpdatedAt = remote.updatedAt;
       rangeWorkspaceEpoch += 1;
@@ -3212,6 +3249,12 @@ export default function RangeDaysPage() {
     workspace: StoredRangeDayWorkspace,
     delay: number,
   ) {
+    // Review R2-M1: an edit to a conflicted record decides it.
+    const live = liveConflicts(latestWorkspaceState.current, workspaceConflictsRef.current);
+    if (live.length !== workspaceConflictsRef.current.length) {
+      workspaceConflictsRef.current = live;
+      setWorkspaceConflicts(live);
+    }
     persistDeviceCopy(workspace);
     if (!canManageRangeDays && !canScoreRangeDays) return;
     workspaceSaveQueue.current?.schedule(
@@ -4105,25 +4148,45 @@ export default function RangeDaysPage() {
     if (!selectedRangeDay || !canEditSelectedRangeDay || removingDrillId) return;
     if (!window.confirm(`Remove ${drill.name} from this range day? This cannot be undone.`)) return;
 
+    if (workspaceSyncBlockedRef.current || workspaceRecovering.current) {
+      setSaveMessage("Load and merge the latest copy before removing a drill.");
+      return;
+    }
+
     setRemovingDrillId(drill.id);
     setSaveMessage("Removing drill...");
     try {
+      // Review R2-H1: the removal carries this device's version, like a save.
       const response = await fetch("/api/pilot/range-workspace/drills", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rangeDayId: selectedRangeDay.id, drillId: drill.id }),
+        body: JSON.stringify({ rangeDayId: selectedRangeDay.id, drillId: drill.id, baseUpdatedAt: rangeWorkspaceBaseUpdatedAt ?? null }),
       });
       const payload = await response.json().catch(() => ({})) as {
         error?: string;
-        workspace?: Partial<StoredRangeDayWorkspace>;
+        code?: string;
+        workspace?: Partial<StoredRangeDayWorkspace> | null;
         updatedAt?: string | null;
       };
+      if (payload.code === "stale_workspace") {
+        setWorkspaceStale(true);
+        void recoverRangeWorkspace();
+        throw new Error("This range workspace changed on another device. The latest copy is being merged; remove the drill again if it is still needed.");
+      }
       if (!response.ok) throw new Error(payload.error || "The drill could not be removed.");
-      if (payload.updatedAt) rangeWorkspaceBaseUpdatedAt = payload.updatedAt;
 
-      const nextDrills = payload.workspace?.rangeDayDrills ??
-        rangeDayDrills.filter((item) => item.id !== drill.id);
-      setRangeDayDrills(normalizeRangeDayDrillsForWorkspace(nextDrills));
+      // The server held exactly this device's synced copy, minus the drill. This
+      // device's unsaved changes stay; snapshots taken before the removal are
+      // never sent (they still contain the drill).
+      const withoutDrill = (items: readonly unknown[]) => items.filter((item) => (item as { id?: unknown }).id !== drill.id);
+      if (payload.updatedAt) {
+        rangeWorkspaceBaseUpdatedAt = payload.updatedAt;
+        rangeWorkspaceEpoch += 1;
+        if (payload.workspace) setLoadedWorkspaceBaseline(payload.workspace);
+        syncedWorkspace.current = { ...syncedWorkspace.current, rangeDayDrills: withoutDrill(syncedWorkspace.current.rangeDayDrills) as MergeableWorkspace["rangeDayDrills"] };
+      }
+      const nextDrills = rangeDayDrills.filter((item) => item.id !== drill.id);
+      setRangeDayDrills(nextDrills);
       if (selectedDrillId === drill.id) {
         setSelectedDrillId(nextDrills.find((item) => item.rangeDayId === selectedRangeDay.id)?.id ?? "");
       }
@@ -4205,10 +4268,10 @@ export default function RangeDaysPage() {
             </span>
             <span className="flex gap-2">
               <button type="button" onClick={() => resolveWorkspaceConflict(conflict, true)} className="min-h-10 rounded-xl border border-amber-400/50 px-3 font-semibold text-amber-100 hover:bg-amber-500/10">
-                Use this device&apos;s value
+                {conflict.reason ? "Try this device\u2019s value again" : "Use this device\u2019s value"}
               </button>
               <button type="button" onClick={() => resolveWorkspaceConflict(conflict, false)} className="min-h-10 rounded-xl border border-slate-600 px-3 font-semibold text-slate-200 hover:bg-slate-800">
-                Keep other device&apos;s value
+                {conflict.reason ? "Discard this device\u2019s value" : "Keep other device\u2019s value"}
               </button>
             </span>
           </li>

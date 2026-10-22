@@ -78,11 +78,14 @@ export function mergeRangeWorkspace(
   const merged = {} as MergeableWorkspace;
   const conflicts: WorkspaceConflict[] = [];
   const applied: AppliedChange[] = [];
+  // This device's result ids that now name the server's record (review R2-M2).
+  const resultIds = new Map<string, string>();
 
   for (const collection of WORKSPACE_COLLECTIONS) {
     const baseMap = byId(base[collection] ?? []);
     const serverMap = byId(server[collection] ?? []);
-    const localMap = aliasToServer(collection, byId(local[collection] ?? []), baseMap, serverMap);
+    const localItems = collection === "malfunctions" ? (local[collection] ?? []).map((item) => withResultIds(item, resultIds)) : local[collection] ?? [];
+    const localMap = aliasToServer(collection, byId(localItems), baseMap, serverMap, collection === "results" ? resultIds : undefined);
     const result = new Map<string, Keyed>();
 
     const ids = [...serverMap.keys(), ...[...localMap.keys()].filter((id) => !serverMap.has(id)), ...[...baseMap.keys()].filter((id) => !serverMap.has(id) && !localMap.has(id))];
@@ -114,7 +117,7 @@ export function mergeRangeWorkspace(
     // are, and only this device's new ones are added.
     const serverUnkeyed = (server[collection] ?? []).filter((item) => !idOf(item));
     const known = [...serverUnkeyed, ...(base[collection] ?? []).filter((item) => !idOf(item))];
-    const localUnkeyed = (local[collection] ?? []).filter((item) => !idOf(item) && !known.some((other) => same(other, item)));
+    const localUnkeyed = localItems.filter((item) => !idOf(item) && !known.some((other) => same(other, item)));
     merged[collection] = [...result.values(), ...serverUnkeyed, ...localUnkeyed];
   }
 
@@ -124,7 +127,7 @@ export function mergeRangeWorkspace(
 // A record this device created (not in its base) that the server already holds
 // under another id with the same logical key is treated as this device's
 // version of the server's record.
-function aliasToServer(collection: WorkspaceCollection, localMap: Map<string, Keyed>, baseMap: Map<string, Keyed>, serverMap: Map<string, Keyed>) {
+function aliasToServer(collection: WorkspaceCollection, localMap: Map<string, Keyed>, baseMap: Map<string, Keyed>, serverMap: Map<string, Keyed>, renamed?: Map<string, string>) {
   const keyOf = LOGICAL_KEYS[collection];
   if (!keyOf) return localMap;
   const serverByKey = new Map<string, string>();
@@ -138,12 +141,41 @@ function aliasToServer(collection: WorkspaceCollection, localMap: Map<string, Ke
     const serverId = !serverMap.has(id) && !baseMap.has(id) && key ? serverByKey.get(key) : undefined;
     if (serverId && !aliased.has(serverId)) {
       serverByKey.delete(key);
+      renamed?.set(id, serverId);
       aliased.set(serverId, { ...item, id: serverMap.get(serverId)!.id });
     } else {
       aliased.set(id, item);
     }
   });
   return aliased;
+}
+
+const MALFUNCTION_RESULT_FIELDS = ["drillRunId", "drillRunResultId", "drill_run_result_id", "drill_run_id"] as const;
+
+// A malfunction recorded with a result that now carries the server's id points at that id.
+function withResultIds(item: Keyed, renamed: Map<string, string>) {
+  const fields = MALFUNCTION_RESULT_FIELDS.filter((field) => typeof item[field] === "string" && renamed.has(item[field] as string));
+  return fields.length ? { ...item, ...Object.fromEntries(fields.map((field) => [field, renamed.get(item[field] as string)])) } : item;
+}
+
+/**
+ * Review R2-M1: a conflict stands only while the workspace still holds the
+ * other device's value. Once the instructor edits that record again, the new
+ * value is the decision and the conflict is dropped.
+ */
+export function liveConflicts(workspace: MergeableWorkspace, conflicts: readonly WorkspaceConflict[]) {
+  return conflicts.filter((conflict) => same(byId(workspace[conflict.collection] ?? []).get(conflict.id), conflict.server));
+}
+
+/**
+ * "Keep other device's value" for a score: the other device's score is kept,
+ * and a malfunction this device recorded with it stays attached (review R2-M2).
+ */
+export function serverChoiceFor(conflict: WorkspaceConflict): WorkspaceConflict {
+  if (conflict.collection !== "results" || !conflict.server || !conflict.local) return conflict;
+  const ids = (record: Keyed | null) => (Array.isArray(record?.malfunctionIds) ? (record!.malfunctionIds as unknown[]).filter((id): id is string => typeof id === "string") : []);
+  const extra = ids(conflict.local).filter((id) => !ids(conflict.server).includes(id));
+  return extra.length ? { ...conflict, server: { ...conflict.server, malfunctionIds: [...ids(conflict.server), ...extra] } } : conflict;
 }
 
 function withRecord(workspace: MergeableWorkspace, collection: WorkspaceCollection, id: string, value: Keyed | null): MergeableWorkspace {
@@ -208,7 +240,7 @@ export function unsyncedIds(synced: readonly Keyed[], current: readonly Keyed[])
 
 /** Applies the instructor's choice for a conflicted record: this device's value, or the other device's. */
 export function applyConflictChoice(workspace: MergeableWorkspace, conflict: WorkspaceConflict, choice: "local" | "server" = "local"): MergeableWorkspace {
-  return withRecord(workspace, conflict.collection, conflict.id, choice === "local" ? conflict.local : conflict.server);
+  return withRecord(workspace, conflict.collection, conflict.id, choice === "local" ? conflict.local : serverChoiceFor(conflict).server);
 }
 
 export const EMPTY_MERGEABLE_WORKSPACE: MergeableWorkspace = {

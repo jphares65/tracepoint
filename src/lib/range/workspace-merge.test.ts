@@ -96,3 +96,12 @@ test("review P8: records without a string id are never collapsed or duplicated",
   );
   assert.deepEqual(numeric.merged.results, [{ id: 7, score: 2 }]);
 });
+
+test("review R2-M1: editing a conflicted record again decides it; the conflict no longer applies stale values", async () => {
+  const { liveConflicts } = await import("./workspace-merge.ts");
+  const conflict = { collection: "results" as const, id: "result-officer-a", local: result("officer-a", 44), server: result("officer-a", 46) };
+  assert.deepEqual(liveConflicts({ ...base(), results: [result("officer-a", 46)] }, [conflict]), [conflict], "still showing the other device's value");
+  assert.deepEqual(liveConflicts({ ...base(), results: [result("officer-a", 48)] }, [conflict]), [], "the instructor entered 48");
+  const refused = { collection: "results" as const, id: "result-x", local: result("officer-x", 30), server: null, reason: "held back" };
+  assert.deepEqual(liveConflicts(base(), [refused]), [refused], "a held-back record stays listed");
+});

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { removeRangeDayDrill } from "@/lib/range/drill-removal";
+import { rangeWorkspaceVersionConflict, STALE_RANGE_WORKSPACE_ERROR } from "@/lib/range/workspace-mutation";
 import {
   accessFailureResponse,
   hasAnyServerPermission,
@@ -29,6 +30,11 @@ export async function DELETE(request: NextRequest) {
   const { data, error } = await admin.from("pilot_range_workspaces")
     .select("workspace,updated_at").eq("department_id", departmentId).maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Review R2-H1: like the workspace PUT, a removal made against an older copy is
+  // refused, so the page merges first instead of adopting a version it never saw.
+  if (rangeWorkspaceVersionConflict(body.baseUpdatedAt, data?.updated_at ?? null)) {
+    return NextResponse.json({ error: STALE_RANGE_WORKSPACE_ERROR, code: "stale_workspace" }, { status: 409 });
+  }
 
   const result = removeRangeDayDrill(data?.workspace, { rangeDayId, drillId, departmentId });
   let drillName = "Drill";
@@ -44,7 +50,7 @@ export async function DELETE(request: NextRequest) {
       updated_at: confirmedUpdatedAt,
     }).eq("department_id", departmentId).eq("updated_at", data?.updated_at).select("workspace").maybeSingle();
     if (updated.error) return NextResponse.json({ error: updated.error.message }, { status: 500 });
-    if (!updated.data) return NextResponse.json({ error: "The range workspace changed before the drill could be removed. Reload and try again." }, { status: 409 });
+    if (!updated.data) return NextResponse.json({ error: "The range workspace changed before the drill could be removed. Reload and try again.", code: "stale_workspace" }, { status: 409 });
     confirmedWorkspace = updated.data.workspace as Record<string, unknown>;
   } else if (result.status === 409) {
     return NextResponse.json({ error: result.error }, { status: result.status });

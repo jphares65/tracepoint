@@ -154,6 +154,32 @@ The other new tests are:
 
 Workflow semantics. A change the server would refuse is now shown as "Not saved: <reason>" with this device's value, instead of failing every save. No database or `/api/mobile` contract changes. The native range client's handling of `stale_workspace` (contract row C10) is unchanged.
 
+### 3.5 Second independent review (of `f85ba7a`)
+
+A second reviewer examined the fixes in §3.4 (`ux-rb-evidence/review-f85ba7a/`). All six proofs passed against `f85ba7a` (`proofs-before.txt`). This batch fixes them as follows.
+
+| Finding | Severity | Fix |
+|---|---|---|
+| R2-H1. Removing a drill (`DELETE /api/pilot/range-workspace/drills`) had no version check. The page adopted the returned version and the server's drill list without merging, so the next autosave silently reverted another instructor's saved work and dropped this device's unsaved drills. Pre-existing since `6ff687f`. | High | The page sends `baseUpdatedAt`. The route refuses an older copy with `stale_workspace` (web route only; a request without the field behaves as before). The page then merges as for a save. After a removal, only the drill leaves the synced copy and this device's workspace, and earlier snapshots are never sent. |
+| R2-H2. On a shared device, the next user's (or another agency's) first load overwrote the previous user's unsynced work. | High | One record per user and agency (`tracepoint.rangeDays.device.v2.<user>.<agency>`). A sign-in never reads, merges or overwrites another user's or agency's record. |
+| R2-M1. A conflict outlived later edits. | Medium | A conflict stands only while the workspace still shows the other device's value. Editing that record again decides the conflict. |
+| R2-M2. Matching by logical key left this device's malfunction pointing at a renamed result. | Medium | The malfunction's result reference is rewritten to the matched result. "Keep other device's value" keeps the malfunction listed on the kept score. |
+| R2-M3. A refusal the preview could not predict still blocked every save. A held-back day's score was replayed. | Medium | The preview runs the server's agency and reference check, so a held-back day holds back its drills and scores. After any refusal of another kind, every unsynced change is held back: with the rule's own reason where there is one, otherwise with the server's message. Nothing keeps failing, and the instructor can "Try this device's value again" or "Discard this device's value". |
+| R2-M4. Work stored under the earlier keys was never shown. | Medium | Offered once per user as differences, with the reason "Found on this device from an earlier version… it may have been entered by another user". It is never applied. Records naming another agency are skipped, and the old keys are left in place. |
+| L1 (labels on held-back conflicts), L5 (`Date.now()` ids for range days and equipment), L6 (a copy with no agency) | Low | Relabelled; UUID ids. A copy written before the agency was known is listed as differences only, then removed. |
+| L2 (a load always sends a PUT), L3 (two unsynced tabs replace each other's backup; a notice is shown), L4 (hold-back cost on very large offline sessions), L7 (pre-existing: a score on a drill another device removed), L8 (two records with one id) | Low | Not changed in this batch; recorded for WP-4. |
+
+**After** (`proofs-after.txt`):
+- P2 (R2-H2) and P4 (R2-M2) no longer reproduce.
+- P1, P3, P5 and P6 re-create the earlier page logic, so they still "pass" as that logic would:
+  - P1 sends a drill removal without a version (still accepted, for older clients);
+  - P3 has no liveness step;
+  - P5 runs a preview without the agency;
+  - P6 uses the old single-key reader.
+- The fixed counterparts are the `review R2-*` tests in `simultaneous-instructors-route.test.ts` (H1 through the real DELETE and PUT routes, M2, M3 ×2), `workspace-device-copy.test.ts` (H2, L6, M4), `workspace-merge.test.ts` (M1) and `range-days/sync-contract.test.ts`.
+
+**Workflow semantics (flag).** After a refusal this device could not predict, all of its unsynced range changes are listed, not only the one that failed. The instructor re-applies the good ones with "Try this device's value again". This is safe (nothing is lost or sent blindly), but it takes more steps in that rare case.
+
 ## 4. Staging verification (add to `STAGING-VERIFICATION.md` §4)
 
 | Step | Action | Expected | Automated |
@@ -164,6 +190,8 @@ Workflow semantics. A change the server would refuse is now shown as "Not saved:
 | S28 | Duty Only firearm: assignee transfers to secure storage, then back | Both succeed; history shows the reason and notes; the supervisor sees both events | `e2e/firearm-custody.spec.ts` |
 | S29 | Two instructor devices: different officers; then the same officer | Both scores kept; then a conflict shown and resolved with no loss | `e2e/range-concurrency.spec.ts` |
 | S29a | Two instructor devices: lead marks the day Completed while a line instructor enters a score on the same day | Line device shows the score as "Not saved: … cannot be changed" with its value; its other work keeps saving; nothing reverts | Manual (owner) |
+| S29c | Lead removes a drill while a line instructor marks attendance on the same day | Removal refused as changed elsewhere, merged, removed on retry; the attendance stays | Manual (owner) |
+| S29d | Shared tablet: user A scores offline, signs out; user B signs in and works; user A signs in again | A's unsynced scores are still there for A only; B never sees them | Manual (owner) |
 | S29b | Same browser, two tabs of Range Days | Notice "also open in another tab"; saving in one tab never reverts the other tab's saved scores after reload | Manual (owner) |
 | S30 | Enter 55 on a maximum-50 drill | Row marked invalid, officer named, nothing sent; 48 saves | `e2e/range-validation.spec.ts` |
 

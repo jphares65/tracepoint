@@ -15,19 +15,22 @@ test("UX-RB-5: a stale save is recovered by merging, never by reloading the page
 test("review H1: merged changes are checked with the server's own decision; any other refusal recovers once per version", async () => {
   const source = await page();
   assert.match(source, /previewRangeWorkspaceMutation\(\{\n\s*existingWorkspace: remoteWorkspace,\n\s*nextWorkspace: workspaceSnapshotFor\(workspace, baseline\),/);
-  assert.equal(source.match(/accept: serverAcceptance\(remote\.workspace \?\? \{\}\)/g)?.length, 2, "load and recovery");
+  assert.match(source, /accept: serverAcceptance\(remote\.workspace \?\? \{\}, remote\.departmentId\)/, "load");
+  assert.match(source, /const serverRule = serverAcceptance\(remote\.workspace \?\? \{\}, remote\.departmentId\);/, "recovery");
   assert.match(source, /error instanceof RefusedRangeWorkspaceError && refusalRecoveredFor\.current !== rangeWorkspaceBaseUpdatedAt/);
+  assert.match(source, /void recoverRangeWorkspace\(error\.message\);/);
+  assert.match(source, /return decision\.ok \? \{ ok: false as const, error: refusal \} : decision;/, "review R2-M3");
 });
 
 test("review H2/M4/L1/L4: one device record, per-snapshot epoch, random ids, conflict pill, other-tab notice", async () => {
   const source = await page();
   assert.doesNotMatch(source, /localStorage\.(getItem|setItem)/, "all storage goes through workspace-device-copy");
-  assert.match(source, /usableDeviceCopy\(stored, \{ userId: currentUserId, departmentId: remote\.departmentId \}\)/);
-  assert.match(source, /persistDeviceCopy\(initial, conflicts\);/);
+  assert.match(source, /usableDeviceCopy\(readDeviceCopy\(storage, currentUserId, remote\.departmentId\), \{ userId: currentUserId, departmentId: remote\.departmentId \}\)/);
+  assert.match(source, /if \(persistDeviceCopy\(initial, conflicts\)\) afterPersist\(\);/);
   assert.match(source, /snapshotEpochs\.current\.get\(workspace\) !== rangeWorkspaceEpoch/);
-  assert.doesNotMatch(source, /`(result|roster|malfunction)-\$\{(now|Date\.now\(\)|arrival\.getTime\(\))/);
+  assert.doesNotMatch(source, /`(range|equipment|result|roster|malfunction)-\$\{(now|Date\.now\(\)|arrival\.getTime\(\))/);
   assert.match(source, /conflictedResultIds\.has\(existingResult\.id\) \? \(\n\s*<StatusPill label="Conflict" tone="amber" \/>/);
-  assert.match(source, /event\.key !== RANGE_DAY_DEVICE_COPY_KEY/);
+  assert.match(source, /event\.key\?\.startsWith\(`\$\{RANGE_DAY_DEVICE_COPY_KEY\}\.`\)/);
   assert.equal(source.match(/\{deviceCopyNotice\}/g)?.length, 2);
 });
 
@@ -41,8 +44,8 @@ test("UX-RB-5: unsynced local changes survive a reload and an unknown base is ne
 test("UX-RB-5: conflicts are shown with both values and a choice", async () => {
   const source = await page();
   assert.match(source, /\{workspaceConflictPanel\}/);
-  assert.match(source, /Use this device&apos;s value/);
-  assert.match(source, /Keep other device&apos;s value/);
+  assert.match(source, /conflict\.reason \? "Try this device\\u2019s value again" : "Use this device\\u2019s value"/);
+  assert.match(source, /conflict\.reason \? "Discard this device\\u2019s value" : "Keep other device\\u2019s value"/);
 });
 
 test("UX-RB-6: impossible values are stopped on the officer's row; pills reflect the server", async () => {
@@ -52,4 +55,14 @@ test("UX-RB-6: impossible values are stopped on the officer's row; pills reflect
   assert.ok(save.indexOf("invalidMeasurements.length > 0") < save.indexOf("const savedResults ="));
   assert.match(source, /unsyncedResultIds\.has\(existingResult\.id\) \? \(\n\s*<StatusPill label="Not synced" tone="amber" \/>/);
   assert.equal(source.match(/aria-label=\{`Measurement for \$\{getUserName\(entry\.officerId\)\}`\}/g)?.length, 2);
+});
+
+test("review R2-H1/R2-M1: drill removal carries the version and never adopts the server's drill list; an edit decides a conflict", async () => {
+  const source = await page();
+  const removal = source.slice(source.indexOf("async function handleRemoveDrillFromSelectedRangeDay"), source.indexOf("const renderWorkspaceSaveStatus"));
+  assert.match(removal, /baseUpdatedAt: rangeWorkspaceBaseUpdatedAt \?\? null/);
+  assert.match(removal, /if \(payload\.code === "stale_workspace"\) \{\n\s*setWorkspaceStale\(true\);\n\s*void recoverRangeWorkspace\(\);/);
+  assert.match(removal, /rangeWorkspaceEpoch \+= 1;/);
+  assert.doesNotMatch(removal, /payload\.workspace\?\.rangeDayDrills/);
+  assert.match(source, /const live = liveConflicts\(latestWorkspaceState\.current, workspaceConflictsRef\.current\);/);
 });
