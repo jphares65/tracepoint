@@ -1033,8 +1033,8 @@ export default function FirearmsPage() {
         : restrictedUseMode === "disable"
           ? { restrictionId: active?.id, reason: restrictedUseReason }
           : restrictedUseMode === "return"
-            ? { action: "CHECK_OUT", idempotencyKey: crypto.randomUUID() }
-            : { action: "CHECK_IN", storageLocationId: restrictedStorageLocationId || storageLocations[0]?.id, idempotencyKey: crypto.randomUUID() };
+            ? { action: "CHECK_OUT", notes: restrictedUseReason.trim() || null, idempotencyKey: crypto.randomUUID() }
+            : { action: "CHECK_IN", storageLocationId: restrictedStorageLocationId || storageLocations[0]?.id, notes: restrictedUseReason.trim() || null, idempotencyKey: crypto.randomUUID() };
       const response = await fetch(`/api/armory/firearms/${encodeURIComponent(selectedFirearm.id)}/custody`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (!response.ok) throw new Error(await readError(response));
       await refreshSelectedCustody();

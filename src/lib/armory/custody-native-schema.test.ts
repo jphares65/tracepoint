@@ -82,3 +82,28 @@ test("simple restricted custody checks in and out without changing assignment an
   assert.equal((await client.query("select returned_at is null as active from public.firearm_assignments where id=$1", [assignment])).rows[0].active, true);
   assert.equal((await client.query("select count(*)::int as count from public.audit_events where action in ('firearm_checked_out','firearm_checked_in')")).rows[0].count, 2);
 });
+
+test("UX-RB-4: the record page's request round-trips in both directions and its notes are kept", async () => {
+  const { restrictedCustodyRequest, parseRestrictedCustodyRequest } = await import("./restricted-custody.ts");
+  const department = "10000000-0000-4000-8000-000000000001";
+  const user = "20000000-0000-4000-8000-000000000001";
+  const firearm = "30000000-0000-4000-8000-000000000001";
+  const location = "50000000-0000-4000-8000-000000000001";
+  await client.query("select set_config('tracepoint.subject_id',$1,false), set_config('tracepoint.department_id',$2,false)", [user, department]);
+  const holder = async () => (await client.query("select holder_type from public.firearm_current_custody where firearm_id=$1", [firearm])).rows[0].holder_type;
+  const operate = async (body: ReturnType<typeof restrictedCustodyRequest>) => {
+    const parsed = parseRestrictedCustodyRequest(firearm, body as Record<string, unknown>);
+    assert.ok(parsed.ok);
+    if (!parsed.ok) return;
+    await client.query("select public.operate_restricted_firearm_custody($1,$2,$3,$4,$5)", [firearm, parsed.action, parsed.storageLocationId, parsed.notes, parsed.idempotencyKey]);
+  };
+  const start = await holder();
+  if (start === "SECURE_STORAGE") await operate(restrictedCustodyRequest({ action: "CHECK_OUT", reason: "Reset for test", idempotencyKey: "60000000-0000-4000-8000-000000000010" }));
+  assert.equal(await holder(), "OFFICER");
+  await operate(restrictedCustodyRequest({ action: "CHECK_IN", storageLocationId: location, reason: "End of shift", notes: "Locker 4", idempotencyKey: "60000000-0000-4000-8000-000000000011" }));
+  assert.equal(await holder(), "SECURE_STORAGE");
+  await operate(restrictedCustodyRequest({ action: "CHECK_OUT", reason: "Start of shift", idempotencyKey: "60000000-0000-4000-8000-000000000012" }));
+  assert.equal(await holder(), "OFFICER");
+  const notes = (await client.query("select notes from public.firearm_custody_events where idempotency_key = any($1::uuid[]) order by occurred_at", [["60000000-0000-4000-8000-000000000011", "60000000-0000-4000-8000-000000000012"]])).rows.map((row) => row.notes);
+  assert.deepEqual(notes, ["End of shift — Locker 4", "Start of shift"]);
+});

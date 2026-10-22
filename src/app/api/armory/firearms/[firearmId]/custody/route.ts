@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
+import { parseRestrictedCustodyRequest, restrictedCustodyOperations } from "@/lib/armory/restricted-custody";
 
 type RouteContext = { params: Promise<{ firearmId: string }> };
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -23,7 +24,16 @@ export async function GET(_: NextRequest, { params }: RouteContext) {
   ]);
   const error = current.error || events.error || restrictions.error;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ current: current.data, events: events.data ?? [], restrictions: restrictions.data ?? [] }, { headers: { "Cache-Control": "no-store" } });
+  // UX-RB-4: what this caller may do now, by the same rule the database applies (031).
+  const operations = restrictedCustodyOperations({
+    assignedToUserId: assignment?.assigned_to_user_id,
+    userId: context.userId,
+    canManageRestrictedCustody: hasAnyServerPermission(context, ["manage_restricted_firearm_custody"]),
+    restrictions: restrictions.data ?? [],
+    holderType: current.data?.holder_type,
+    holderUserId: current.data?.holder_user_id,
+  });
+  return NextResponse.json({ current: current.data, events: events.data ?? [], restrictions: restrictions.data ?? [], operations }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: NextRequest, { params }: RouteContext) {
@@ -32,9 +42,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   const context = resolved.context;
   const { firearmId } = await params;
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-  const action = text(body.action);
-  if (!uuid.test(firearmId) || !["CHECK_OUT", "CHECK_IN"].includes(action ?? "") || !uuid.test(text(body.idempotencyKey) ?? "")) return NextResponse.json({ error: "A valid firearm, restricted custody action, and idempotency key are required." }, { status: 400 });
-  const result = await context.db.rpc("operate_restricted_firearm_custody", { p_firearm_id: firearmId, p_action: action, p_storage_location_id: text(body.storageLocationId), p_notes: text(body.notes), p_idempotency_key: text(body.idempotencyKey) });
+  const parsed = parseRestrictedCustodyRequest(firearmId, body);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  const result = await context.db.rpc("operate_restricted_firearm_custody", { p_firearm_id: firearmId, p_action: parsed.action, p_storage_location_id: parsed.storageLocationId, p_notes: parsed.notes, p_idempotency_key: parsed.idempotencyKey });
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: result.error.code === "42501" ? 403 : 409 });
   return NextResponse.json({ ok: true, custodyEventId: result.data });
 }
