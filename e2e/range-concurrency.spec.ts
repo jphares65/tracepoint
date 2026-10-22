@@ -55,6 +55,6 @@ test("S29 the same officer scored on both devices is shown as a conflict and kep
   const panel = two.getByRole("alert").filter({ hasText: "made on this device and on another device" });
   await expect(panel).toContainText("this device 44");
   await expect(panel).toContainText("other device 46");
-  await panel.getByRole("button", { name: "Use this device's value" }).click();
+  await panel.getByRole("button", { name: /Use this device.s value/ }).click();
   await expect.poll(async () => (await rangeResults(manager.request, day.dayId))[0]?.score, { timeout: 30_000 }).toBe(44);
 });
