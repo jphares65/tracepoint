@@ -1,5 +1,7 @@
 # TracePoint UI/UX audit: web application and mobile web
 
+> **Follow-up (2026-10-22):** [Consolidated remediation plan](remediation-plan.md) reconciles these findings with the Oct-20 operational remediation, identifies release blockers, and sets the implementation sequence.
+
 - **Date:** 2026-10-22
 - **Type:** read-only assessment. No code, migrations or deployments were changed.
 - **Scope:** every route, modal, table and form in the web app; the public marketing site; the mobile-web experience.
