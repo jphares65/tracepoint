@@ -188,6 +188,26 @@ test("ARM-16: inspection result values and the critical-item rule are enforced b
   assert.equal(failedNonCritical.status, 200);
 });
 
+test("C-07: a resubmitted inspection (same request key) is recorded once, with one status change", async () => {
+  const route = "../../app/api/armory/inspections/route.ts";
+  const db = world({ firearms: [firearm()], firearm_inspections: [], firearm_inspection_items: [], firearm_status_history: [], profiles: [] });
+  const body = inspectionBody({ result: "Failed", checklist: [{ label: "Slide", status: "Fail", critical: true }], idempotencyKey: "6f0c3a52-1c1e-4a8e-9a55-0d7f4b8f2a10" });
+  const first = await call(route, "POST", "/api/armory/inspections", body);
+  const second = await call(route, "POST", "/api/armory/inspections", body);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.inspection.id, first.body.inspection.id);
+  assert.equal(second.body.replayed, true);
+  assert.equal(db.tables.firearm_inspections.length, 1);
+  assert.equal(db.tables.firearm_inspections[0].idempotency_key, "6f0c3a52-1c1e-4a8e-9a55-0d7f4b8f2a10");
+  assert.equal(db.tables.firearm_inspection_items.length, 1);
+  assert.equal(db.tables.firearm_status_history.length, 1);
+
+  const malformed = await call(route, "POST", "/api/armory/inspections", inspectionBody({ idempotencyKey: "again" }));
+  assert.equal(malformed.status, 400);
+  assert.equal(db.tables.firearm_inspections.length, 1);
+});
+
 test("ARM-17: inspection status changes are written to the status history, and a pass restores only what an inspection removed", async () => {
   const route = "../../app/api/armory/inspections/route.ts";
   const db = world({ firearms: [firearm()], firearm_inspections: [], firearm_inspection_items: [], firearm_status_history: [], profiles: [] });

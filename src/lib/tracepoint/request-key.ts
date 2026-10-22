@@ -1,4 +1,4 @@
-// One request key per intended action (D-65). Resubmitting the same values,
+// One request key per intended action (D-65, C-07). Resubmitting the same values,
 // for example after a lost connection, reuses the key, so the server returns
 // the record it already wrote instead of writing a second one. Changed values
 // are a new action and get a new key; a recorded action clears it.

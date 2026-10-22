@@ -1,12 +1,17 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import TracePointShell from "@/app/components/TracePointShell";
 import ArmorySectionShell from "@/app/components/ArmorySectionShell";
 import { getAssignedOfficerDisplayName } from "@/lib/armory/assignment-identity";
 import { formatDateTime } from "@/lib/format/date";
+import {
+  LOST_CONNECTION_MESSAGE,
+  requestKeyFor,
+  type RequestKeyStore,
+} from "@/lib/tracepoint/request-key";
 import InspectionChoiceControl from "@/app/components/InspectionChoiceControl";
 import {
   inspectionStatusEffect,
@@ -329,6 +334,8 @@ function NewInspectionContent() {
     (typeof SERVICE_RECOMMENDATIONS)[number] | ""
   >("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const requestKey = useRef<RequestKeyStore>({ current: null });
   const [followUpDate, setFollowUpDate] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [notes, setNotes] = useState("");
@@ -407,7 +414,8 @@ function NewInspectionContent() {
   }
 
   async function handleSaveInspection() {
-    if (saving) return;
+    // C-07: one tap is one inspection, even before the button re-renders.
+    if (savingRef.current) return;
     setSubmitError(null);
     setSavedMessage(null);
 
@@ -416,41 +424,54 @@ function NewInspectionContent() {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const inspectionDateTime = new Date(
         `${inspectionDate}T${inspectionTime || "00:00"}`,
       ).toISOString();
 
-      const response = await fetch("/api/armory/inspections", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          firearmId: selectedFirearm.id,
-          inspectionType,
-          inspectionReason,
-          inspectionDate: inspectionDateTime,
-          inspectionLocation,
-          assigneeName:
-            selectedFirearm.active_assignment
-              ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
-              : null,
-          weaponCleared,
-          ammunitionRemoved: ammoRemoved,
-          magazinesPresented,
-          roundCount,
-          opticBatteryStatus: opticBatteryReplaced,
-          cleaningCondition,
-          result,
-          serviceRecommendation: serviceRecommendation || null,
-          followUpDate: followUpDate || null,
-          correctiveAction,
-          notes,
-          checklist: submittedChecklist(checklist),
-        }),
-      });
+      const inspectionRequest = {
+        firearmId: selectedFirearm.id,
+        inspectionType,
+        inspectionReason,
+        inspectionDate: inspectionDateTime,
+        inspectionLocation,
+        assigneeName:
+          selectedFirearm.active_assignment
+            ? getAssignedOfficerDisplayName(selectedFirearm.active_assignment)
+            : null,
+        weaponCleared,
+        ammunitionRemoved: ammoRemoved,
+        magazinesPresented,
+        roundCount,
+        opticBatteryStatus: opticBatteryReplaced,
+        cleaningCondition,
+        result,
+        serviceRecommendation: serviceRecommendation || null,
+        followUpDate: followUpDate || null,
+        correctiveAction,
+        notes,
+        checklist: submittedChecklist(checklist),
+      };
+
+      // C-07: resubmitting the same inspection (for example after a lost
+      // connection) reuses its key, so the server returns the first record.
+      let response: Response;
+      try {
+        response = await fetch("/api/armory/inspections", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...inspectionRequest,
+            idempotencyKey: requestKeyFor(requestKey.current, inspectionRequest),
+          }),
+        });
+      } catch {
+        throw new Error(LOST_CONNECTION_MESSAGE);
+      }
 
       const payload = (await response.json()) as { error?: string };
 
@@ -466,6 +487,7 @@ function NewInspectionContent() {
           ? error.message
           : "Inspection could not be saved.",
       );
+      savingRef.current = false;
       setSaving(false);
     }
   }

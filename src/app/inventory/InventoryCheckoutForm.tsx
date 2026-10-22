@@ -11,7 +11,7 @@ import {
   LOST_CONNECTION_MESSAGE,
   requestKeyFor,
   type RequestKeyStore,
-} from "@/lib/inventory/request-key";
+} from "@/lib/tracepoint/request-key";
 
 type Item = {
   id: string;
