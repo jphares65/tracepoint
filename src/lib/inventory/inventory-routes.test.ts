@@ -15,6 +15,7 @@ stub(require.resolve("../tracepoint/server-access.ts"), {
   resolveServerAccess: async () => (globalThis as any).__inventoryAccess,
   accessFailureResponse: () => Response.json({ error: "denied" }, { status: 401 }),
   hasAnyServerPermission: (context: any, permissions: string[]) => permissions.some((permission) => context.permissions.includes(permission)),
+  hasServerFeature: () => true,
 });
 
 const checkouts = require("../../app/api/inventory/checkouts/route.ts");

@@ -4,31 +4,30 @@ import { readFile } from "node:fs/promises";
 
 const page = () => readFile("src/app/range-days/page.tsx", "utf8");
 
-test("adding a drill keeps the primary save control stable and reports dirty feedback separately", async () => {
+// The UX-RB client saves through one version-checked queue; its sync state is
+// shown by the save-status pill. The primary control keeps its label, and
+// result and failure messages are shown beside it, never inside it.
+test("the primary save control keeps its label and feedback is reported separately", async () => {
   const source = await page();
 
   assert.match(
     source,
-    /\{isSavingRangeDay \? "Saving…" : "Save Range Day"\}/,
-    "the primary control must only change while the save request is in flight",
+    /<Save size=\{14\} \/>\s*Save Range Day\s*<\/button>/,
+    "the primary control's label is fixed",
   );
   assert.doesNotMatch(
     source,
-    /\{workspaceFeedback \|\| "Save Range Day"\}/,
-    "drill feedback must not replace the primary save label",
+    /\{(saveMessage|workspaceFeedback) \|\| "Save Range Day"\}/,
+    "feedback must not replace the primary save label",
   );
   assert.match(
     source,
-    /setIsRangeDayDirty\(true\);\s*setWorkspaceFeedback\(`\$\{normalizedCopiedDrill\.name\} added\. Save Range Day when you are ready\.`\);/,
+    /role="status" aria-live="polite">\{saveMessage\}<\/span>/,
+    "feedback is announced and visible beside the control",
   );
   assert.match(
     source,
-    /setIsRangeDayDirty\(false\);\s*setWorkspaceFeedback\("Saved"\);/,
-    "a successful explicit save clears dirty state and confirms separately",
-  );
-  assert.match(
-    source,
-    /await saveRemoteRangeDayWorkspace\(workspace, departmentId\);/,
-    "the explicit Save Range Day flow retains its existing persistence call",
+    /function handleSaveRangeDayWorkspace\(\) \{[\s\S]*?queueRangeDayWorkspaceSave\(createRangeDayWorkspaceSnapshot\(\), 0\);\s*void workspaceSaveQueue\.current\?\.flushNow\(/,
+    "an explicit save sends the workspace now, through the same version-checked queue",
   );
 });

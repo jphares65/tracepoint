@@ -60,7 +60,7 @@ const strip = (workspace: any) => ({ rangeDays: workspace.rangeDays, drillLibrar
 
 async function put(workspace: unknown, baseUpdatedAt: string | null) {
   const { PUT } = await import("../../app/api/pilot/range-workspace/route.ts");
-  const response = await PUT(new Request("http://x/api/pilot/range-workspace", { method: "PUT", body: JSON.stringify({ workspace, baseUpdatedAt }) }) as any);
+  const response = await PUT(new Request("http://x/api/pilot/range-workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspace, baseUpdatedAt }) }) as any);
   return { status: response.status, body: await response.json() as any };
 }
 
@@ -216,7 +216,7 @@ test("review H1: a refusal the merge did not foresee is isolated after one reloa
 // Second review of f85ba7a (docs/remediation/ux-rb-evidence/review-f85ba7a/).
 async function removeDrill(rangeDayId: string, drillId: string, baseUpdatedAt: string | null | undefined) {
   const { DELETE } = await import("../../app/api/pilot/range-workspace/drills/route.ts");
-  const response = await DELETE(new Request("http://x/api/pilot/range-workspace/drills", { method: "DELETE", body: JSON.stringify({ rangeDayId, drillId, baseUpdatedAt }) }) as any);
+  const response = await DELETE(new Request("http://x/api/pilot/range-workspace/drills", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rangeDayId, drillId, baseUpdatedAt }) }) as any);
   return { status: response.status, body: await response.json() as any };
 }
 

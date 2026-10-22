@@ -137,7 +137,9 @@ test("routes that return other officers' records apply the mapped filter", () =>
   const rangeWorkspace = source("../../app/api/pilot/range-workspace/route.ts");
   const get = rangeWorkspace.slice(rangeWorkspace.indexOf("export async function GET"), rangeWorkspace.indexOf("export async function PUT"));
   assert.match(get, /const departmentRecords = canViewDepartmentRecords\(resolved\.context\.permissions, RANGE_RECORD_PERMISSIONS\);/);
-  assert.match(get, /workspace: departmentRecords \? data\.workspace : ownRangeWorkspace\(data\.workspace, resolved\.context\.userId\),/);
+  // The agency filter runs first, so neither branch returns another agency's legacy records.
+  assert.match(get, /const agencyWorkspace = data\.workspace\s*\? workspaceForActiveDepartment\(/);
+  assert.match(get, /workspace: departmentRecords \? agencyWorkspace : ownRangeWorkspace\(agencyWorkspace, resolved\.context\.userId\),/);
   // The PUT still runs the authorizer before any write.
   const put = rangeWorkspace.slice(rangeWorkspace.indexOf("export async function PUT"));
   assert.ok(put.indexOf("authorizeRangeWorkspaceMutation(") < put.indexOf('.from("pilot_range_workspaces")\n          .update'));
