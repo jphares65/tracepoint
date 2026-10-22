@@ -161,6 +161,8 @@ export default function CertificationsPage() {
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // UX-RB2-7 (B-49): the open dialog's own failure message, shown inside it.
+  const [dialogError, setDialogError] = useState("");
 
   const [credentialModalOpen, setCredentialModalOpen] =
     useState(false);
@@ -315,6 +317,7 @@ export default function CertificationsPage() {
     setEditingCredentialId(null);
     setCredentialForm(EMPTY_CERTIFICATION_FORM);
     setCredentialModalOpen(true);
+    setDialogError("");
   }
 
   function openEditCredential(item: Certification) {
@@ -336,6 +339,7 @@ export default function CertificationsPage() {
     });
 
     setCredentialModalOpen(true);
+    setDialogError("");
   }
 
   function selectCredentialType(certificationTypeId: string) {
@@ -354,34 +358,39 @@ export default function CertificationsPage() {
   async function saveCredential(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError("");
+    setDialogError("");
 
-    const response = await fetch(
-      editingCredentialId
-        ? `/api/training/certifications/${editingCredentialId}`
-        : "/api/training/certifications",
-      {
-        method: editingCredentialId ? "PATCH" : "POST",
-        headers: {
-          "Content-Type": "application/json",
+    try {
+      const response = await fetch(
+        editingCredentialId
+          ? `/api/training/certifications/${editingCredentialId}`
+          : "/api/training/certifications",
+        {
+          method: editingCredentialId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(credentialForm),
         },
-        body: JSON.stringify(credentialForm),
-      },
-    );
-
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      setError(
-        payload.error ||
-          "The certification could not be saved.",
       );
-    } else {
-      setCredentialModalOpen(false);
-      await load();
-    }
 
-    setSaving(false);
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDialogError(
+          payload.error ||
+            "The certification could not be saved.",
+        );
+      } else {
+        setCredentialModalOpen(false);
+        await load();
+      }
+    } catch {
+      // UX-RB2-7 (B-R3): a failed request leaves the dialog usable.
+      setDialogError("The certification could not be saved. Check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function archiveCredential(id: string) {
@@ -413,6 +422,7 @@ export default function CertificationsPage() {
   function openNewType() {
     setTypeForm(EMPTY_TYPE_FORM);
     setTypeModalOpen(true);
+    setDialogError("");
   }
 
   function openEditType(type: CertificationType) {
@@ -431,50 +441,56 @@ export default function CertificationsPage() {
     });
 
     setTypeModalOpen(true);
+    setDialogError("");
   }
 
   async function saveType(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError("");
+    setDialogError("");
 
-    const editing = Boolean(
-      typeForm.certificationTypeId,
-    );
-
-    const response = await fetch(
-      "/api/training/certification-types",
-      {
-        method: editing ? "PATCH" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...typeForm,
-          defaultValidDays: parseNumberOrNull(
-            typeForm.defaultValidDays,
-          ),
-          defaultDueSoonDays:
-            parseNumberOrNull(
-              typeForm.defaultDueSoonDays,
-            ) ?? 30,
-        }),
-      },
-    );
-
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      setError(
-        payload.error ||
-          "The certification type could not be saved.",
+    try {
+      const editing = Boolean(
+        typeForm.certificationTypeId,
       );
-    } else {
-      setTypeModalOpen(false);
-      await load();
-    }
 
-    setSaving(false);
+      const response = await fetch(
+        "/api/training/certification-types",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...typeForm,
+            defaultValidDays: parseNumberOrNull(
+              typeForm.defaultValidDays,
+            ),
+            defaultDueSoonDays:
+              parseNumberOrNull(
+                typeForm.defaultDueSoonDays,
+              ) ?? 30,
+          }),
+        },
+      );
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDialogError(
+          payload.error ||
+            "The certification type could not be saved.",
+        );
+      } else {
+        setTypeModalOpen(false);
+        await load();
+      }
+    } catch {
+      // UX-RB2-7 (B-R3): a failed request leaves the dialog usable.
+      setDialogError("The certification type could not be saved. Check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openRequirement(
@@ -494,45 +510,51 @@ export default function CertificationsPage() {
     });
 
     setRequirementModalOpen(true);
+    setDialogError("");
   }
 
   async function saveRequirement(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
-    setError("");
+    setDialogError("");
 
-    const response = await fetch(
-      "/api/training/certification-requirements",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+    try {
+      const response = await fetch(
+        "/api/training/certification-requirements",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...requirementForm,
+            validDays: parseNumberOrNull(
+              requirementForm.validDays,
+            ),
+            dueSoonDays: parseNumberOrNull(
+              requirementForm.dueSoonDays,
+            ),
+          }),
         },
-        body: JSON.stringify({
-          ...requirementForm,
-          validDays: parseNumberOrNull(
-            requirementForm.validDays,
-          ),
-          dueSoonDays: parseNumberOrNull(
-            requirementForm.dueSoonDays,
-          ),
-        }),
-      },
-    );
-
-    const payload = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      setError(
-        payload.error ||
-          "The agency requirement could not be saved.",
       );
-    } else {
-      setRequirementModalOpen(false);
-      await load();
-    }
 
-    setSaving(false);
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setDialogError(
+          payload.error ||
+            "The agency requirement could not be saved.",
+        );
+      } else {
+        setRequirementModalOpen(false);
+        await load();
+      }
+    } catch {
+      // UX-RB2-7 (B-R3): a failed request leaves the dialog usable.
+      setDialogError("The agency requirement could not be saved. Check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -902,6 +924,11 @@ export default function CertificationsPage() {
                 <X size={20} />
               </button>
             </div>
+            {dialogError ? (
+              <div role="alert" className="mx-6 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {dialogError}
+              </div>
+            ) : null}
 
             <div className="grid gap-5 p-6 md:grid-cols-2">
               <label className="text-sm text-slate-300">
@@ -1162,6 +1189,11 @@ export default function CertificationsPage() {
                 <X size={20} />
               </button>
             </div>
+            {dialogError ? (
+              <div role="alert" className="mx-6 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {dialogError}
+              </div>
+            ) : null}
 
             <div className="grid gap-5 p-6 md:grid-cols-2">
               <label className="text-sm text-slate-300">
@@ -1340,6 +1372,11 @@ export default function CertificationsPage() {
                 <X size={20} />
               </button>
             </div>
+            {dialogError ? (
+              <div role="alert" className="mx-6 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {dialogError}
+              </div>
+            ) : null}
 
             <div className="grid gap-5 p-6 md:grid-cols-2">
               <label className="flex items-center gap-3 text-sm text-slate-300 md:col-span-2">

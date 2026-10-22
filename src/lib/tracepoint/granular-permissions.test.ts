@@ -63,7 +63,8 @@ test("Settings saves through an authenticated tenant-bound API and reports succe
   assert.match(page, /fetch\("\/api\/settings\/role-permissions"/);
   const save = page.slice(page.indexOf("async function saveRolePermissions"), page.indexOf("async function inviteUser"));
   assert.ok(save.indexOf("await Promise.all([loadSettings(), refreshAccess()])") < save.indexOf("showNotice(\"success\""));
-  assert.match(save, /catch \(error\)[\s\S]*showNotice\([\s\S]*"error"/);
+  // UX-RB2-7 (E-01): the failure is reported inside the open dialog, not behind it.
+  assert.match(save, /catch \(error\)[\s\S]*setDialogError\(error instanceof Error/);
 });
 
 test("server mutation gates use permissions and contain no operational role-name shortcut", async () => {

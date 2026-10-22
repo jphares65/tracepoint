@@ -560,11 +560,14 @@ function Modal({
   title,
   description,
   onClose,
+  error,
   children,
 }: {
   title: string;
   description?: string;
   onClose: () => void;
+  // UX-RB2-7 (E-01): a failure from this dialog is shown here, not behind it.
+  error?: string | null;
   children: ReactNode;
 }) {
   return (
@@ -597,7 +600,14 @@ function Modal({
           </button>
         </header>
 
-        <div className="p-5">{children}</div>
+        <div className="p-5">
+          {error ? (
+            <div role="alert" className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+              {error}
+            </div>
+          ) : null}
+          {children}
+        </div>
       </section>
     </div>
   );
@@ -749,6 +759,8 @@ export default function AdminSettingsPage() {
     tone: NoticeTone;
     message: string;
   } | null>(null);
+  // The open dialog's own failure message (UX-RB2-7, E-01).
+  const [dialogError, setDialogError] = useState("");
 
   const [department, setDepartment] =
     useState<DepartmentForm>(EMPTY_DEPARTMENT);
@@ -1403,6 +1415,7 @@ export default function AdminSettingsPage() {
 
   async function beginEditMember(member: MemberRow) {
     setEditingMember(member);
+    setDialogError("");
     setMemberDraft({
       badge_number: member.badge_number ?? "",
       rank_title: member.rank_title ?? "",
@@ -1881,12 +1894,13 @@ export default function AdminSettingsPage() {
     }
 
     if (memberDraft.is_active && memberDraft.role_codes.length === 0) {
-      showNotice("error", "An active member must have at least one role.");
+      setDialogError("An active member must have at least one role.");
       return;
     }
 
     setSavingSection("member");
     setNotice(null);
+    setDialogError("");
 
     try {
       // One command: details, roles and groups are saved together or not at all.
@@ -1917,9 +1931,7 @@ export default function AdminSettingsPage() {
         await refreshAccess();
       }
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
+      setDialogError(error instanceof Error
           ? error.message
           : "The membership could not be updated.",
       );
@@ -1932,6 +1944,7 @@ export default function AdminSettingsPage() {
     if (!canAdminister) return;
 
     setEditingRoleCode(roleCode);
+    setDialogError("");
     setRolePermissionDraft([...(rolePermissionMap.get(roleCode) ?? [])]);
   }
 
@@ -1939,23 +1952,20 @@ export default function AdminSettingsPage() {
     if (!departmentId || !editingRoleCode || !canAdminister) return;
 
     if (editingRoleCode === "administrator") {
-      showNotice(
-        "error",
-        "The Administrator permission matrix is locked to prevent department lockout.",
+      setDialogError("The Administrator permission matrix is locked to prevent department lockout.",
       );
       return;
     }
 
     if (rolePermissionDraft.includes("administer_department")) {
-      showNotice(
-        "error",
-        "The Administer Department permission is reserved for the Administrator role.",
+      setDialogError("The Administer Department permission is reserved for the Administrator role.",
       );
       return;
     }
 
     setSavingSection("role-permissions");
     setNotice(null);
+    setDialogError("");
 
     try {
       const response = await fetch("/api/settings/role-permissions", {
@@ -1984,9 +1994,7 @@ export default function AdminSettingsPage() {
       setRolePermissionDraft([]);
       showNotice("success", `${roleLabel} permissions were updated.`);
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error
+      setDialogError(error instanceof Error
           ? error.message
           : "The role permission matrix could not be updated.",
       );
@@ -2003,15 +2011,14 @@ export default function AdminSettingsPage() {
       !inviteDraft.fullName.trim() ||
       inviteDraft.roleCodes.length === 0
     ) {
-      showNotice(
-        "error",
-        "Email, full name, and at least one role are required.",
+      setDialogError("Email, full name, and at least one role are required.",
       );
       return;
     }
 
     setSavingSection("invite");
     setNotice(null);
+    setDialogError("");
 
     try {
       const response = await fetch("/api/settings/users/invite", {
@@ -2032,7 +2039,7 @@ export default function AdminSettingsPage() {
         }),
       });
 
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => ({}))) as {
         error?: string;
         message?: string;
       };
@@ -2051,9 +2058,7 @@ export default function AdminSettingsPage() {
       );
       await loadSettings();
     } catch (error) {
-      showNotice(
-        "error",
-        error instanceof Error ? error.message : "The user could not be added.",
+      setDialogError(error instanceof Error ? error.message : "The user could not be added.",
       );
     } finally {
       setSavingSection(null);
@@ -3061,6 +3066,7 @@ export default function AdminSettingsPage() {
                     setInviteGroupIds([]);
                     setInviteGroupIds([]);
                     setInviteOpen(true);
+                    setDialogError("");
                   }}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
                 >
@@ -4537,10 +4543,12 @@ export default function AdminSettingsPage() {
         <Modal
           title="Invite Department User"
           description="Invite a new TracePoint account or add an existing TracePoint user to this department."
+          error={dialogError}
           onClose={() => {
             if (savingSection !== "invite") {
               setInviteOpen(false);
               setInviteGroupIds([]);
+              setDialogError("");
             }
           }}
         >
@@ -4770,10 +4778,12 @@ export default function AdminSettingsPage() {
             humanize(editingRoleCode)
           } Permissions`}
           description="Changes apply to every department member assigned this role."
+          error={dialogError}
           onClose={() => {
             if (savingSection !== "role-permissions") {
               setEditingRoleCode(null);
               setRolePermissionDraft([]);
+              setDialogError("");
             }
           }}
         >
@@ -4858,11 +4868,13 @@ export default function AdminSettingsPage() {
         <Modal
           title={`Edit ${editingMember.full_name}`}
           description="Update membership details, status, roles, and effective access."
+          error={dialogError}
           onClose={() => {
             if (savingSection !== "member") {
               setEditingMember(null);
               setMemberDraft(null);
               setMemberGroupIds([]);
+              setDialogError("");
             }
           }}
         >

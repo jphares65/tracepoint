@@ -20,6 +20,7 @@ import {
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate } from "@/lib/format/date";
 import { statusChangeMessage } from "@/lib/fleet/status-change";
+import { READING_CORRECTION_REQUIRED, readingCorrectionNeeded } from "@/lib/fleet/reading-correction";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import {
@@ -324,6 +325,9 @@ function FleetManagementContent() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [messageWarning, setMessageWarning] = useState(false);
+  // UX-RB2-7 (D-08): the vehicle dialog's own failure message and correction reason.
+  const [formError, setFormError] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
@@ -354,12 +358,16 @@ function FleetManagementContent() {
   function openCreateForm() {
     setEditingVehicleId(null);
     setForm(EMPTY_FORM);
+    setFormError("");
+    setCorrectionReason("");
     setShowForm(true);
   }
 
   function openEditForm(vehicle: FleetVehicle) {
     setEditingVehicleId(vehicle.id);
     setForm(formForVehicle(vehicle));
+    setFormError("");
+    setCorrectionReason("");
     setShowForm(true);
   }
 
@@ -368,6 +376,8 @@ function FleetManagementContent() {
     setShowForm(false);
     setEditingVehicleId(null);
     setForm(EMPTY_FORM);
+    setFormError("");
+    setCorrectionReason("");
   }
 
   async function loadFleet() {
@@ -489,24 +499,21 @@ function FleetManagementContent() {
 
   async function saveVehicle() {
     if (!form.unitNumber.trim()) {
-      setError("Unit number is required.");
+      setFormError("Unit number is required.");
       return;
     }
     if (editingVehicleId && !form.reason.trim()) {
-      setError("Enter a reason for this vehicle update.");
+      setFormError("Enter a reason for this vehicle update.");
       return;
     }
     const original = editingVehicleId ? vehicles.find((vehicle) => vehicle.id === editingVehicleId) : undefined;
-    const lowered = (input: string, stored: number | null | undefined) =>
-      input.trim() !== "" && Number(input) < Number(stored ?? 0);
-    let mileageCorrectionReason: string | undefined;
-    if (original && (lowered(form.currentMileage, original.current_mileage) || lowered(form.currentHours, original.current_hours))) {
-      mileageCorrectionReason = window.prompt(
-        `Lowering the mileage or engine hours of Unit ${original.unit_number} is a correction. Why is the recorded reading wrong?`,
-      )?.trim();
-      if (!mileageCorrectionReason) return;
+    const mileageCorrectionReason = readingCorrectionNeeded(form, original) ? correctionReason.trim() : undefined;
+    if (mileageCorrectionReason === "") {
+      setFormError(READING_CORRECTION_REQUIRED);
+      return;
     }
     setSaving(true);
+    setFormError("");
     setError("");
     setMessage("");
     try {
@@ -524,7 +531,7 @@ function FleetManagementContent() {
         : "Vehicle added and recorded in the audit log.");
       await loadFleet();
     } catch (saveError) {
-      setError(
+      setFormError(
         saveError instanceof Error
           ? saveError.message
           : "The vehicle could not be saved.",
@@ -1039,6 +1046,11 @@ function FleetManagementContent() {
                   <X size={18} />
                 </button>
               </div>
+              {formError ? (
+                <div role="alert" className="mx-5 mt-4 rounded-xl border border-red-700 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                  {formError}
+                </div>
+              ) : null}
               <div className="grid gap-4 p-5 sm:grid-cols-2">
                 <Field label="Unit Number"><input value={form.unitNumber} onChange={(event) => setForm({ ...form, unitNumber: event.target.value })} className={inputClass} placeholder="e.g. 3101" /></Field>
                 <Field label="License Plate"><input value={form.licensePlate} onChange={(event) => setForm({ ...form, licensePlate: event.target.value })} className={inputClass} /></Field>
@@ -1067,6 +1079,7 @@ function FleetManagementContent() {
                 <Field label="Operational Comments" span><textarea value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} className={`${inputClass} min-h-20 resize-y`} /></Field>
                 <Field label="Notes" span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className={`${inputClass} min-h-24 resize-y`} /></Field>
                 {editingVehicleId ? <Field label="Reason for Change" span><textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-20 resize-y`} placeholder="Explain why these vehicle details are changing." /></Field> : null}
+                {readingCorrectionNeeded(form, editingVehicleId ? vehicles.find((vehicle) => vehicle.id === editingVehicleId) : undefined) ? <Field label="Reason for the Mileage or Hours Correction" span><textarea required value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} className={`${inputClass} min-h-20 resize-y`} placeholder="The new reading is lower than the recorded one. Why is the recorded reading wrong?" /></Field> : null}
               </div>
               <div className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
                 <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white disabled:opacity-50">Cancel</button>
