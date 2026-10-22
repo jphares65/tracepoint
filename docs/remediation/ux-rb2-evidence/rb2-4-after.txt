@@ -1,0 +1,34 @@
+TAP version 13
+# Subtest: UX-RB2-4: the vehicle page shows the hold in its header and offers no status the hold refuses
+ok 1 - UX-RB2-4: the vehicle page shows the hold in its header and offers no status the hold refuses
+  ---
+  duration_ms: 6.399718
+  type: 'test'
+  ...
+# Subtest: UX-RB2-4 (D-15): the fleet list reports the status the server applied
+ok 2 - UX-RB2-4 (D-15): the fleet list reports the status the server applied
+  ---
+  duration_ms: 1.700824
+  type: 'test'
+  ...
+# Subtest: UX-RB2-4: while held, only statuses that keep the vehicle out of service can be chosen
+ok 3 - UX-RB2-4: while held, only statuses that keep the vehicle out of service can be chosen
+  ---
+  duration_ms: 1.661866
+  type: 'test'
+  ...
+# Subtest: UX-RB2-4 (D-15): a status change the server did not apply is not reported as done
+ok 4 - UX-RB2-4 (D-15): a status change the server did not apply is not reported as done
+  ---
+  duration_ms: 0.417641
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 253.632658

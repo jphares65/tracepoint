@@ -1,0 +1,1627 @@
+TAP version 13
+# Subtest: UX-RB2-4: the vehicle page shows the hold in its header and offers no status the hold refuses
+not ok 1 - UX-RB2-4: the vehicle page shows the hold in its header and offers no status the hold refuses
+  ---
+  duration_ms: 12.68704
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/fleet-management/safety-hold-contract.test.ts:2:1221'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /const held = Boolean\(data\?\.safetyHold\) \|\| blockingOrders\.length > 0;/. Input:
+    
+    '"use client";\n' +
+      '\n' +
+      'import { useCallback, useEffect, useMemo, useState } from "react";\n' +
+      'import Link from "next/link";\n' +
+      'import { useParams, useSearchParams } from "next/navigation";\n' +
+      'import { AlertTriangle, Archive, ArrowLeft, Car, ClipboardCheck, Download, ExternalLink, FileText, History, Pencil, Plus, RefreshCw, Settings2, Upload, Wrench, X } from "lucide-react";\n' +
+      'import TracePointShell from "@/app/components/TracePointShell";\n' +
+      'import QuickInspectionPanel from "./QuickInspectionPanel";\n' +
+      'import FleetWorkOrderDialog from "./FleetWorkOrderDialog";\n' +
+      'import FleetEquipmentDialog from "./FleetEquipmentDialog";\n' +
+      'import { formatDate, formatDateTime } from "@/lib/format/date";\n' +
+      'import { VEHICLE_DOCUMENT_TYPES, vehicleDocumentExpirationStatus } from "@/lib/fleet/vehicle-documents";\n' +
+      '\n' +
+      'type Tab = "overview" | "inspections" | "maintenance" | "equipment" | "documents" | "history";\n' +
+      'type Payload = { vehicle: any; inspections: any[]; workOrders: any[]; equipment: any[]; documents: any[]; history: any[]; rules: any; safetyHold?: { since: string; source: "inspection" | "work_order"; reason: string } | null; canManage: boolean; canMaintain: boolean; canConfigure: boolean; canViewNetworkDetails: boolean; canInspect?: boolean; canReportIssue?: boolean };\n' +
+      '\n' +
+      'const PREVIEW: Payload = {\n' +
+      '  vehicle: { id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001", license_plate: "MG-3101", year: 2025, make: "Ford", model: "Police Interceptor Utility", vehicle_type: "Patrol", assignment_type: "Pool", assigned_to: "Patrol Division", home_location: "Headquarters", current_mileage: 18422, current_hours: 2167.4, status: "Attention", status_override_active: false, inspection_due_date: "2026-09-12", registration_expiration_date: "2027-01-31", next_service_date: "2026-09-05", next_service_mileage: 20000, next_service_hours: 2300 },\n' +
+      '  workOrders: [{ id: "preview-work", record_type: "Issue", title: "Driver-side spotlight intermittent", description: "Light flickers when the vehicle is idling.", priority: "High", status: "Assigned", assigned_role_code: "mechanic", reported_at: "2026-08-24T14:00:00Z", total_cost: null }],\n' +
+      '  inspections: [{ id: "preview-inspection", inspection_type: "Pre-Shift", result: "Passed", mileage: 18395, hours: 2164.2, defect_count: 0, inspected_at: "2026-08-24T11:45:00Z", checklist: [] }],\n' +
+      '  equipment: [\n' +
+      '    { id: "preview-mdt", category: "MDT", name: "Patrol MDT", make: "Panasonic", model: "Toughbook 55", year: 2025, serial_number: "MDT-3101-25", warranty_expiration_date: "2028-05-01", source_type: "Linked Inventory", status: "Current", is_required: true, is_critical: false },\n' +
+      '    { id: "preview-modem", category: "Modem", name: "Vehicle Modem", make: "Cradlepoint", model: "R1900", year: 2025, serial_number: "MODEM-3101", warranty_expiration_date: "2028-05-01", static_ip: "10.10.31.1", source_type: "Fleet Checklist", status: "Current", is_required: true, is_critical: true },\n' +
+      '    { id: "preview-radar", category: "Radar", name: "Mobile Radar", make: "Stalker", model: "DSR 2X", year: 2025, serial_number: "RADAR-3101", tuning_fork_serial_number: "TF-3101-A", warranty_expiration_date: "2027-05-01", source_type: "Fleet Checklist", status: "Current", is_required: false, is_critical: false },\n' +
+      '  ],\n' +
+      '  documents: [{ id: "preview-doc", title: "Vehicle Registration", document_type: "Registration", expiration_date: "2027-01-31", document_url: null }],\n' +
+      '  history: [{ id: "preview-history", action: "fleet_vehicle_created", created_at: "2026-08-24T13:00:00Z" }],\n' +
+      '  rules: { fleet_manager_role_codes: ["fleet_manager"], mechanic_role_codes: ["mechanic"], inspection_include_required_equipment: true }, canManage: true, canMaintain: true, canConfigure: true, canViewNetworkDetails: true,\n' +
+      '};\n' +
+      '\n' +
+      'function money(value: unknown) { const number = Number(value); return Number.isFinite(number) && number > 0 ? number.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—"; }\n' +
+      'function statusClass(status: string) { return status === "Available" || status === "Current" || status === "Completed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : status === "Attention" || status === "Open" || status === "High" ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : status === "Out of Service" || status === "Critical" || status === "Missing" ? "border-red-500/30 bg-red-500/10 text-red-300" : status === "Retired" || status === "Cancelled" || status === "Removed" ? "border-slate-700 bg-slate-800 text-slate-400" : "border-blue-500/30 bg-blue-500/10 text-blue-300"; }\n' +
+      'function documentExpirationClass(status: "current" | "upcoming" | "expired") { return status === "expired" ? "border-red-500/30 bg-red-500/10 text-red-300" : status === "upcoming" ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"; }\n' +
+      'async function errorText(response: Response) { const payload = await response.json().catch(() => ({})); return payload.error || "Request failed."; }\n' +
+      '\n' +
+      'export default function VehiclePage() {\n' +
+      '  const { vehicleId } = useParams<{ vehicleId: string }>();\n' +
+      '  const searchParams = useSearchParams();\n' +
+      '  const inventoryQuery = searchParams.toString();\n' +
+      '  const inventoryHref = `/fleet-management${inventoryQuery ? `?${inventoryQuery}` : ""}`;\n' +
+      '  const [data, setData] = useState<Payload | null>(null);\n' +
+      '  const [tab, setTab] = useState<Tab>("overview");\n' +
+      '  const [loading, setLoading] = useState(true);\n' +
+      '  const [saving, setSaving] = useState(false);\n' +
+      '  const [error, setError] = useState("");\n' +
+      '  const [message, setMessage] = useState("");\n' +
+      '  const [workDialog, setWorkDialog] = useState<{ mode: "issue" | "maintenance"; item?: any } | null>(null);\n' +
+      '  const [equipmentDialog, setEquipmentDialog] = useState(false);\n' +
+      '  const [documentFile, setDocumentFile] = useState<File | null>(null);\n' +
+      '  const [documentTitle, setDocumentTitle] = useState("");\n' +
+      '  const [documentType, setDocumentType] = useState("Other");\n' +
+      '  const [documentExpirationDate, setDocumentExpirationDate] = useState("");\n' +
+      '  const [replacingDocument, setReplacingDocument] = useState<any | null>(null);\n' +
+      '  const [editingDocument, setEditingDocument] = useState<any | null>(null);\n' +
+      '\n' +
+      '  const load = useCallback(async () => { setLoading(true); setError(""); try { if (vehicleId === "preview") { setData(PREVIEW); setMessage("Local preview mode — actions are displayed but data changes are disabled until the Fleet migration is applied."); return; } const response = await fetch(`/api/fleet/vehicles/${vehicleId}`, { cache: "no-store" }); if (!response.ok) throw new Error(await errorText(response)); setData(await response.json()); } catch (e) { setError(e instanceof Error ? e.message : "Vehicle could not be loaded."); } finally { setLoading(false); } }, [vehicleId]);\n' +
+      '  useEffect(() => { void load(); }, [load]);\n' +
+      '\n' +
+      '  async function request(path: string, method: string, body: any) { if (vehicleId === "preview") { setMessage("Preview only: apply the Fleet migration when you are ready to test saved records."); return; } setSaving(true); setError(""); setMessage(""); try { const response = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error(await errorText(response)); setMessage("Saved and recorded in the audit history."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "The change could not be saved."); } finally { setSaving(false); } }\n' +
+      '  async function workSaved(savedMessage: string) { setMessage(savedMessage); if (vehicleId !== "preview") await load(); }\n' +
+      '  async function addDocument() { if (!documentFile) { setError("Choose a PDF or image to upload."); return; } if (vehicleId === "preview") { setMessage("Preview only: document uploads are disabled."); return; } setSaving(true); setError(""); try { const form = new FormData(); form.set("file", documentFile); form.set("title", documentTitle); form.set("documentType", documentType); form.set("expirationDate", documentExpirationDate); if (replacingDocument?.id) form.set("replaceAttachmentId", replacingDocument.id); const response = await fetch(`/api/fleet/vehicles/${vehicleId}/documents`, { method: "POST", body: form }); if (!response.ok) throw new Error(await errorText(response)); setDocumentFile(null); setDocumentTitle(""); setDocumentType("Other"); setDocumentExpirationDate(""); setReplacingDocument(null); setMessage("Document uploaded and recorded in the audit history."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Document could not be uploaded."); } finally { setSaving(false); } }\n' +
+      '  async function saveDocumentMetadata() { if (!editingDocument || vehicleId === "preview") return; setSaving(true); setError(""); try { const response = await fetch(`/api/fleet/vehicles/${vehicleId}/documents/${editingDocument.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: editingDocument.title, documentType: editingDocument.document_type, expirationDate: editingDocument.expiration_date || "" }) }); if (!response.ok) throw new Error(await errorText(response)); setEditingDocument(null); setMessage("Document details updated and recorded in the audit history."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Document details could not be updated."); } finally { setSaving(false); } }\n' +
+      '  async function archiveDocument(item: any) { if (!item.managedAttachment || !window.confirm(`Archive ${item.file_name}? The audit history will be preserved.`)) return; const response = await fetch(`/api/attachments/${item.id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Removed from active vehicle documents" }) }); if (!response.ok) { setError(await errorText(response)); return; } setMessage("Document archived; the audit history is preserved."); await load(); }\n' +
+      '  async function updateStatus(status: string) { const reason = window.prompt(`Reason for changing this vehicle to ${status}`); if (!reason) return; await request(`/api'... 18903 more characters
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    "use client";
+    
+    import { useCallback, useEffect, useMemo, useState } from "react";
+    import Link from "next/link";
+    import { useParams, useSearchParams } from "next/navigation";
+    import { AlertTriangle, Archive, ArrowLeft, Car, ClipboardCheck, Download, ExternalLink, FileText, History, Pencil, Plus, RefreshCw, Settings2, Upload, Wrench, X } from "lucide-react";
+    import TracePointShell from "@/app/components/TracePointShell";
+    import QuickInspectionPanel from "./QuickInspectionPanel";
+    import FleetWorkOrderDialog from "./FleetWorkOrderDialog";
+    import FleetEquipmentDialog from "./FleetEquipmentDialog";
+    import { formatDate, formatDateTime } from "@/lib/format/date";
+    import { VEHICLE_DOCUMENT_TYPES, vehicleDocumentExpirationStatus } from "@/lib/fleet/vehicle-documents";
+    
+    type Tab = "overview" | "inspections" | "maintenance" | "equipment" | "documents" | "history";
+    type Payload = { vehicle: any; inspections: any[]; workOrders: any[]; equipment: any[]; documents: any[]; history: any[]; rules: any; safetyHold?: { since: string; source: "inspection" | "work_order"; reason: string } | null; canManage: boolean; canMaintain: boolean; canConfigure: boolean; canViewNetworkDetails: boolean; canInspect?: boolean; canReportIssue?: boolean };
+    
+    const PREVIEW: Payload = {
+      vehicle: { id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001", license_plate: "MG-3101", year: 2025, make: "Ford", model: "Police Interceptor Utility", vehicle_type: "Patrol", assignment_type: "Pool", assigned_to: "Patrol Division", home_location: "Headquarters", current_mileage: 18422, current_hours: 2167.4, status: "Attention", status_override_active: false, inspection_due_date: "2026-09-12", registration_expiration_date: "2027-01-31", next_service_date: "2026-09-05", next_service_mileage: 20000, next_service_hours: 2300 },
+      workOrders: [{ id: "preview-work", record_type: "Issue", title: "Driver-side spotlight intermittent", description: "Light flickers when the vehicle is idling.", priority: "High", status: "Assigned", assigned_role_code: "mechanic", reported_at: "2026-08-24T14:00:00Z", total_cost: null }],
+      inspections: [{ id: "preview-inspection", inspection_type: "Pre-Shift", result: "Passed", mileage: 18395, hours: 2164.2, defect_count: 0, inspected_at: "2026-08-24T11:45:00Z", checklist: [] }],
+      equipment: [
+        { id: "preview-mdt", category: "MDT", name: "Patrol MDT", make: "Panasonic", model: "Toughbook 55", year: 2025, serial_number: "MDT-3101-25", warranty_expiration_date: "2028-05-01", source_type: "Linked Inventory", status: "Current", is_required: true, is_critical: false },
+        { id: "preview-modem", category: "Modem", name: "Vehicle Modem", make: "Cradlepoint", model: "R1900", year: 2025, serial_number: "MODEM-3101", warranty_expiration_date: "2028-05-01", static_ip: "10.10.31.1", source_type: "Fleet Checklist", status: "Current", is_required: true, is_critical: true },
+        { id: "preview-radar", category: "Radar", name: "Mobile Radar", make: "Stalker", model: "DSR 2X", year: 2025, serial_number: "RADAR-3101", tuning_fork_serial_number: "TF-3101-A", warranty_expiration_date: "2027-05-01", source_type: "Fleet Checklist", status: "Current", is_required: false, is_critical: false },
+      ],
+      documents: [{ id: "preview-doc", title: "Vehicle Registration", document_type: "Registration", expiration_date: "2027-01-31", document_url: null }],
+      history: [{ id: "preview-history", action: "fleet_vehicle_created", created_at: "2026-08-24T13:00:00Z" }],
+      rules: { fleet_manager_role_codes: ["fleet_manager"], mechanic_role_codes: ["mechanic"], inspection_include_required_equipment: true }, canManage: true, canMaintain: true, canConfigure: true, canViewNetworkDetails: true,
+    };
+    
+    function money(value: unknown) { const number = Number(value); return Number.isFinite(number) && number > 0 ? number.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—"; }
+    function statusClass(status: string) { return status === "Available" || status === "Current" || status === "Completed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : status === "Attention" || status === "Open" || status === "High" ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : status === "Out of Service" || status === "Critical" || status === "Missing" ? "border-red-500/30 bg-red-500/10 text-red-300" : status === "Retired" || status === "Cancelled" || status === "Removed" ? "border-slate-700 bg-slate-800 text-slate-400" : "border-blue-500/30 bg-blue-500/10 text-blue-300"; }
+    function documentExpirationClass(status: "current" | "upcoming" | "expired") { return status === "expired" ? "border-red-500/30 bg-red-500/10 text-red-300" : status === "upcoming" ? "border-amber-500/30 bg-amber-500/10 text-amber-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"; }
+    async function errorText(response: Response) { const payload = await response.json().catch(() => ({})); return payload.error || "Request failed."; }
+    
+    export default function VehiclePage() {
+      const { vehicleId } = useParams<{ vehicleId: string }>();
+      const searchParams = useSearchParams();
+      const inventoryQuery = searchParams.toString();
+      const inventoryHref = `/fleet-management${inventoryQuery ? `?${inventoryQuery}` : ""}`;
+      const [data, setData] = useState<Payload | null>(null);
+      const [tab, setTab] = useState<Tab>("overview");
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+      const [error, setError] = useState("");
+      const [message, setMessage] = useState("");
+      const [workDialog, setWorkDialog] = useState<{ mode: "issue" | "maintenance"; item?: any } | null>(null);
+      const [equipmentDialog, setEquipmentDialog] = useState(false);
+      const [documentFile, setDocumentFile] = useState<File | null>(null);
+      const [documentTitle, setDocumentTitle] = useState("");
+      const [documentType, setDocumentType] = useState("Other");
+      const [documentExpirationDate, setDocumentExpirationDate] = useState("");
+      const [replacingDocument, setReplacingDocument] = useState<any | null>(null);
+      const [editingDocument, setEditingDocument] = useState<any | null>(null);
+    
+      const load = useCallback(async () => { setLoading(true); setError(""); try { if (vehicleId === "preview") { setData(PREVIEW); setMessage("Local preview mode — actions are displayed but data changes are disabled until the Fleet migration is applied."); return; } const response = await fetch(`/api/fleet/vehicles/${vehicleId}`, { cache: "no-store" }); if (!response.ok) throw new Error(await errorText(response)); setData(await response.json()); } catch (e) { setError(e instanceof Error ? e.message : "Vehicle could not be loaded."); } finally { setLoading(false); } }, [vehicleId]);
+      useEffect(() => { void load(); }, [load]);
+    
+      async function request(path: string, method: string, body: any) { if (vehicleId === "preview") { setMessage("Preview only: apply the Fleet migration when you are ready to test saved records."); return; } setSaving(true); setError(""); setMessage(""); try { const response = await fetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error(await errorText(response)); setMessage("Saved and recorded in the audit history."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "The change could not be saved."); } finally { setSaving(false); } }
+      async function workSaved(savedMessage: string) { setMessage(savedMessage); if (vehicleId !== "preview") await load(); }
+      async function addDocument() { if (!documentFile) { setError("Choose a PDF or image to upload."); return; } if (vehicleId === "preview") { setMessage("Preview only: document uploads are disabled."); return; } setSaving(true); setError(""); try { const form = new FormData(); form.set("file", documentFile); form.set("title", documentTitle); form.set("documentType", documentType); form.set("expirationDate", documentExpirationDate); if (replacingDocument?.id) form.set("replaceAttachmentId", replacingDocument.id); const response = await fetch(`/api/fleet/vehicles/${vehicleId}/documents`, { method: "POST", body: form }); if (!response.ok) throw new Error(await errorText(response)); setDocumentFile(null); setDocumentTitle(""); setDocumentType("Other"); setDocumentExpirationDate(""); setReplacingDocument(null); setMessage("Document uploaded and recorded in the audit history."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Document could not be uploaded."); } finally { setSaving(false); } }
+      async function saveDocumentMetadata() { if (!editingDocument || vehicleId === "preview") return; setSaving(true); setError(""); try { const response = await fetch(`/api/fleet/vehicles/${vehicleId}/documents/${editingDocument.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: editingDocument.title, documentType: editingDocument.document_type, expirationDate: editingDocument.expiration_date || "" }) }); if (!response.ok) throw new Error(await errorText(response)); setEditingDocument(null); setMessage("Document details updated and recorded in the audit history."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Document details could not be updated."); } finally { setSaving(false); } }
+      async function archiveDocument(item: any) { if (!item.managedAttachment || !window.confirm(`Archive ${item.file_name}? The audit history will be preserved.`)) return; const response = await fetch(`/api/attachments/${item.id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "Removed from active vehicle documents" }) }); if (!response.ok) { setError(await errorText(response)); return; } setMessage("Document archived; the audit history is preserved."); await load(); }
+      async function updateStatus(status: string) { const reason = window.prompt(`Reason for changing this vehicle to ${status}`); if (!reason) return; await request(`/api/fleet/vehicles/${vehicleId}`, "PATCH", { status, reason }); }
+      async function clearSafetyHold() { const clearanceReason = window.prompt("Reason for clearing the critical safety hold (for example, the verified repair). Readiness is recalculated."); if (!clearanceReason?.trim()) return; await request(`/api/fleet/vehicles/${vehicleId}`, "PATCH", { clearSafetyHold: true, clearanceReason }); }
+    
+      const openOrders = useMemo(() => data?.workOrders.filter((item) => !["Completed", "Cancelled"].includes(item.status)) ?? [], [data]);
+      // A safety hold cannot be cleared while a critical work order is open (database/aws/046).
+      const blockingOrders = openOrders.filter((item) => item.priority === "Critical" || item.affects_availability === true);
+      if (loading && !data) return <TracePointShell activePage="Fleet Management"><div className="flex h-72 items-center justify-center"><RefreshCw className="animate-spin text-blue-300" /></div></TracePointShell>;
+      if (!data) return <TracePointShell activePage="Fleet Management"><div className="rounded-2xl border border-red-700 bg-red-950/30 p-5 text-red-200">{error || "Vehicle was not found."}</div></TracePointShell>;
+      const v = data.vehicle;
+      const tabs: Array<[Tab,string,number?]> = [["overview","Overview"],["inspections","Inspections",data.inspections.length],["maintenance","Maintenance",openOrders.length],["equipment","Equipment",data.equipment.length],["documents","Documents",data.documents.length],["history","History",data.history.length]];
+      return <TracePointShell activePage="Fleet Management"><div className="mx-auto w-full max-w-[1600px] space-y-5">
+        <header className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><Link href={inventoryHref} className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-white"><ArrowLeft size={14}/>Fleet Management</Link><div className="mt-4 flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-blue-500/20 bg-blue-500/10"><Car className="text-blue-300"/></div><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold text-white">Unit {v.unit_number}</h1><span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase ${statusClass(v.status)}`}>{v.status}</span></div><p className="mt-1 text-xs text-slate-400">{[v.year,v.make,v.model].filter(Boolean).join(" ") || "Vehicle details pending"} · {v.license_plate || "No plate"}</p></div></div></div><div className="flex flex-wrap gap-2">{data.canInspect !== false ? <button onClick={() => setTab("inspections")} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"><ClipboardCheck size={14} className="mr-2 inline"/>Quick Inspect</button> : null}{data.canReportIssue !== false ? <button onClick={() => setWorkDialog({ mode: "issue" })} className="rounded-xl border border-amber-600/50 px-3 py-2 text-xs font-semibold text-amber-200"><AlertTriangle size={14} className="mr-2 inline"/>Report Issue</button> : null}{data.canMaintain ? <button onClick={() => setWorkDialog({ mode: "maintenance" })} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white"><Wrench size={14} className="mr-2 inline"/>Add Maintenance</button> : null}{data.canConfigure ? <Link href="/settings/fleet" className="rounded-xl border border-slate-700 px-3 py-2 text-slate-400 hover:text-white"><Settings2 size={15}/></Link> : null}<button onClick={() => void load()} className="rounded-xl border border-slate-700 px-3 py-2 text-slate-400 hover:text-white"><RefreshCw size={15}/></button></div></div></header>
+        {error ? <div className="rounded-xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200">{error}</div> : null}{message ? <div className="rounded-xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">{message}</div> : null}
+        <nav className="flex overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/70 p-1">{tabs.map(([id,label,count]) => <button key={id} onClick={() => setTab(id)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-xs font-semibold ${tab === id ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-300"}`}>{label}{count !== undefined ? ` (${count})` : ""}</button>)}</nav>
+        {tab === "overview" ? <div className="grid gap-4 xl:grid-cols-3"><section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 xl:col-span-2"><h2 className="font-bold text-white">Vehicle Overview</h2><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[["VIN",v.vin],["License Plate",v.license_plate],["Type",v.vehicle_type],["Assignment",v.assigned_to || v.assignment_type],["Location",v.home_location],["Mileage",`${Number(v.current_mileage||0).toLocaleString()} mi`],["Engine Hours",`${Number(v.current_hours||0).toLocaleString()} hrs`],["Inspection Due",formatDate(v.inspection_due_date)],["Registration Expires",formatDate(v.registration_expiration_date)],["Next Service",formatDate(v.next_service_date)],["Service Mileage",v.next_service_mileage ? `${Number(v.next_service_mileage).toLocaleString()} mi` : "—"],["Service Hours",v.next_service_hours ? `${Number(v.next_service_hours).toLocaleString()} hrs` : "—"]].map(([label,value]) => <div key={label} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3"><p className="text-[9px] font-semibold uppercase tracking-wider text-slate-600">{label}</p><p className="mt-1 text-sm font-semibold text-slate-300">{value || "—"}</p></div>)}</div></section><section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><h2 className="font-bold text-white">Manage Status</h2><p className="mt-2 text-xs leading-5 text-slate-500">Hybrid readiness evaluates open work and critical equipment. Overrides require a reason.</p>{data.safetyHold ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs leading-5 text-red-200"><p className="font-semibold">Critical safety hold</p><p className="mt-1">{data.safetyHold.reason}</p><p className="mt-1 text-red-300/80">Source: {data.safetyHold.source === "inspection" ? "critical inspection defect" : "critical work order"} · Held since {formatDateTime(data.safetyHold.since)}</p>{blockingOrders.length ? <p className="mt-2 font-semibold">The hold cannot be cleared while a critical work order is open: {blockingOrders.map((item) => `"${item.title}" (${item.status})`).join(", ")}. Complete or cancel it first.</p> : null}{data.canManage ? <button disabled={saving || blockingOrders.length > 0} onClick={() => void clearSafetyHold()} className="mt-2 rounded-lg border border-red-400/50 px-3 py-1.5 font-semibold text-red-100 disabled:opacity-40">Clear Safety Hold</button> : null}</div> : null}{data.canManage ? <div className="mt-4 grid gap-2">{["Available","Attention","Maintenance","Out of Service","Retired"].map((status) => <button key={status} disabled={saving || status === v.status} onClick={() => void updateStatus(status)} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold disabled:opacity-40 ${statusClass(status)}`}>{status}</button>)}</div> : null}</section></div> : null}
+        {tab === "inspections" ? <QuickInspectionPanel vehicleId={vehicleId} vehicle={v} inspections={data.inspections} rules={data.rules} equipment={data.equipment} canInspect={data.canInspect !== false} onSaved={load}/> : null}
+        {tab === "maintenance" ? <section className="rounded-2xl border border-slate-800 bg-slate-900/70"><div className="flex items-center justify-between border-b border-slate-800 p-4"><div><h2 className="font-bold text-white">Issues and Maintenance Work Orders</h2><p className="mt-1 text-xs text-slate-500">Officers report issues; mechanics document service, repairs, cost, and completion.</p></div>{data.canMaintain ? <button onClick={() => setWorkDialog({ mode: "maintenance" })} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white"><Plus size={14}/>Add Maintenance</button> : null}</div><div className="divide-y divide-slate-800">{data.workOrders.length ? data.workOrders.map((item) => <article key={item.id} className="p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h3 className="text-sm font-bold text-white">{item.title}</h3>{item.issue_category ? <span className="rounded-full border border-slate-700 px-2 py-1 text-[9px] font-bold uppercase text-slate-400">{item.issue_category}</span> : null}<span className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase ${statusClass(item.priority)}`}>{item.priority}</span><span className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase ${statusClass(item.status)}`}>{item.status}</span></div><p className="mt-2 text-xs leading-5 text-slate-400">{item.description || "No additional description."}</p><p className="mt-2 text-[10px] text-slate-500">{item.record_type} · Reported {formatDateTime(item.reported_at)} · Assigned to {item.mechanic_name || item.assigned_role_code || "Unassigned"} · Cost {money(item.total_cost)}</p>{item.resolution ? <p className="mt-2 rounded-lg bg-slate-950/60 p-2 text-xs text-slate-300">Resolution: {item.resolution}</p> : null}</div>{data.canMaintain ? <button onClick={() => setWorkDialog({ mode: "maintenance", item })} className="rounded-xl border border-blue-500/40 px-3 py-2 text-xs font-semibold text-blue-200">Manage Work Order</button> : null}</div></article>) : <div className="p-10 text-center text-sm text-slate-500">No issues or maintenance work recorded.</div>}</div></section> : null}
+        {tab === "equipment" ? <section className="rounded-2xl border border-slate-800 bg-slate-900/70"><div className="flex flex-col gap-3 border-b border-slate-800 p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold text-white">Installed and Required Equipment</h2><p className="mt-1 text-xs text-slate-500">Link tracked TracePoint inventory or create a complete Fleet-only equipment record.</p></div>{data.canManage ? <button onClick={() => setEquipmentDialog(true)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white"><Plus size={14}/>Add Equipment</button> : null}</div><div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">{data.equipment.length ? data.equipment.map((item) => <article key={item.id} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[9px] font-semibold uppercase tracking-wider text-blue-400">{item.category}</p><h3 className="mt-1 text-sm font-bold text-white">{item.name}</h3></div><span className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase ${statusClass(item.status)}`}>{item.status}</span></div><p className="mt-3 text-xs text-slate-400">{[item.year,item.make,item.model].filter(Boolean).join(" ") || "Details pending"}</p><div className="mt-3 space-y-1 text-[10px] text-slate-500"><p>Serial: {item.serial_number || "—"}</p>{item.tuning_fork_serial_number ? <p>Tuning fork: {item.tuning_fork_serial_number}</p> : null}<p>Warranty: {formatDate(item.warranty_expiration_date)}</p>{item.static_ip ? <p>Static IP: {item.static_ip}</p> : null}<p>{item.source_type}{item.is_required ? " · Required" : ""}{item.is_critical ? " · Critical" : ""}</p></div></article>) : <div className="col-span-full p-10 text-center text-sm text-slate-500">No vehicle equipment recorded.</div>}</div></section> : null}
+        {tab === "documents" ? <section className="rounded-2xl border border-slate-800 bg-slate-900/70"><div className="border-b border-slate-800 p-4"><h2 className="font-bold text-white">Vehicle Documents</h2><p className="mt-1 text-xs text-slate-500">Store the current registration, insurance, title, inspection, warranty, and service records with this vehicle.</p>{data.canManage ? <div className="mt-4 space-y-2"><div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[1fr_1fr_180px_160px_auto]"><label className="cursor-pointer rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-2 text-xs font-semibold text-slate-300"><input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => setDocumentFile(event.target.files?.[0] ?? null)}/>{documentFile ? documentFile.name : "Choose PDF or image"}</label><input value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={250} placeholder="Descriptive title (optional)" className="rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-2 text-xs text-slate-100"/><select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-2 text-xs text-slate-100">{VEHICLE_DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select><input type="date" value={documentExpirationDate} onChange={(event) => setDocumentExpirationDate(event.target.value)} aria-label="Expiration date" className="rounded-xl border border-slate-700 bg-slate-950/40 px-3 py-2 text-xs text-slate-100"/><button disabled={saving || !documentFile} onClick={() => void addDocument()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"><Upload size={14}/>{saving ? "Uploading…" : replacingDocument ? "Replace Document" : "Upload Document"}</button></div>{replacingDocument ? <p className="flex items-center gap-2 text-xs text-amber-300">Replacing “{replacingDocument.title}”; the existing file will be archived after this upload. <button onClick={() => setReplacingDocument(null)} className="inline-flex items-center gap-1 underline"><X size={12}/>Cancel</button></p> : null}</div> : null}</div><div className="divide-y divide-slate-800">{data.documents.length ? data.documents.map((item) => { const expirationStatus = vehicleDocumentExpirationStatus(item.expiration_date); return <div key={item.id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between"><div className="flex min-w-0 items-start gap-3"><FileText className="mt-0.5 shrink-0 text-blue-300"/><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-white">{item.title}</p>{item.expiration_date ? <span className={`rounded-full border px-2 py-1 text-[9px] font-bold uppercase ${documentExpirationClass(expirationStatus)}`}>{expirationStatus === "expired" ? "Expired" : expirationStatus === "upcoming" ? "Expires soon" : "Current"}</span> : null}</div><p className="mt-1 text-[10px] text-slate-500">{item.file_name || item.document_type} · {item.document_type}{item.uploaded_at ? ` · Uploaded ${formatDateTime(item.uploaded_at)}` : ""}{item.expiration_date ? ` · Expires ${formatDate(item.expiration_date)}` : ""}</p></div></div><div className="flex shrink-0 flex-wrap gap-3 text-xs font-semibold text-blue-300">{item.viewUrl ? <a href={item.viewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1"><ExternalLink size={14}/>Open</a> : item.document_url ? <a href={item.document_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1"><ExternalLink size={14}/>Open</a> : null}{item.downloadUrl ? <a href={item.downloadUrl} className="inline-flex items-center gap-1"><Download size={14}/>Download</a> : null}{data.canManage && item.managedAttachment ? <><button onClick={() => setEditingDocument({ ...item })} className="inline-flex items-center gap-1"><Pencil size={14}/>Edit</button><button onClick={() => { setReplacingDocument(item); setDocumentTitle(item.title); setDocumentType(item.document_type); setDocumentExpirationDate(item.expiration_date || ""); }} className="inline-flex items-center gap-1">Replace</button><button onClick={() => void archiveDocument(item)} className="text-slate-500 hover:text-red-300" title="Archive document"><Archive size={14}/></button></> : null}</div></div>; }) : <div className="p-10 text-center text-sm text-slate-500">No documents attached to this vehicle.</div>}</div>{editingDocument ? <div className="border-t border-slate-800 bg-slate-950/40 p-4"><div className="grid gap-2 md:grid-cols-[1fr_200px_170px_auto]"><input value={editingDocument.title || ""} onChange={(event) => setEditingDocument({ ...editingDocument, title: event.target.value })} maxLength={250} aria-label="Document title" className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"/><select value={editingDocument.document_type} onChange={(event) => setEditingDocument({ ...editingDocument, document_type: event.target.value })} className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100">{VEHICLE_DOCUMENT_TYPES.map((type) => <option key={type}>{type}</option>)}</select><input type="date" value={editingDocument.expiration_date || ""} onChange={(event) => setEditingDocument({ ...editingDocument, expiration_date: event.target.value })} aria-label="Expiration date" className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100"/><div className="flex gap-2"><button disabled={saving} onClick={() => void saveDocumentMetadata()} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">Save</button><button onClick={() => setEditingDocument(null)} className="rounded-xl border border-slate-700 px-3 py-2 text-xs text-slate-300">Cancel</button></div></div></div> : null}</section> : null}
+        {tab === "history" ? <section className="rounded-2xl border border-slate-800 bg-slate-900/70"><div className="border-b border-slate-800 p-4"><h2 className="font-bold text-white">Permanent Activity History</h2></div><div className="divide-y divide-slate-800">{data.history.length ? data.history.map((item) => <div key={item.id} className="flex gap-3 p-4"><History size={16} className="mt-0.5 text-blue-300"/><div><p className="text-xs font-semibold text-slate-300">{String(item.action).replaceAll("_"," ")}</p><p className="mt-1 text-[10px] text-slate-500">{item.actor_name || "System / legacy record"} · {formatDateTime(item.created_at)}</p></div></div>) : <div className="p-10 text-center text-sm text-slate-500">No Fleet history recorded yet.</div>}</div></section> : null}
+        {workDialog ? <FleetWorkOrderDialog mode={workDialog.mode} vehicleId={vehicleId} vehicle={v} item={workDialog.item} onClose={() => setWorkDialog(null)} onSaved={workSaved}/> : null}
+        {equipmentDialog ? <FleetEquipmentDialog vehicleId={vehicleId} vehicle={v} existingEquipment={data.equipment} onClose={() => setEquipmentDialog(false)} onSaved={workSaved}/> : null}
+      </div></TracePointShell>;
+    }
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/fleet-management/safety-hold-contract.test.ts:10:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: UX-RB2-4 (D-15): the fleet list reports the status the server applied
+not ok 2 - UX-RB2-4 (D-15): the fleet list reports the status the server applied
+  ---
+  duration_ms: 11.459378
+  type: 'test'
+  location: '/home/user/tracepoint-b2/src/app/fleet-management/safety-hold-contract.test.ts:2:1856'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input was expected to not match the regular expression /setMessage\(`Unit \$\{vehicle\.unit_number\} status updated and audited\.`\)/. Input:
+    
+    '"use client";\n' +
+      '\n' +
+      'import { Fragment, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";\n' +
+      'import Link from "next/link";\n' +
+      'import { usePathname, useRouter, useSearchParams } from "next/navigation";\n' +
+      'import {\n' +
+      '  ArrowDown,\n' +
+      '  ArrowUp,\n' +
+      '  Car,\n' +
+      '  ChevronRight,\n' +
+      '  CheckCircle2,\n' +
+      '  Plus,\n' +
+      '  Pencil,\n' +
+      '  RefreshCw,\n' +
+      '  Search,\n' +
+      '  SlidersHorizontal,\n' +
+      '  X,\n' +
+      '} from "lucide-react";\n' +
+      '\n' +
+      'import TracePointShell from "@/app/components/TracePointShell";\n' +
+      'import { formatDate } from "@/lib/format/date";\n' +
+      'import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";\n' +
+      'import TracePointQrLabel from "@/app/components/TracePointQrLabel";\n' +
+      'import {\n' +
+      '  ASSIGNMENT_TYPES,\n' +
+      '  FLEET_STATUSES,\n' +
+      '  activeAdvancedFilterCount,\n' +
+      '  applyInventoryView,\n' +
+      '  clearAdvancedFilters,\n' +
+      '  inspectionState,\n' +
+      '  parseInventoryQuery,\n' +
+      '  serializeInventoryQuery,\n' +
+      '  serviceState,\n' +
+      '  type AssignmentType,\n' +
+      '  type FleetInventoryVehicle,\n' +
+      '  type FleetStatus,\n' +
+      '  type InventoryQueryState,\n' +
+      '  type InventorySortColumn,\n' +
+      '  type ScheduleState,\n' +
+      '} from "@/lib/fleet/inventory-state";\n' +
+      'import {\n' +
+      '  getStoredTableGroupingPreferences,\n' +
+      '  groupTableRows,\n' +
+      '  saveTableGroupingPreferences,\n' +
+      '  toggleCollapsedTableGroup,\n' +
+      '  type TableGroupingPreferences,\n' +
+      '} from "@/lib/tables/grouping";\n' +
+      '\n' +
+      'type FleetVehicle = FleetInventoryVehicle & {\n' +
+      '  registration_expiration_date: string | null;\n' +
+      '  insurance_expiration_date: string | null;\n' +
+      '  in_service_date: string | null;\n' +
+      '  last_service_date: string | null;\n' +
+      '  last_service_mileage: number | null;\n' +
+      '  last_service_hours: number | null;\n' +
+      '  next_service_hours: number | null;\n' +
+      '  comments: string | null;\n' +
+      '  notes: string | null;\n' +
+      '  updated_at: string;\n' +
+      '};\n' +
+      '\n' +
+      'type FleetPayload = {\n' +
+      '  items?: FleetVehicle[];\n' +
+      '  canManage?: boolean;\n' +
+      '};\n' +
+      '\n' +
+      'type VehicleForm = {\n' +
+      '  unitNumber: string;\n' +
+      '  vin: string;\n' +
+      '  licensePlate: string;\n' +
+      '  year: string;\n' +
+      '  make: string;\n' +
+      '  model: string;\n' +
+      '  vehicleType: string;\n' +
+      '  assignmentType: AssignmentType;\n' +
+      '  assignedTo: string;\n' +
+      '  homeLocation: string;\n' +
+      '  currentMileage: string;\n' +
+      '  currentHours: string;\n' +
+      '  status: FleetStatus;\n' +
+      '  inspectionDueDate: string;\n' +
+      '  registrationExpirationDate: string;\n' +
+      '  insuranceExpirationDate: string;\n' +
+      '  inServiceDate: string;\n' +
+      '  lastServiceDate: string;\n' +
+      '  lastServiceMileage: string;\n' +
+      '  lastServiceHours: string;\n' +
+      '  nextServiceDate: string;\n' +
+      '  nextServiceMileage: string;\n' +
+      '  nextServiceHours: string;\n' +
+      '  openIssueCount: string;\n' +
+      '  comments: string;\n' +
+      '  notes: string;\n' +
+      '  reason: string;\n' +
+      '};\n' +
+      '\n' +
+      'const EMPTY_FORM: VehicleForm = {\n' +
+      '  unitNumber: "",\n' +
+      '  vin: "",\n' +
+      '  licensePlate: "",\n' +
+      '  year: "",\n' +
+      '  make: "",\n' +
+      '  model: "",\n' +
+      '  vehicleType: "Patrol",\n' +
+      '  assignmentType: "Pool",\n' +
+      '  assignedTo: "",\n' +
+      '  homeLocation: "",\n' +
+      '  currentMileage: "",\n' +
+      '  currentHours: "",\n' +
+      '  status: "Available",\n' +
+      '  inspectionDueDate: "",\n' +
+      '  registrationExpirationDate: "",\n' +
+      '  insuranceExpirationDate: "",\n' +
+      '  inServiceDate: "",\n' +
+      '  lastServiceDate: "",\n' +
+      '  lastServiceMileage: "",\n' +
+      '  lastServiceHours: "",\n' +
+      '  nextServiceDate: "",\n' +
+      '  nextServiceMileage: "",\n' +
+      '  nextServiceHours: "",\n' +
+      '  openIssueCount: "0",\n' +
+      '  comments: "",\n' +
+      '  notes: "",\n' +
+      '  reason: "",\n' +
+      '};\n' +
+      '\n' +
+      'const STATUSES: FleetStatus[] = [...FLEET_STATUSES];\n' +
+      '\n' +
+      'const FLEET_INVENTORY_GROUP_BY = ["none", "status", "vehicleType", "assignment"] as const;\n' +
+      'type FleetInventoryGroupBy = (typeof FLEET_INVENTORY_GROUP_BY)[number];\n' +
+      'type FleetGroupingPreferences = TableGroupingPreferences<FleetInventoryGroupBy>;\n' +
+      'const FLEET_GROUPING_STORAGE_KEY = "tracepoint:fleet:inventory-groups:v1";\n' +
+      'const FLEET_GROUP_LABELS: Record<FleetInventoryGroupBy, string> = {\n' +
+      '  none: "None",\n' +
+      '  status: "Status",\n' +
+      '  vehicleType: "Vehicle Type",\n' +
+      '  assignment: "Assignment",\n' +
+      '};\n' +
+      '\n' +
+      'const PREVIEW_VEHICLE: FleetVehicle = {\n' +
+      '  id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001",\n' +
+      '  license_plate: "MG-3101", year: 2025, make: "Ford",\n' +
+      '  model: "Police Interceptor Utility", vehicle_type: "Patrol",\n' +
+      '  assignment_type: "Pool", assigned_to: "Patrol Division",\n' +
+      '  home_location: "Headquarters", current_mileage: 18422,\n' +
+      '  current_hours: 2167.4, status: "Attention", inspection_due_date: "2026-09-12",\n' +
+      '  registration_expiration_date: "2027-01-31", last_service_date: "2026-07-20",\n' +
+      '  insurance_expiration_date: "2027-01-31", in_service_date: "2025-02-01",\n' +
+      '  last_service_mileage: 16000, last_service_hours: 1900,\n' +
+      '  next_service_date: "2026-09-05", next_service_mileage: 20000,\n' +
+      '  next_service_hours: 2300, open_issue_count: 1, comments: null,\n' +
+      '  notes: "Local preview vehicle", updated_at: new Date().toISOString(),\n' +
+      '};\n' +
+      '\n' +
+      'function formForVehicle(vehicle: FleetVehicle): VehicleForm {\n' +
+      '  return {\n' +
+      '    unitNumber: vehicle.unit_number,\n' +
+      '    vin: vehicle.vin ?? "",\n' +
+      '    licensePlate: vehicle.license_plate ?? "",\n' +
+      '    year: vehicle.year?.toString() ?? "",\n' +
+      '    make: vehicle.make ?? "",\n' +
+      '    model: vehicle.model ?? "",\n' +
+      '    vehicleType: vehicle.vehicle_type ?? "",\n' +
+      '    assignmentType: vehicle.assignment_type,\n' +
+      '    assignedTo: vehicle.assigned_to ?? "",\n' +
+      '    homeLocation: vehicle.home_location ?? "",\n' +
+      '    currentMileage: vehicle.current_mileage?.toString() ?? "",\n' +
+      '    currentHours: vehicle.current_hours?.toString() ?? "",\n' +
+      '    status: vehicle.status,\n' +
+      '    inspectionDueDate: vehicle.inspection_due_date ?? "",\n' +
+      '    registrationExpirationDate: vehicle.registration_expiration_date ?? "",\n' +
+      '    insuranceExpirationDate: vehicle.insurance_expiration_date ?? "",\n' +
+      '    inServiceDate: vehicle.in_service_date ?? "",\n' +
+      '    lastServiceDate: vehicle.last_service_date ?? "",\n' +
+      '    lastServiceMileage: vehicle.last_service_mileage?.toString() ?? "",\n' +
+      '    lastServiceHours: vehicle.last_service_hours?.toString() ?? "",\n' +
+      '    nextServiceDate: vehicle.next_service_date ?? "",\n' +
+      '    nextServiceMileage: vehicle.next_service_mileage?.toString() ?? "",\n' +
+      '    nextServiceHours: vehicle.next_service_hours?.toString() ?? "",\n' +
+      '    openIssueCount: vehicle.open_issue_count?.toString() ?? "0",\n' +
+      '    comments: vehicle.comments ?? "",\n' +
+      '    notes: vehicle.notes ?? "",\n' +
+      '    reason: "",\n' +
+      '  };\n' +
+      '}\n' +
+      '\n' +
+      'function formatMileage(value: number | null) {\n' +
+      '  if (value === null || !Number.isFinite(value)) return "—";\n' +
+      '  return `${Math.max(0, value).toLocaleString("en-US")} mi`;\n' +
+      '}\n' +
+      '\n' +
+      'function statusClasses(status: FleetStatus) {\n' +
+      '  switch (status) {\n' +
+      '    case "Available":\n' +
+      '      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";\n' +
+      '    case "Attention":\n' +
+      '      return "border-amber-500/30 bg-amber-500/10 text-amber-300";\n' +
+      '    case "Maintenance":\n' +
+      '      return "border-blue-500/30 bg-blue-500/10 text-blue-300";\n' +
+      '    case "Out of Service":\n' +
+      '      return "border-red-500/30 bg-red-500/10 text-red-300";\n' +
+      '    case "Retired":\n' +
+      '      return "border-slate-700 bg-slate-800/60 text-slate-400";\n' +
+      '  }\n' +
+      '}\n' +
+      '\n' +
+      'async function responseError(response: Response) {\n' +
+      '  const payload = await response.json().catch(() => ({}));\n' +
+      '  return payload?.error || "The request could not be completed.";\n' +
+      '}\n' +
+      '\n' +
+      'function SummaryCard({\n' +
+      '  label,\n' +
+      '  value,\n' +
+      '  detail,\n' +
+      '  tone = "slate",\n' +
+      '}: {\n' +
+      '  label: string;\n' +
+      '  value: number;\n' +
+      '  detail: string;\n' +
+      '  tone?: "green" | "amber" | "red" | "slate";\n' +
+      '}) {\n' +
+      '  const toneClass =\n' +
+      '    tone === "green"\n' +
+      '      ? "border-emerald-500/25 bg-emerald-500/[0.06]"\n' +
+      '      : tone === "amber"\n' +
+      '        ? "border-amber-500/25 bg-amber-500/[0.06]"\n' +
+      '        : tone === "red"\n' +
+      '          ? "border-red-500/25 bg-red-500/[0.06]"\n' +
+      '          : "border-slate-800 bg-slate-900/70";\n' +
+      '\n' +
+      '  return (\n' +
+      '    <div className={`rounded-2xl border p-4 ${toneClass}`}>\n' +
+      '      <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">\n' +
+      '        {label}\n' +
+      '      </p>\n' +
+      '      <p className="mt-2 text-2xl font-bold text-white">{value}</p>\n' +
+      '      <p className="mt-1 text-[10px] leading-4 text-slate-500">{detail}</p>\n' +
+      '    </div>\n' +
+      '  );\n' +
+      '}\n' +
+      '\n' +
+      'function Field({\n' +
+      '  label,\n' +
+      '  children,\n' +
+      '  span = false,\n' +
+      '}: {\n' +
+      '  label: string;\n' +
+      '  children: ReactNode;\n' +
+      '  span?: boolean;\n' +
+      '}) {\n' +
+      '  return (\n' +
+      '    <label className={span ? "sm:col-span-2" : ""}>\n' +
+      '      <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">\n' +
+      '        {label}\n' +
+      '      </span>\n' +
+      '      {children}\n' +
+      '    </label>\n' +
+      '  );\n' +
+      '}\n' +
+      '\n' +
+      'const SCHEDULE_LABELS: Record<ScheduleState, string> = {\n' +
+      '  current: "Current",\n' +
+      '  "due-soon": "Due Soon",\n' +
+      '  overdue: "Overdue",\n' +
+      '  "not-scheduled": "Not Scheduled",\n' +
+      '};\n' +
+      '\n' +
+      'type AdvancedFilterKey =\n' +
+      '  | "vehicle"\n' +
+      '  | "assignment"\n' +
+      '  | "location"\n' +
+      '  | "inspection"\n' +
+      '  | "service"\n' +
+      '  | "issues";\n' +
+      '\n' +
+      'function SortableHeader({\n' +
+      '  column,\n' +
+      '  label,\n' +
+      '  query,\n' +
+      '  onSort,\n' +
+      '}: {\n' +
+      '  column: InventorySortColumn;\n' +
+      '  label: string;\n' +
+      '  query: InventoryQueryState;\n' +
+      '  onSort: (column: InventorySortColumn) => void;\n' +
+      '}) {\n' +
+      '  const active = query.sort === column;\n' +
+      '  const ariaSort = active\n' +
+      '    ? query.direction === "asc" ? "ascending" : "descending"\n' +
+      '    : "none";\n' +
+      '  return (\n' +
+      '    <th className="px-2 py-1" aria-sort={ariaSort}>\n' +
+      '      <button\n' +
+      '        type="button"\n' +
+      '        onClick={() => onSort(column)}\n' +
+      '        aria-label={`Sort by ${label}${active ? `, currently ${ariaSort}` : ""}`}\n' +
+      '        className={`inline-flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left transition hover:bg-slate-800/70 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${active ? "text-blue-300" : "text-slate-500"}`}\n' +
+      '      >\n' +
+      '        <span>{label}</span>\n' +
+      '        {active ? (\n' +
+      '          query.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />\n' +
+      '        ) : (\n' +
+      '          <span aria-hidden="true" className="text-[11px] text-slate-700">↕</span>\n' +
+      '        )}\n' +
+      '      </button>\n' +
+      '    </th>\n' +
+      '  );\n' +
+      '}\n' +
+      '\n' +
+      'function FleetManagementContent() {\n' +
+      '  const router = useRouter();\n' +
+      '  const pathname = usePathname();\n' +
+      '  const searchParams = useSearchParams();\n' +
+      '  const query = useMemo(\n' +
+      '    () => parseInventoryQuery(searchParams.toString()),\n' +
+      '    [searchParams],\n' +
+      '  );\n' +
+      '  const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);\n' +
+      '  const [canManage, setCanManage] = useState(false);\n' +
+      '  const [loading, setLoading] = useState(true);\n' +
+      '  const [saving, setSaving] = useState(false);\n' +
+      '  const [error, setError] = useState("");\n' +
+      '  const [message, setMessage] = useState("");\n' +
+      '  const [showFilters, setShowFilters] = useState(false);\n' +
+      '  const [showForm, setShowForm] = useState(false);\n' +
+      '  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);\n' +
+      '  const [form, setForm] = useS'... 42407 more characters
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    "use client";
+    
+    import { Fragment, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+    import Link from "next/link";
+    import { usePathname, useRouter, useSearchParams } from "next/navigation";
+    import {
+      ArrowDown,
+      ArrowUp,
+      Car,
+      ChevronRight,
+      CheckCircle2,
+      Plus,
+      Pencil,
+      RefreshCw,
+      Search,
+      SlidersHorizontal,
+      X,
+    } from "lucide-react";
+    
+    import TracePointShell from "@/app/components/TracePointShell";
+    import { formatDate } from "@/lib/format/date";
+    import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
+    import TracePointQrLabel from "@/app/components/TracePointQrLabel";
+    import {
+      ASSIGNMENT_TYPES,
+      FLEET_STATUSES,
+      activeAdvancedFilterCount,
+      applyInventoryView,
+      clearAdvancedFilters,
+      inspectionState,
+      parseInventoryQuery,
+      serializeInventoryQuery,
+      serviceState,
+      type AssignmentType,
+      type FleetInventoryVehicle,
+      type FleetStatus,
+      type InventoryQueryState,
+      type InventorySortColumn,
+      type ScheduleState,
+    } from "@/lib/fleet/inventory-state";
+    import {
+      getStoredTableGroupingPreferences,
+      groupTableRows,
+      saveTableGroupingPreferences,
+      toggleCollapsedTableGroup,
+      type TableGroupingPreferences,
+    } from "@/lib/tables/grouping";
+    
+    type FleetVehicle = FleetInventoryVehicle & {
+      registration_expiration_date: string | null;
+      insurance_expiration_date: string | null;
+      in_service_date: string | null;
+      last_service_date: string | null;
+      last_service_mileage: number | null;
+      last_service_hours: number | null;
+      next_service_hours: number | null;
+      comments: string | null;
+      notes: string | null;
+      updated_at: string;
+    };
+    
+    type FleetPayload = {
+      items?: FleetVehicle[];
+      canManage?: boolean;
+    };
+    
+    type VehicleForm = {
+      unitNumber: string;
+      vin: string;
+      licensePlate: string;
+      year: string;
+      make: string;
+      model: string;
+      vehicleType: string;
+      assignmentType: AssignmentType;
+      assignedTo: string;
+      homeLocation: string;
+      currentMileage: string;
+      currentHours: string;
+      status: FleetStatus;
+      inspectionDueDate: string;
+      registrationExpirationDate: string;
+      insuranceExpirationDate: string;
+      inServiceDate: string;
+      lastServiceDate: string;
+      lastServiceMileage: string;
+      lastServiceHours: string;
+      nextServiceDate: string;
+      nextServiceMileage: string;
+      nextServiceHours: string;
+      openIssueCount: string;
+      comments: string;
+      notes: string;
+      reason: string;
+    };
+    
+    const EMPTY_FORM: VehicleForm = {
+      unitNumber: "",
+      vin: "",
+      licensePlate: "",
+      year: "",
+      make: "",
+      model: "",
+      vehicleType: "Patrol",
+      assignmentType: "Pool",
+      assignedTo: "",
+      homeLocation: "",
+      currentMileage: "",
+      currentHours: "",
+      status: "Available",
+      inspectionDueDate: "",
+      registrationExpirationDate: "",
+      insuranceExpirationDate: "",
+      inServiceDate: "",
+      lastServiceDate: "",
+      lastServiceMileage: "",
+      lastServiceHours: "",
+      nextServiceDate: "",
+      nextServiceMileage: "",
+      nextServiceHours: "",
+      openIssueCount: "0",
+      comments: "",
+      notes: "",
+      reason: "",
+    };
+    
+    const STATUSES: FleetStatus[] = [...FLEET_STATUSES];
+    
+    const FLEET_INVENTORY_GROUP_BY = ["none", "status", "vehicleType", "assignment"] as const;
+    type FleetInventoryGroupBy = (typeof FLEET_INVENTORY_GROUP_BY)[number];
+    type FleetGroupingPreferences = TableGroupingPreferences<FleetInventoryGroupBy>;
+    const FLEET_GROUPING_STORAGE_KEY = "tracepoint:fleet:inventory-groups:v1";
+    const FLEET_GROUP_LABELS: Record<FleetInventoryGroupBy, string> = {
+      none: "None",
+      status: "Status",
+      vehicleType: "Vehicle Type",
+      assignment: "Assignment",
+    };
+    
+    const PREVIEW_VEHICLE: FleetVehicle = {
+      id: "preview", unit_number: "3101", vin: "1FM5K8AR0NGA00001",
+      license_plate: "MG-3101", year: 2025, make: "Ford",
+      model: "Police Interceptor Utility", vehicle_type: "Patrol",
+      assignment_type: "Pool", assigned_to: "Patrol Division",
+      home_location: "Headquarters", current_mileage: 18422,
+      current_hours: 2167.4, status: "Attention", inspection_due_date: "2026-09-12",
+      registration_expiration_date: "2027-01-31", last_service_date: "2026-07-20",
+      insurance_expiration_date: "2027-01-31", in_service_date: "2025-02-01",
+      last_service_mileage: 16000, last_service_hours: 1900,
+      next_service_date: "2026-09-05", next_service_mileage: 20000,
+      next_service_hours: 2300, open_issue_count: 1, comments: null,
+      notes: "Local preview vehicle", updated_at: new Date().toISOString(),
+    };
+    
+    function formForVehicle(vehicle: FleetVehicle): VehicleForm {
+      return {
+        unitNumber: vehicle.unit_number,
+        vin: vehicle.vin ?? "",
+        licensePlate: vehicle.license_plate ?? "",
+        year: vehicle.year?.toString() ?? "",
+        make: vehicle.make ?? "",
+        model: vehicle.model ?? "",
+        vehicleType: vehicle.vehicle_type ?? "",
+        assignmentType: vehicle.assignment_type,
+        assignedTo: vehicle.assigned_to ?? "",
+        homeLocation: vehicle.home_location ?? "",
+        currentMileage: vehicle.current_mileage?.toString() ?? "",
+        currentHours: vehicle.current_hours?.toString() ?? "",
+        status: vehicle.status,
+        inspectionDueDate: vehicle.inspection_due_date ?? "",
+        registrationExpirationDate: vehicle.registration_expiration_date ?? "",
+        insuranceExpirationDate: vehicle.insurance_expiration_date ?? "",
+        inServiceDate: vehicle.in_service_date ?? "",
+        lastServiceDate: vehicle.last_service_date ?? "",
+        lastServiceMileage: vehicle.last_service_mileage?.toString() ?? "",
+        lastServiceHours: vehicle.last_service_hours?.toString() ?? "",
+        nextServiceDate: vehicle.next_service_date ?? "",
+        nextServiceMileage: vehicle.next_service_mileage?.toString() ?? "",
+        nextServiceHours: vehicle.next_service_hours?.toString() ?? "",
+        openIssueCount: vehicle.open_issue_count?.toString() ?? "0",
+        comments: vehicle.comments ?? "",
+        notes: vehicle.notes ?? "",
+        reason: "",
+      };
+    }
+    
+    function formatMileage(value: number | null) {
+      if (value === null || !Number.isFinite(value)) return "—";
+      return `${Math.max(0, value).toLocaleString("en-US")} mi`;
+    }
+    
+    function statusClasses(status: FleetStatus) {
+      switch (status) {
+        case "Available":
+          return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+        case "Attention":
+          return "border-amber-500/30 bg-amber-500/10 text-amber-300";
+        case "Maintenance":
+          return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+        case "Out of Service":
+          return "border-red-500/30 bg-red-500/10 text-red-300";
+        case "Retired":
+          return "border-slate-700 bg-slate-800/60 text-slate-400";
+      }
+    }
+    
+    async function responseError(response: Response) {
+      const payload = await response.json().catch(() => ({}));
+      return payload?.error || "The request could not be completed.";
+    }
+    
+    function SummaryCard({
+      label,
+      value,
+      detail,
+      tone = "slate",
+    }: {
+      label: string;
+      value: number;
+      detail: string;
+      tone?: "green" | "amber" | "red" | "slate";
+    }) {
+      const toneClass =
+        tone === "green"
+          ? "border-emerald-500/25 bg-emerald-500/[0.06]"
+          : tone === "amber"
+            ? "border-amber-500/25 bg-amber-500/[0.06]"
+            : tone === "red"
+              ? "border-red-500/25 bg-red-500/[0.06]"
+              : "border-slate-800 bg-slate-900/70";
+    
+      return (
+        <div className={`rounded-2xl border p-4 ${toneClass}`}>
+          <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            {label}
+          </p>
+          <p className="mt-2 text-2xl font-bold text-white">{value}</p>
+          <p className="mt-1 text-[10px] leading-4 text-slate-500">{detail}</p>
+        </div>
+      );
+    }
+    
+    function Field({
+      label,
+      children,
+      span = false,
+    }: {
+      label: string;
+      children: ReactNode;
+      span?: boolean;
+    }) {
+      return (
+        <label className={span ? "sm:col-span-2" : ""}>
+          <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            {label}
+          </span>
+          {children}
+        </label>
+      );
+    }
+    
+    const SCHEDULE_LABELS: Record<ScheduleState, string> = {
+      current: "Current",
+      "due-soon": "Due Soon",
+      overdue: "Overdue",
+      "not-scheduled": "Not Scheduled",
+    };
+    
+    type AdvancedFilterKey =
+      | "vehicle"
+      | "assignment"
+      | "location"
+      | "inspection"
+      | "service"
+      | "issues";
+    
+    function SortableHeader({
+      column,
+      label,
+      query,
+      onSort,
+    }: {
+      column: InventorySortColumn;
+      label: string;
+      query: InventoryQueryState;
+      onSort: (column: InventorySortColumn) => void;
+    }) {
+      const active = query.sort === column;
+      const ariaSort = active
+        ? query.direction === "asc" ? "ascending" : "descending"
+        : "none";
+      return (
+        <th className="px-2 py-1" aria-sort={ariaSort}>
+          <button
+            type="button"
+            onClick={() => onSort(column)}
+            aria-label={`Sort by ${label}${active ? `, currently ${ariaSort}` : ""}`}
+            className={`inline-flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left transition hover:bg-slate-800/70 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${active ? "text-blue-300" : "text-slate-500"}`}
+          >
+            <span>{label}</span>
+            {active ? (
+              query.direction === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
+            ) : (
+              <span aria-hidden="true" className="text-[11px] text-slate-700">↕</span>
+            )}
+          </button>
+        </th>
+      );
+    }
+    
+    function FleetManagementContent() {
+      const router = useRouter();
+      const pathname = usePathname();
+      const searchParams = useSearchParams();
+      const query = useMemo(
+        () => parseInventoryQuery(searchParams.toString()),
+        [searchParams],
+      );
+      const [vehicles, setVehicles] = useState<FleetVehicle[]>([]);
+      const [canManage, setCanManage] = useState(false);
+      const [loading, setLoading] = useState(true);
+      const [saving, setSaving] = useState(false);
+      const [error, setError] = useState("");
+      const [message, setMessage] = useState("");
+      const [showFilters, setShowFilters] = useState(false);
+      const [showForm, setShowForm] = useState(false);
+      const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+      const [form, setForm] = useState<VehicleForm>(EMPTY_FORM);
+      const [groupingPreferences, setGroupingPreferences] =
+        useState<FleetGroupingPreferences>({ groupBy: "none", collapsedGroupKeys: [] });
+    
+      function replaceQuery(next: InventoryQueryState) {
+        const value = serializeInventoryQuery(next).toString();
+        window.history.replaceState(null, "", value ? `${pathname}?${value}` : pathname);
+      }
+    
+      function updateQuery(patch: Partial<InventoryQueryState>) {
+        replaceQuery({ ...query, ...patch });
+      }
+    
+      function sortBy(column: InventorySortColumn) {
+        updateQuery({
+          sort: column,
+          direction: query.sort === column && query.direction === "asc" ? "desc" : "asc",
+        });
+      }
+    
+      function removeAdvancedFilter(key: AdvancedFilterKey) {
+        replaceQuery({ ...query, [key]: "" });
+      }
+    
+      function openCreateForm() {
+        setEditingVehicleId(null);
+        setForm(EMPTY_FORM);
+        setShowForm(true);
+      }
+    
+      function openEditForm(vehicle: FleetVehicle) {
+        setEditingVehicleId(vehicle.id);
+        setForm(formForVehicle(vehicle));
+        setShowForm(true);
+      }
+    
+      function closeForm(force = false) {
+        if (saving && !force) return;
+        setShowForm(false);
+        setEditingVehicleId(null);
+        setForm(EMPTY_FORM);
+      }
+    
+      async function loadFleet() {
+        setLoading(true);
+        setError("");
+        try {
+          const response = await fetch("/api/fleet/vehicles", {
+            cache: "no-store",
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(await responseError(response));
+          const payload = (await response.json()) as FleetPayload;
+          setVehicles(payload.items ?? []);
+          setCanManage(payload.canManage === true);
+        } catch (loadError) {
+          const message = loadError instanceof Error ? loadError.message : "Fleet records could not be loaded.";
+          if (message.toLowerCase().includes("migration")) {
+            setVehicles([PREVIEW_VEHICLE]);
+            setCanManage(true);
+            setError("Local preview mode: the Fleet migration has not been applied, so the example vehicle is read-only.");
+          } else setError(message);
+        } finally {
+          setLoading(false);
+        }
+      }
+    
+      useEffect(() => {
+        void loadFleet();
+      }, []);
+    
+      useEffect(() => {
+        setGroupingPreferences(
+          getStoredTableGroupingPreferences(
+            FLEET_GROUPING_STORAGE_KEY,
+            FLEET_INVENTORY_GROUP_BY,
+            "none",
+          ),
+        );
+      }, []);
+    
+      const summary = useMemo(() => {
+        const activeVehicles = vehicles.filter((vehicle) => vehicle.status !== "Retired");
+        return {
+          total: activeVehicles.length,
+          available: activeVehicles.filter((vehicle) => vehicle.status === "Available").length,
+          attention: activeVehicles.filter((vehicle) => vehicle.status === "Attention").length,
+          unavailable: activeVehicles.filter(
+            (vehicle) =>
+              vehicle.status === "Maintenance" || vehicle.status === "Out of Service",
+          ).length,
+        };
+      }, [vehicles]);
+    
+      const filteredVehicles = useMemo(
+        () => applyInventoryView(vehicles, query),
+        [query, vehicles],
+      );
+    
+      const vehicleGroups = useMemo(
+        () =>
+          groupTableRows(filteredVehicles, groupingPreferences.groupBy, (vehicle, groupBy) => {
+            switch (groupBy) {
+              case "status":
+                return { key: vehicle.status, label: vehicle.status };
+              case "vehicleType": {
+                const label = vehicle.vehicle_type || "Unclassified";
+                return { key: vehicle.vehicle_type || "unclassified", label };
+              }
+              case "assignment": {
+                const label = vehicle.assigned_to || vehicle.assignment_type || "Unassigned";
+                return { key: vehicle.assigned_to || vehicle.assignment_type || "unassigned", label };
+              }
+            }
+          }),
+        [filteredVehicles, groupingPreferences.groupBy],
+      );
+    
+      function updateGroupingPreferences(
+        updater: (current: FleetGroupingPreferences) => FleetGroupingPreferences,
+      ) {
+        setGroupingPreferences((current) => {
+          const next = updater(current);
+          saveTableGroupingPreferences(
+            FLEET_GROUPING_STORAGE_KEY,
+            next,
+            FLEET_INVENTORY_GROUP_BY,
+            "none",
+          );
+          return next;
+        });
+      }
+    
+      function vehicleGroupSummary(groupVehicles: FleetVehicle[]) {
+        const unavailable = groupVehicles.filter(
+          (vehicle) => vehicle.status === "Maintenance" || vehicle.status === "Out of Service",
+        ).length;
+        const assigned = groupVehicles.filter((vehicle) => Boolean(vehicle.assigned_to)).length;
+        const segments = [`${assigned} assigned`];
+        if (unavailable) segments.push(`${unavailable} unavailable`);
+        return segments.join(" · ");
+      }
+      const locations = useMemo(
+        () => [...new Set(vehicles.map((vehicle) => vehicle.home_location?.trim()).filter((value): value is string => Boolean(value)))]
+          .sort((left, right) => left.localeCompare(right, "en-US", { numeric: true, sensitivity: "base" })),
+        [vehicles],
+      );
+      const activeFilterCount = activeAdvancedFilterCount(query);
+      const activeFilterChips: Array<{ key: AdvancedFilterKey; label: string }> = [
+        query.vehicle ? { key: "vehicle", label: `Vehicle: ${query.vehicle}` } : null,
+        query.assignment ? { key: "assignment", label: `Assignment: ${query.assignment}` } : null,
+        query.location ? { key: "location", label: `Location: ${query.location}` } : null,
+        query.inspection ? { key: "inspection", label: `Inspection: ${SCHEDULE_LABELS[query.inspection]}` } : null,
+        query.service ? { key: "service", label: `Service: ${SCHEDULE_LABELS[query.service]}` } : null,
+        query.issues ? { key: "issues", label: `Issues: ${query.issues === "open" ? "Has Open Issues" : "No Open Issues"}` } : null,
+      ].filter((chip): chip is { key: AdvancedFilterKey; label: string } => chip !== null);
+      const inventoryQueryString = serializeInventoryQuery(query).toString();
+      const vehicleHref = (vehicleId: string) =>
+        `/fleet-management/${vehicleId}${inventoryQueryString ? `?${inventoryQueryString}` : ""}`;
+    
+      async function saveVehicle() {
+        if (!form.unitNumber.trim()) {
+          setError("Unit number is required.");
+          return;
+        }
+        if (editingVehicleId && !form.reason.trim()) {
+          setError("Enter a reason for this vehicle update.");
+          return;
+        }
+        const original = editingVehicleId ? vehicles.find((vehicle) => vehicle.id === editingVehicleId) : undefined;
+        const lowered = (input: string, stored: number | null | undefined) =>
+          input.trim() !== "" && Number(input) < Number(stored ?? 0);
+        let mileageCorrectionReason: string | undefined;
+        if (original && (lowered(form.currentMileage, original.current_mileage) || lowered(form.currentHours, original.current_hours))) {
+          mileageCorrectionReason = window.prompt(
+            `Lowering the mileage or engine hours of Unit ${original.unit_number} is a correction. Why is the recorded reading wrong?`,
+          )?.trim();
+          if (!mileageCorrectionReason) return;
+        }
+        setSaving(true);
+        setError("");
+        setMessage("");
+        try {
+          const response = await fetch("/api/fleet/vehicles", {
+            method: editingVehicleId ? "PATCH" : "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(editingVehicleId ? { ...form, id: editingVehicleId, mileageCorrectionReason } : form),
+          });
+          if (!response.ok) throw new Error(await responseError(response));
+          const wasEditing = Boolean(editingVehicleId);
+          closeForm(true);
+          setMessage(wasEditing
+            ? "Vehicle changes saved and recorded in the audit log."
+            : "Vehicle added and recorded in the audit log.");
+          await loadFleet();
+        } catch (saveError) {
+          setError(
+            saveError instanceof Error
+              ? saveError.message
+              : "The vehicle could not be saved.",
+          );
+        } finally {
+          setSaving(false);
+        }
+      }
+    
+      async function updateVehicleStatus(vehicle: FleetVehicle, status: FleetStatus) {
+        if (status === vehicle.status) return;
+        const reason = window.prompt(
+          `Why is Unit ${vehicle.unit_number} being changed to ${status}?`,
+        )?.trim();
+        if (!reason) return;
+    
+        setSaving(true);
+        setError("");
+        setMessage("");
+        try {
+          const response = await fetch("/api/fleet/vehicles", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ id: vehicle.id, status, reason }),
+          });
+          if (!response.ok) throw new Error(await responseError(response));
+          setMessage(`Unit ${vehicle.unit_number} status updated and audited.`);
+          await loadFleet();
+        } catch (saveError) {
+          setError(
+            saveError instanceof Error
+              ? saveError.message
+              : "Vehicle status could not be updated.",
+          );
+        } finally {
+          setSaving(false);
+        }
+      }
+    
+      const inputClass =
+        "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500";
+    
+      return (
+        <TracePointShell activePage="Fleet Management">
+          <div className="mx-auto w-full max-w-[1600px] space-y-5">
+            <header className="rounded-3xl border border-slate-800 bg-slate-900/60 px-4 py-4 sm:px-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-blue-400">
+                    Assets & Fleet
+                  </p>
+                  <h1 className="mt-1 text-2xl font-bold text-white">Fleet Management</h1>
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-400">
+                    Maintain vehicle inventory, assignment, mileage, service dates,
+                    open issues, and current operational availability.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={openCreateForm}
+                      className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-500"
+                    >
+                      <Plus size={15} /> Add Vehicle
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void loadFleet()}
+                    disabled={loading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-white disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                    Refresh
+                  </button>
+                </div>
+              </div>
+            </header>
+    
+            {error ? (
+              <div className="rounded-2xl border border-red-700 bg-red-950/30 p-4 text-sm text-red-200">
+                {error}
+              </div>
+            ) : null}
+            {message ? (
+              <div className="rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">
+                {message}
+              </div>
+            ) : null}
+    
+            <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <SummaryCard label="Fleet" value={summary.total} detail="Active vehicle records" />
+              <SummaryCard
+                label="Available"
+                value={summary.available}
+                detail="Ready for operational use"
+                tone="green"
+              />
+              <SummaryCard
+                label="Needs Attention"
+                value={summary.attention}
+                detail="Available with follow-up required"
+                tone={summary.attention > 0 ? "amber" : "slate"}
+              />
+              <SummaryCard
+                label="Unavailable"
+                value={summary.unavailable}
+                detail="Maintenance or out of service"
+                tone={summary.unavailable > 0 ? "red" : "slate"}
+              />
+            </section>
+    
+            <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
+              <div className="border-b border-slate-800 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Vehicle Inventory</h2>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Current status is authoritative until automated inspection rules are enabled.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                    <div className="relative min-w-0 sm:min-w-[280px]">
+                      <Search size={14} className="absolute left-3 top-2.5 text-slate-600" />
+                      <input
+                        value={query.search}
+                        onChange={(event) => updateQuery({ search: event.target.value })}
+                        aria-label="Search vehicle inventory"
+                        placeholder="Search unit, plate, make, assignment..."
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-xs text-white outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <select
+                      value={query.status}
+                      onChange={(event) => updateQuery({ status: event.target.value as "All" | FleetStatus })}
+                      aria-label="Filter by status"
+                      className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                    >
+                      <option value="All">All statuses</option>
+                      {STATUSES.map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters((visible) => !visible)}
+                      aria-expanded={showFilters}
+                      aria-controls="fleet-inventory-filters"
+                      className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${activeFilterCount > 0 || showFilters ? "border-blue-500/40 bg-blue-500/10 text-blue-200" : "border-slate-700 text-slate-400 hover:text-white"}`}
+                    >
+                      <SlidersHorizontal size={14} />
+                      Filters
+                      {activeFilterCount > 0 ? (
+                        <span className="rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[9px]" aria-label={`${activeFilterCount} active filters`}>
+                          {activeFilterCount}
+                        </span>
+                      ) : null}
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={groupingPreferences.groupBy}
+                        onChange={(event) =>
+                          updateGroupingPreferences((current) => ({
+                            ...current,
+                            groupBy: event.target.value as FleetInventoryGroupBy,
+                          }))
+                        }
+                        aria-label="Group vehicles by"
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 outline-none focus:border-blue-500"
+                      >
+                        {FLEET_INVENTORY_GROUP_BY.map((groupBy) => (
+                          <option key={groupBy} value={groupBy}>
+                            Group by: {FLEET_GROUP_LABELS[groupBy]}
+                          </option>
+                        ))}
+                      </select>
+                      {groupingPreferences.groupBy !== "none" ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: [] }))}
+                            className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
+                          >
+                            Expand All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateGroupingPreferences((current) => ({ ...current, collapsedGroupKeys: vehicleGroups.map((group) => group.key) }))}
+                            className="px-1 text-xs font-semibold text-slate-400 hover:text-white"
+                          >
+                            Collapse All
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+    
+                {showFilters ? (
+                  <div id="fleet-inventory-filters" className="mt-3 grid gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <Field label="Vehicle details or type">
+                      <input
+                        value={query.vehicle}
+                        onChange={(event) => updateQuery({ vehicle: event.target.value })}
+                        placeholder="Year, make, model, or type"
+                        className={inputClass}
+                      />
+                    </Field>
+                    <Field label="Assignment type">
+                      <select
+                        value={query.assignment}
+                        onChange={(event) => updateQuery({ assignment: event.target.value as "" | AssignmentType })}
+                        className={inputClass}
+                      >
+                        <option value="">Any assignment</option>
+                        {ASSIGNMENT_TYPES.map((assignment) => <option key={assignment}>{assignment}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Location">
+                      <select
+                        value={query.location}
+                        onChange={(event) => updateQuery({ location: event.target.value })}
+                        className={inputClass}
+                      >
+                        <option value="">Any location</option>
+                        {locations.map((location) => <option key={location}>{location}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Inspection state">
+                      <select
+                        value={query.inspection}
+                        onChange={(event) => updateQuery({ inspection: event.target.value as "" | ScheduleState })}
+                        className={inputClass}
+                      >
+                        <option value="">Any inspection state</option>
+                        {Object.entries(SCHEDULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Service state">
+                      <select
+                        value={query.service}
+                        onChange={(event) => updateQuery({ service: event.target.value as "" | ScheduleState })}
+                        className={inputClass}
+                      >
+                        <option value="">Any service state</option>
+                        {Object.entries(SCHEDULE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Issues">
+                      <select
+                        value={query.issues}
+                        onChange={(event) => updateQuery({ issues: event.target.value as InventoryQueryState["issues"] })}
+                        className={inputClass}
+                      >
+                        <option value="">Any</option>
+                        <option value="open">Has Open Issues</option>
+                        <option value="none">No Open Issues</option>
+                      </select>
+                    </Field>
+                  </div>
+                ) : null}
+    
+                {activeFilterChips.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="Active inventory filters">
+                    {activeFilterChips.map((chip) => (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={() => removeAdvancedFilter(chip.key)}
+                        aria-label={`Remove ${chip.label} filter`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[10px] font-semibold text-blue-200 hover:border-blue-400/60"
+                      >
+                        {chip.label} <X size={11} aria-hidden="true" />
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => replaceQuery(clearAdvancedFilters(query))}
+                      className="px-1 py-1 text-[10px] font-semibold text-slate-500 hover:text-white"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+    
+              {loading ? (
+                <div className="flex min-h-[280px] items-center justify-center">
+                  <RefreshCw size={24} className="animate-spin text-blue-300" />
+                </div>
+              ) : filteredVehicles.length === 0 ? (
+                <div className="flex min-h-[280px] flex-col items-center justify-center p-8 text-center">
+                  <Car size={38} className="text-slate-600" />
+                  <p className="mt-3 font-semibold text-white">
+                    {vehicles.length === 0 ? "No vehicles have been added" : "No matching vehicles"}
+                  </p>
+                  <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">
+                    {vehicles.length === 0
+                      ? "Add the department fleet to begin tracking availability, mileage, assignments, service dates, and open issues."
+                      : "Adjust the search or filters to see additional records."}
+                  </p>
+                  {vehicles.length === 0 && canManage ? (
+                    <button
+                      type="button"
+                      onClick={openCreateForm}
+                      className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500"
+                    >
+                      <Plus size={14} /> Add First Vehicle
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1260px] text-left">
+                    <thead className="border-b border-slate-800 bg-slate-950/40">
+                      <tr className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        <SortableHeader column="unit" label="Unit" query={query} onSort={sortBy} />
+                        <SortableHeader column="vehicle" label="Vehicle" query={query} onSort={sortBy} />
+                        <SortableHeader column="assignment" label="Assignment" query={query} onSort={sortBy} />
+                        <SortableHeader column="mileage" label="Mileage" query={query} onSort={sortBy} />
+                        <SortableHeader column="inspection" label="Inspection" query={query} onSort={sortBy} />
+                        <SortableHeader column="service" label="Next Service" query={query} onSort={sortBy} />
+                        <SortableHeader column="issues" label="Issues" query={query} onSort={sortBy} />
+                        <SortableHeader column="status" label="Status" query={query} onSort={sortBy} />
+                        <th className="px-4 py-3" aria-label="Vehicle actions" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {(groupingPreferences.groupBy === "none"
+                        ? [{ key: "flat", label: "", items: filteredVehicles }]
+                        : vehicleGroups
+                      ).map((group) => {
+                        const expanded = !groupingPreferences.collapsedGroupKeys.includes(group.key);
+                        return (
+                          <Fragment key={group.key}>
+                            {groupingPreferences.groupBy !== "none" ? (
+                              <tr>
+                                <td colSpan={9} className="p-0">
+                                  <CollapsibleTableGroupHeader
+                                    label={group.label}
+                                    count={group.items.length}
+                                    expanded={expanded}
+                                    onToggle={() =>
+                                      updateGroupingPreferences((current) => ({
+                                        ...current,
+                                        collapsedGroupKeys: toggleCollapsedTableGroup(
+                                          current.collapsedGroupKeys,
+                                          group.key,
+                                        ),
+                                      }))
+                                    }
+                                    summary={vehicleGroupSummary(group.items)}
+                                  />
+                                </td>
+                              </tr>
+                            ) : null}
+                            {expanded
+                              ? group.items.map((vehicle) => {
+                        const vehicleInspectionState = inspectionState(vehicle.inspection_due_date);
+                        const vehicleServiceState = serviceState(vehicle);
+                        const openIssueCount = vehicle.open_issue_count ?? 0;
+                        const href = vehicleHref(vehicle.id);
+                        return (
+                          <tr
+                            key={vehicle.id}
+                            role="link"
+                            tabIndex={0}
+                            onClick={() => router.push(href)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push(href);
+                              }
+                            }}
+                            className="group cursor-pointer align-top transition hover:bg-slate-950/60 focus:bg-slate-950/60 focus:outline-none"
+                          >
+                            <td className="px-4 py-3">
+                              <Link
+                                href={href}
+                                className="text-sm font-bold text-white hover:text-blue-300"
+                              >
+                                Unit {vehicle.unit_number}
+                              </Link>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                {vehicle.license_plate || "No plate recorded"}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-xs font-semibold text-slate-300">
+                                {[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle details pending"}
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                {vehicle.vehicle_type || "Unclassified"}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-xs text-slate-300">{vehicle.assigned_to || vehicle.assignment_type}</p>
+                              <p className="mt-1 text-[10px] text-slate-500">{vehicle.home_location || "No location"}</p>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-300">
+                              <div>{formatMileage(vehicle.current_mileage)}</div>
+                              <div className="mt-1 text-[10px] text-slate-500">
+                                {(vehicle.current_hours ?? 0).toLocaleString("en-US")} hrs
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className={`text-xs ${vehicleInspectionState === "overdue" ? "font-semibold text-red-300" : vehicleInspectionState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
+                                {formatDate(vehicle.inspection_due_date)}
+                              </p>
+                              {vehicleInspectionState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
+                              {vehicleInspectionState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
+                              {vehicleInspectionState === "not-scheduled" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">Not scheduled</p> : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className={`text-xs ${vehicleServiceState === "overdue" ? "font-semibold text-red-300" : vehicleServiceState === "due-soon" ? "font-semibold text-amber-300" : "text-slate-400"}`}>
+                                {formatDate(vehicle.next_service_date)}
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                {vehicle.next_service_mileage ? `or ${formatMileage(vehicle.next_service_mileage)}` : "No mileage interval"}
+                              </p>
+                              {vehicleServiceState === "overdue" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-red-400">Overdue</p> : null}
+                              {vehicleServiceState === "due-soon" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-400">Due soon</p> : null}
+                              {vehicleServiceState === "not-scheduled" ? <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-600">Not scheduled</p> : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={openIssueCount > 0 ? "inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-300" : "text-xs text-slate-500"}>
+                                {openIssueCount > 0 ? `${openIssueCount} open` : "None"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              {canManage ? (
+                                <select
+                                  value={vehicle.status}
+                                  disabled={saving}
+                                  onClick={(event) => event.stopPropagation()}
+                                  onKeyDown={(event) => event.stopPropagation()}
+                                  onChange={(event) =>
+                                    void updateVehicleStatus(vehicle, event.target.value as FleetStatus)
+                                  }
+                                  className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide outline-none ${statusClasses(vehicle.status)}`}
+                                >
+                                  {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                                </select>
+                              ) : (
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide ${statusClasses(vehicle.status)}`}>
+                                  {vehicle.status}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex justify-end gap-2">
+                                <TracePointQrLabel
+                                  kind="vehicle"
+                                  id={vehicle.id}
+                                  title={`Unit ${vehicle.unit_number}`}
+                                  subtitle={
+                                    [vehicle.year, vehicle.make, vehicle.model]
+                                      .filter(Boolean)
+                                      .join(" ") ||
+                                    vehicle.license_plate ||
+                                    "TracePoint vehicle"
+                                  }
+                                  compact
+                                  viewOnly
+                                />
+                                {canManage ? (
+                                  <button
+                                    type="button"
+                                    onClick={(event) => { event.stopPropagation(); openEditForm(vehicle); }}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition hover:border-blue-500/40 hover:text-blue-300"
+                                  >
+                                    <Pencil size={12} /> Edit
+                                  </button>
+                                ) : null}
+                                <Link
+                                  href={href}
+                                  onClick={(event) => event.stopPropagation()}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-700 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400 transition group-hover:border-blue-500/40 group-hover:text-blue-300"
+                                >
+                                  Open <ChevronRight size={13} />
+                                </Link>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                              })
+                              : null}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+    
+            {showForm ? (
+              <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-4 backdrop-blur-sm sm:p-8">
+                <div className="w-full max-w-3xl rounded-3xl border border-slate-700 bg-slate-900 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+                    <div>
+                      <h2 className="font-bold text-white">{editingVehicleId ? "Edit Fleet Vehicle" : "Add Fleet Vehicle"}</h2>
+                      <p className="mt-1 text-[11px] text-slate-500">{editingVehicleId ? "Update this vehicle without replacing its history or linked records." : "Create the authoritative inventory record for this unit."}</p>
+                    </div>
+                    <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-lg p-2 text-slate-500 hover:bg-slate-800 hover:text-white disabled:opacity-50">
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <div className="grid gap-4 p-5 sm:grid-cols-2">
+                    <Field label="Unit Number"><input value={form.unitNumber} onChange={(event) => setForm({ ...form, unitNumber: event.target.value })} className={inputClass} placeholder="e.g. 3101" /></Field>
+                    <Field label="License Plate"><input value={form.licensePlate} onChange={(event) => setForm({ ...form, licensePlate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Year"><input type="number" value={form.year} onChange={(event) => setForm({ ...form, year: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Make"><input value={form.make} onChange={(event) => setForm({ ...form, make: event.target.value })} className={inputClass} placeholder="Ford" /></Field>
+                    <Field label="Model"><input value={form.model} onChange={(event) => setForm({ ...form, model: event.target.value })} className={inputClass} placeholder="Police Interceptor Utility" /></Field>
+                    <Field label="Vehicle Type"><input value={form.vehicleType} onChange={(event) => setForm({ ...form, vehicleType: event.target.value })} className={inputClass} /></Field>
+                    <Field label="VIN" span><input value={form.vin} onChange={(event) => setForm({ ...form, vin: event.target.value.toUpperCase() })} className={inputClass} maxLength={17} /></Field>
+                    <Field label="Assignment Type"><select value={form.assignmentType} onChange={(event) => setForm({ ...form, assignmentType: event.target.value as AssignmentType })} className={inputClass}><option>Pool</option><option>Permanent</option><option>Specialized</option></select></Field>
+                    <Field label="Assigned To"><input value={form.assignedTo} onChange={(event) => setForm({ ...form, assignedTo: event.target.value })} className={inputClass} placeholder="Officer, unit, or function" /></Field>
+                    <Field label="Home Location"><input value={form.homeLocation} onChange={(event) => setForm({ ...form, homeLocation: event.target.value })} className={inputClass} placeholder="Headquarters" /></Field>
+                    <Field label="Current Mileage"><input type="number" min="0" value={form.currentMileage} onChange={(event) => setForm({ ...form, currentMileage: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Current Hours"><input type="number" min="0" step="0.1" value={form.currentHours} onChange={(event) => setForm({ ...form, currentHours: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Status"><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as FleetStatus })} className={inputClass}>{STATUSES.map((status) => <option key={status}>{status}</option>)}</select></Field>
+                    <Field label="Open Issues"><input type="number" min="0" value={form.openIssueCount} onChange={(event) => setForm({ ...form, openIssueCount: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Inspection Due"><input type="date" value={form.inspectionDueDate} onChange={(event) => setForm({ ...form, inspectionDueDate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Registration Expires"><input type="date" value={form.registrationExpirationDate} onChange={(event) => setForm({ ...form, registrationExpirationDate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Insurance Expires"><input type="date" value={form.insuranceExpirationDate} onChange={(event) => setForm({ ...form, insuranceExpirationDate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="In Service Date"><input type="date" value={form.inServiceDate} onChange={(event) => setForm({ ...form, inServiceDate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Last Service"><input type="date" value={form.lastServiceDate} onChange={(event) => setForm({ ...form, lastServiceDate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Last Service Mileage"><input type="number" min="0" value={form.lastServiceMileage} onChange={(event) => setForm({ ...form, lastServiceMileage: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Last Service Hours"><input type="number" min="0" step="0.1" value={form.lastServiceHours} onChange={(event) => setForm({ ...form, lastServiceHours: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Next Service Date"><input type="date" value={form.nextServiceDate} onChange={(event) => setForm({ ...form, nextServiceDate: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Next Service Mileage"><input type="number" min="0" value={form.nextServiceMileage} onChange={(event) => setForm({ ...form, nextServiceMileage: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Next Service Hours"><input type="number" min="0" step="0.1" value={form.nextServiceHours} onChange={(event) => setForm({ ...form, nextServiceHours: event.target.value })} className={inputClass} /></Field>
+                    <Field label="Operational Comments" span><textarea value={form.comments} onChange={(event) => setForm({ ...form, comments: event.target.value })} className={`${inputClass} min-h-20 resize-y`} /></Field>
+                    <Field label="Notes" span><textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className={`${inputClass} min-h-24 resize-y`} /></Field>
+                    {editingVehicleId ? <Field label="Reason for Change" span><textarea required value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className={`${inputClass} min-h-20 resize-y`} placeholder="Explain why these vehicle details are changing." /></Field> : null}
+                  </div>
+                  <div className="flex justify-end gap-2 border-t border-slate-800 px-5 py-4">
+                    <button type="button" onClick={() => closeForm()} disabled={saving} className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white disabled:opacity-50">Cancel</button>
+                    <button type="button" onClick={() => void saveVehicle()} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50">
+                      {saving ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                      {editingVehicleId ? "Save Changes" : "Save Vehicle"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </TracePointShell>
+      );
+    }
+    
+    export default function FleetManagementPage() {
+      return (
+        <Suspense
+          fallback={(
+            <TracePointShell activePage="Fleet Management">
+              <div className="flex h-72 items-center justify-center">
+                <RefreshCw className="animate-spin text-blue-300" />
+              </div>
+            </TracePointShell>
+          )}
+        >
+          <FleetManagementContent />
+        </Suspense>
+      );
+    }
+    
+  operator: 'doesNotMatch'
+  stack: |-
+    TestContext.<anonymous> (/home/user/tracepoint-b2/src/app/fleet-management/safety-hold-contract.test.ts:17:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 390.812289

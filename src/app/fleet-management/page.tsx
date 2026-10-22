@@ -19,6 +19,7 @@ import {
 
 import TracePointShell from "@/app/components/TracePointShell";
 import { formatDate } from "@/lib/format/date";
+import { statusChangeMessage } from "@/lib/fleet/status-change";
 import CollapsibleTableGroupHeader from "@/app/components/CollapsibleTableGroupHeader";
 import TracePointQrLabel from "@/app/components/TracePointQrLabel";
 import {
@@ -322,6 +323,7 @@ function FleetManagementContent() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [messageWarning, setMessageWarning] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
@@ -550,7 +552,11 @@ function FleetManagementContent() {
         body: JSON.stringify({ id: vehicle.id, status, reason }),
       });
       if (!response.ok) throw new Error(await responseError(response));
-      setMessage(`Unit ${vehicle.unit_number} status updated and audited.`);
+      const payload = (await response.json().catch(() => ({}))) as { item?: { status?: string } };
+      // UX-RB2-4 (D-15): report the status the server applied, not the one requested.
+      const outcome = statusChangeMessage(vehicle.unit_number, status, payload.item?.status);
+      setMessage(outcome.message);
+      setMessageWarning(outcome.tone === "warning");
       await loadFleet();
     } catch (saveError) {
       setError(
@@ -610,7 +616,7 @@ function FleetManagementContent() {
           </div>
         ) : null}
         {message ? (
-          <div className="rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200">
+          <div role="status" className={messageWarning ? "rounded-2xl border border-amber-600 bg-amber-950/30 p-4 text-sm text-amber-100" : "rounded-2xl border border-emerald-700 bg-emerald-950/30 p-4 text-sm text-emerald-200"}>
             {message}
           </div>
         ) : null}
