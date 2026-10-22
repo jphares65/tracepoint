@@ -24,7 +24,7 @@ export type SubmittedChecklistItem = Omit<FormChecklistItem, "status"> & {
   status: ChecklistStatus;
 };
 
-export function notInspected<T extends { status?: unknown }>(items: T[]) {
+export function notInspected<T extends { status?: unknown }>(items: T[]): Array<Omit<T, "status"> & { status: ChecklistStatus | null }> {
   return items.map((item) => ({ ...item, status: null }));
 }
 
