@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
 import { pendingUserCreateInput } from "./cognito-pending-user-core.ts";
 
@@ -12,8 +11,9 @@ import { pendingUserCreateInput } from "./cognito-pending-user-core.ts";
 // directory runs in a child process under the react-server condition against a
 // mocked Cognito client that applies Cognito's documented state rules.
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
-const directoryModule = fileURLToPath(new URL("./cognito-admin.ts", import.meta.url));
-const coreModule = fileURLToPath(new URL("./cognito-admin-core.ts", import.meta.url));
+// file:// URLs, not paths: import() of a Windows absolute path (C:\...) is refused.
+const directoryModule = new URL("./cognito-admin.ts", import.meta.url).href;
+const coreModule = new URL("./cognito-admin-core.ts", import.meta.url).href;
 
 const child = String.raw`(async()=>{
 const {AwsCognitoAdminDirectory}=(await import(process.env.DIRECTORY_MODULE)).default??await import(process.env.DIRECTORY_MODULE);
