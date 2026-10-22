@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
       for (const [name, rpcArgs] of [
         ["update_department_member", member],
         ["set_department_member_roles", { p_department_id: departmentId, p_user_id: save.p_user_id, p_role_codes }],
-        ["set_department_group_members", { p_department_id: departmentId, p_user_id: save.p_user_id, p_group_ids }],
+        // E-02: no group list means the member's groups stay as they are.
+        ...(p_group_ids === null ? [] : [["set_department_group_members", { p_department_id: departmentId, p_user_id: save.p_user_id, p_group_ids }] as const]),
       ] as const) {
         const result = await access.context.db.rpc(name, rpcArgs);
         if (result.error) return NextResponse.json(safeError(result.error), { status: 400 });
