@@ -19,6 +19,7 @@ import {
   submittedVehicleChecklist,
   vehicleSubmitBlockers,
 } from "@/lib/fleet/inspection-form";
+import { inspectionOutcome, type InspectionOutcome } from "@/lib/fleet/inspection-outcome";
 
 const DEFAULT_ITEMS = [
   ["body", "Body, windshield and mirrors"],
@@ -147,6 +148,8 @@ export default function QuickInspectionPanel({
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<InspectionOutcome["tone"]>("success");
+  const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
   const [previewRecords, setPreviewRecords] = useState<any[]>([]);
 
@@ -206,6 +209,7 @@ export default function QuickInspectionPanel({
     setSaving(true);
     setError("");
     setMessage("");
+    setWarning("");
 
     try {
       const result = items.some((item) => item.condition === "Critical")
@@ -230,6 +234,7 @@ export default function QuickInspectionPanel({
           ...current,
         ]);
 
+        setMessageTone("success");
         setMessage(
           exceptionCount
             ? "Preview inspection completed. Defects would create mechanic work and update readiness."
@@ -258,15 +263,13 @@ export default function QuickInspectionPanel({
 
       const payload = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(payload.error || "Inspection could not be submitted.");
-      }
+      // UX-RB-3: report what the server did, including a saved inspection whose later step failed.
+      const outcome = inspectionOutcome(response.ok, payload);
+      if (!outcome.saved) throw new Error(outcome.message);
 
-      setMessage(
-        payload.workOrder
-          ? "Inspection saved. Defects were routed to the mechanic."
-          : "Inspection saved. Vehicle remains ready.",
-      );
+      setMessageTone(outcome.tone);
+      setMessage(outcome.message);
+      setWarning(outcome.warning ?? "");
 
       setActive(false);
       reset();
@@ -302,8 +305,18 @@ export default function QuickInspectionPanel({
         </div>
 
         {message ? (
-          <div className="mt-4 rounded-xl border border-emerald-700 bg-emerald-950/30 p-3 text-xs text-emerald-200">
+          <div
+            role={messageTone === "danger" ? "alert" : "status"}
+            className={`mt-4 rounded-xl border p-3 text-xs ${
+              messageTone === "danger"
+                ? "border-red-700 bg-red-950/30 text-red-200"
+                : messageTone === "warning"
+                  ? "border-amber-700 bg-amber-950/30 text-amber-200"
+                  : "border-emerald-700 bg-emerald-950/30 text-emerald-200"
+            }`}
+          >
             {message}
+            {warning ? <p className="mt-2 font-semibold text-amber-200">{warning}</p> : null}
           </div>
         ) : null}
 
