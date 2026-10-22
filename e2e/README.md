@@ -4,7 +4,7 @@ These tests sign in to **staging** through the real Cognito managed login (passw
 
 ## Safety rules (enforced in code)
 
-- **Never production.** `support/env.ts` refuses `tracepointhq.com` and `www.tracepointhq.com`. The default target is `https://staging.tracepointhq.com`.
+- **Approved staging origins only.** `support/env.ts` accepts only the origins in `APPROVED_STAGING_ORIGINS` (today `https://staging.tracepointhq.com`). Production and any other host are refused, and adding an origin is a reviewed code change, not an environment setting.
 - **Synthetic agency only.** After every sign-in, `/api/access` must return exactly `TRACEPOINT_E2E_DEPARTMENT_ID` and `TRACEPOINT_E2E_DEPARTMENT_NAME`, and must not be in support mode. Otherwise the run aborts before anything is created.
 - **No authentication shortcuts.** There is no test-only login route, no token injection and no relaxed MFA. Sessions come from the normal sign-in.
 - **Records are labelled.** Everything the tests create is named `E2E <run id>` (firearms, range days, vehicles, storage locations).
@@ -28,7 +28,7 @@ Create one Cognito user per role in the synthetic staging agency, each with a TO
 Provide credentials as environment variables only, never in files. In CI, store them as secrets of a protected GitHub Environment (for example `staging-e2e`, with required reviewers).
 
 ```
-TRACEPOINT_E2E_BASE_URL=https://staging.tracepointhq.com          # optional; production is refused
+TRACEPOINT_E2E_BASE_URL=https://staging.tracepointhq.com          # optional; must be an approved staging origin
 TRACEPOINT_E2E_DEPARTMENT_ID=<synthetic agency uuid>
 TRACEPOINT_E2E_DEPARTMENT_NAME=<synthetic agency name>
 TRACEPOINT_E2E_<ROLE>_EMAIL=...

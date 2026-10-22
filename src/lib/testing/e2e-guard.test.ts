@@ -9,11 +9,19 @@ function withEnv(values: Record<string, string | undefined>, run: () => void) {
   try { run(); } finally { Object.entries(saved).forEach(([key, value]) => (value === undefined ? delete process.env[key] : (process.env[key] = value))); }
 }
 
-test("the staging end-to-end suite refuses production hosts", () => {
-  for (const host of ["https://tracepointhq.com", "https://www.tracepointhq.com/", "https://TRACEPOINTHQ.com"]) {
-    withEnv({ TRACEPOINT_E2E_BASE_URL: host }, () => assert.throws(() => baseUrl(), /Refusing to run end-to-end tests against production/));
+test("the staging end-to-end suite accepts only approved staging origins", () => {
+  const refused = [
+    "https://tracepointhq.com", "https://www.tracepointhq.com/", "https://TRACEPOINTHQ.com",
+    "http://staging.tracepointhq.com", "https://staging.tracepointhq.com.evil.example", "https://evil.example",
+    "https://staging.tracepointhq.com:8443", "https://user@staging.tracepointhq.com", "https://staging.tracepointhq.com/login",
+    "http://localhost:3000", "not a url",
+  ];
+  for (const value of refused) {
+    withEnv({ TRACEPOINT_E2E_BASE_URL: value }, () => assert.throws(() => baseUrl(), /Refusing to run|must be a bare origin/, value));
   }
-  withEnv({ TRACEPOINT_E2E_BASE_URL: undefined }, () => assert.equal(baseUrl(), "https://staging.tracepointhq.com"));
+  for (const value of [undefined, "https://staging.tracepointhq.com", "https://STAGING.tracepointhq.com/"]) {
+    withEnv({ TRACEPOINT_E2E_BASE_URL: value }, () => assert.equal(baseUrl(), "https://staging.tracepointhq.com"));
+  }
 });
 
 test("the suite needs an explicit synthetic agency and complete credentials", () => {

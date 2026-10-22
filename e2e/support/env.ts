@@ -12,16 +12,25 @@ const ENV_ROLE: Record<Role, string> = {
   fleetManager: "FLEET_MANAGER",
 };
 
-// The production hosts are refused outright: these tests create records.
-const FORBIDDEN_HOSTS = new Set(["tracepointhq.com", "www.tracepointhq.com"]);
+// Only explicitly approved staging origins are accepted. Adding one is a
+// reviewed code change; an environment variable can choose among these but
+// can never add a host. Production is therefore never reachable from here.
+export const APPROVED_STAGING_ORIGINS = ["https://staging.tracepointhq.com"] as const;
 
 export function baseUrl() {
-  const value = process.env.TRACEPOINT_E2E_BASE_URL || "https://staging.tracepointhq.com";
-  const host = new URL(value).hostname.toLowerCase();
-  if (FORBIDDEN_HOSTS.has(host)) {
-    throw new Error(`Refusing to run end-to-end tests against production (${host}).`);
+  const requested = process.env.TRACEPOINT_E2E_BASE_URL || APPROVED_STAGING_ORIGINS[0];
+  let origin: string;
+  try {
+    const url = new URL(requested);
+    if (url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) throw new Error();
+    origin = url.origin.toLowerCase();
+  } catch {
+    throw new Error(`TRACEPOINT_E2E_BASE_URL must be a bare origin such as ${APPROVED_STAGING_ORIGINS[0]}.`);
   }
-  return value.replace(/\/$/, "");
+  if (!(APPROVED_STAGING_ORIGINS as readonly string[]).includes(origin)) {
+    throw new Error(`Refusing to run end-to-end tests against ${origin}: not an approved staging origin (${APPROVED_STAGING_ORIGINS.join(", ")}).`);
+  }
+  return origin;
 }
 
 export function syntheticAgency() {
