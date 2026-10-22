@@ -1,0 +1,4281 @@
+{
+  "requirements": [
+    {
+      "id": "MOD-FLT-001",
+      "title": "Honest QR copy: labels need the TracePoint app",
+      "module": "fleet",
+      "screen": "/fleet-management (View QR), TracePointQrLabel, Help > Fleet article",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-49"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F15"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-04"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4 copy pass"
+        }
+      ],
+      "requirement": "The QR modal, printed label and Help article state plainly that a printed label opens only in the TracePoint mobile app, instead of 'Scan with a mobile device to open this vehicle'. 'Copy Link' no longer implies a usable web link.",
+      "acceptance": [
+        "Component test: the viewOnly and full QR modals render text naming the TracePoint app (e.g. 'Scan with the TracePoint mobile app') and no longer render 'Scan with a mobile device to open this vehicle'.",
+        "'Copy Link' is renamed (e.g. 'Copy app code') or copies an HTTPS URL if MOD-FLT-002 adopts one.",
+        "The Help 'Manage fleet vehicles' article mentions QR scanning and that it needs the app.",
+        "QR payload produced by buildTracePointQrValue is unchanged unless MOD-FLT-002 is decided."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "D-49 (Help said 'Coming soon') was fixed in the RC; only the missing QR/app mention remains. Web copy only; the scan path itself is owned by FLT-04/ARM-01."
+    },
+    {
+      "id": "MOD-FLT-002",
+      "title": "Decide and build a web/HTTPS fallback for QR labels",
+      "module": "fleet",
+      "screen": "QR labels (vehicle and equipment), qr-identifiers, /api/mobile/qr/resolve",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-04"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §8 item 10"
+        }
+      ],
+      "requirement": "Agencies without the native app can open a printed vehicle or equipment label: labels (or a second QR) carry an HTTPS deep link that lands on the vehicle inspection / equipment record after sign-in, and the resolver accepts the HTTPS form.",
+      "acceptance": [
+        "Owner decision recorded on the URL scheme and the native-client contract before implementation.",
+        "Unit test: parseTracePointQrValue round-trips the HTTPS form as well as tracepoint:// labels already printed.",
+        "Scanning an HTTPS label with a stock phone camera opens the record after sign-in (deep link preserved through login).",
+        "Uniform not-found response for absent and unauthorized items is preserved (B5/F4 behaviour)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: whether QR labels should support web-only users (HTTPS form) or remain native-only with honest web copy (remediation plan §8 item 10, D-01/FLT-04)."
+    },
+    {
+      "id": "MOD-FLT-003",
+      "title": "QR resolver accepts printed labels, unit numbers and serials",
+      "module": "fleet",
+      "screen": "/api/mobile/qr/resolve, /api/equipment/custody",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-04"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-02"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-01"
+        }
+      ],
+      "requirement": "The QR resolver and custody lookup resolve the printed tracepoint://kind/id value, bare UUIDs, unit numbers, asset numbers and serials without 400/500, and vehicle scans are not denied by a nonexistent feature flag.",
+      "acceptance": [
+        "Unit number, asset number, serial and the printed label all resolve (staging step S4).",
+        "A non-UUID identifier on PostgreSQL never returns 500.",
+        "A non-member gets the same response for absent and denied items."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "df849ed9bdd12f1a016af9b0a30f46842432bb64",
+          "dbab1166623597060f75e9e8fc5141add86d7ef5",
+          "c57b6799c4bffbd0cd33900b87c0417236660512",
+          "2edaba653ff2bf4e821fa159aadce295566c9b29"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batches B5 (QR resolve), F5 (NEW-F5-A vehicle scans denied), F6b (QR decisions) and F4 (disclosure), merged into the integration branch. Not validated on staging. Shared with Armory ARM-01 / NEW-ARM-B. Web scan path remains absent (MOD-FLT-002)."
+    },
+    {
+      "id": "MOD-FLT-004",
+      "title": "Fleet managers can print vehicle QR labels from the vehicle record",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] header; /fleet-management row View QR",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F15"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-10"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-04"
+        }
+      ],
+      "requirement": "Users who can manage fleet get the full QR label (Print and Download PNG) on the vehicle record header; other users keep the view-only label.",
+      "acceptance": [
+        "Component test: a manager sees Print/Download on the vehicle record; a non-manager sees the view-only label.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b).",
+        "The QR payload and the label print layout are unchanged."
+      ],
+      "dependencies": [
+        "MOD-FLT-001"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-005",
+      "title": "Vehicle inspection items start 'Not inspected' with explicit 'Mark remaining as Pass'",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections (QuickInspectionPanel)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-04"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-10"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-2"
+        },
+        {
+          "doc": "UX",
+          "ref": "CR-6"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3A"
+        }
+      ],
+      "requirement": "Every vehicle checklist item starts unanswered ('Not inspected'); only a condition an equipment record already shows is carried in. An explicit 'Mark remaining N as Pass' fills only unanswered, non-critical items, and an unanswered item is never sent. The 'Mark only what changed' / 'Ready for one-tap submission' copy is gone.",
+      "acceptance": [
+        "Every checklist item starts unanswered; nothing is pre-set to Pass, and Submit stays disabled and lists what is missing until required items are answered (blueprint §1b).",
+        "'Mark remaining as Pass' never covers the vehicle's critical items; they must be answered individually (blueprint §1b).",
+        "fleet/inspection-form.test.ts and InspectionChoiceControl.test.tsx pass; staging step S27 shows checks start Not inspected.",
+        "No unanswered item appears in the POST payload."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB-2 (owner decision 2026-10-22: checklists default to 'Not inspected' with an optional explicit 'Mark remaining as Pass'). Not merged into ec027f50; not deployed or validated on staging. Verify that critical items are excluded from 'Mark remaining' per §1b when the Checklist component (MOD-FLT-012) is built."
+    },
+    {
+      "id": "MOD-FLT-006",
+      "title": "Inspection API refuses items without an explicit condition",
+      "module": "fleet",
+      "screen": "POST /api/fleet/vehicles/[vehicleId]/inspections (and /api/mobile re-export)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "REM",
+          "ref": "UX-RB-2"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-04"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-10"
+        }
+      ],
+      "requirement": "The inspection route no longer records an item with a missing or unknown condition as Pass; it returns 400 instead, so neither web nor native clients can create a pre-passed record.",
+      "acceptance": [
+        "Route test: a checklist item without Pass/Defect/Critical is refused with 400 and nothing is written.",
+        "Native contract row (proposed C33) added and the native client confirmed compatible before release."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: UX-RB flagged the server-side default Pass but did not change it because /api/mobile re-exports the route; returning 400 needs an owner decision and contract row C33."
+    },
+    {
+      "id": "MOD-FLT-007",
+      "title": "Inspection odometer starts empty with a 'Last: N' hint",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections (QuickInspectionPanel)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-51"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-10"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U4"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        }
+      ],
+      "requirement": "The inspection mileage and hours fields start empty and show the last known reading as a hint, so a stale value is not stored as the reading; entry is required (or an unchanged value is warned about) per the agency decision.",
+      "acceptance": [
+        "Component test: the mileage field starts empty and shows 'Last: N'.",
+        "Submit requires a reading (or warns when it equals the last value), per the decision.",
+        "Route test: the stored inspection mileage equals the submitted value."
+      ],
+      "dependencies": [
+        "MOD-FLT-005"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: FLT-10 balance (require fresh odometer entry vs warn), decided together with the checklist default."
+    },
+    {
+      "id": "MOD-FLT-008",
+      "title": "Record inspection elapsed time and device; flag very fast inspections",
+      "module": "fleet",
+      "screen": "Inspection API and inspection history",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-10"
+        }
+      ],
+      "requirement": "Inspections record elapsed time and device, and inspections completed in under an agency-set threshold are flagged for review.",
+      "acceptance": [
+        "Route test: elapsed time and device are stored with the inspection.",
+        "An inspection under the threshold is flagged in history; the flag never blocks the save."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: FLT-10 is 'Enhancement – defer'; agency policy decides whether and how fast inspections are flagged."
+    },
+    {
+      "id": "MOD-FLT-009",
+      "title": "Inspection outcome message reflects real readiness, hold and audit status",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections submit",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-58"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-59"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-3"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-3"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F7"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-08"
+        }
+      ],
+      "requirement": "After submit, the message is built from the server's readiness status, safetyHold, work order and audit result: a held or Out of Service vehicle is reported as 'Out of Service. Do not use it.' with the hold reason; unknown readiness never claims ready; audit pending/unrecorded is shown as a warning; a 500 that carries the inspection closes the form and says not to resubmit.",
+      "acceptance": [
+        "fleet/inspection-outcome.test.ts covers held without work order, open critical work order, attention, available, audit pending/unrecorded, 500 with inspection, and missing readiness.",
+        "Staging step S27: with 'defect creates work order' off, a critical defect shows 'Out of Service. Do not use it.' and the vehicle is Out of Service.",
+        "Saved / not saved status is shown only from the server response, never optimistically (blueprint §1b)."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB-3 on claude/fix-uxrb-release-safety; not merged into ec027f50, not deployed or validated."
+    },
+    {
+      "id": "MOD-FLT-010",
+      "title": "Inspection, work order and status writes are atomic; audit failure never hides a defect",
+      "module": "fleet",
+      "screen": "POST /api/fleet/vehicles/[vehicleId]/inspections",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-08"
+        }
+      ],
+      "requirement": "A failed work-order insert can no longer silently drop a critical defect: the inspection, work order and status refresh succeed or fail together (audit delivered through the outbox), and a critical inspection whose work order failed holds the vehicle Out of Service.",
+      "acceptance": [
+        "Fleet handler tests: a failed work order rolls back or holds the vehicle; the audit outbox delivers the inspection audit (fleet-audit-outbox-native tests).",
+        "Response includes readiness and audit status consumed by MOD-FLT-009."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "f43dc42c8c591653010d16a0ac357066ff5104af",
+          "96e86b393ab0dde26650dfd338e2c9ed26d81658",
+          "51d6e0e1bebfa74edbacb54d66515e6700d41698"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B4 (fleet integrity, audit outbox 043) with F3/F6a safety hold (046). Owner to confirm B4 outbox deviations 1–4. Not validated on staging."
+    },
+    {
+      "id": "MOD-FLT-011",
+      "title": "Idempotency key for inspection and evidence submissions (offline replay safe)",
+      "module": "fleet",
+      "screen": "Inspection and evidence APIs (web and /api/mobile)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-08"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-17"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-03"
+        }
+      ],
+      "requirement": "Inspection and inspection-evidence POSTs accept a client operation/idempotency key so a resubmission or offline replay cannot create duplicate inspections or work orders.",
+      "acceptance": [
+        "Route test: two POSTs with the same key create one inspection and one work order.",
+        "Native contract row added; requests without a key behave as today."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "FLT-17 offline queueing/draft persistence belongs to the native client (status 'Verify'); this requirement covers the confirmed server gap. Web draft persistence is optional and not separately required."
+    },
+    {
+      "id": "MOD-FLT-012",
+      "title": "Field-grade vehicle Checklist (44px segmented control, sticky result and Submit)",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections (phone-first)",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-07"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-53"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U1"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-16"
+        },
+        {
+          "doc": "BP",
+          "ref": "#9"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3A"
+        },
+        {
+          "doc": "WR",
+          "ref": "Field-grade inspection flow"
+        },
+        {
+          "doc": "WR",
+          "ref": "Phone & tablet workflows"
+        },
+        {
+          "doc": "VR",
+          "ref": "Inspection checklist as a compact table"
+        }
+      ],
+      "requirement": "The vehicle inspection uses the shared Checklist: Pass / Defect / N/A as ≥44px segments with no default, a note and 'Can it be driven?' only on a defect, a progress count, and a sticky footer showing the result and its status effect ('goes out of service') with Submit as the only primary action. Text is never under 12px.",
+      "acceptance": [
+        "Every checklist item starts unanswered; nothing is pre-set to Pass, and Submit stays disabled and lists what is missing until required items are answered (blueprint §1b).",
+        "Safety-critical items cannot be bulk-filled; the result and status effect are shown before Submit (blueprint §1b).",
+        "At 375px, every condition target is ≥44×44px and no inspection text is under 12px (axe + measurement).",
+        "Same inspection payload as UX-RB-2 (network-log comparison); Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "MOD-FLT-005",
+        "design-system: SegmentedControl / Checklist (BP #9)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blueprint §4 lists the checklist redesign for R2 'built on UX-RB-2 behaviour'; §5 places it in Stage 3. Must not fork UX-RB-2."
+    },
+    {
+      "id": "MOD-FLT-013",
+      "title": "Quick Inspect opens the form directly; vehicle tabs honour ?tab=",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId]",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-06"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-11"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3A"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements (inspect assigned vehicle)"
+        },
+        {
+          "doc": "WR",
+          "ref": "Fleet Management"
+        }
+      ],
+      "requirement": "One 'Inspect vehicle' action opens the checklist directly (no second 'Start Inspection'), and the vehicle record reads ?tab= (and an inspect flag) so alert links such as ?tab=maintenance land on the right tab; inventory filters move to a separate parameter so the back link still works.",
+      "acceptance": [
+        "Component test: /fleet-management/<id>?tab=maintenance opens Maintenance; ?tab=inspections&start=1 opens the form.",
+        "Fleet notification links (fleet-notifications.ts) land on their tab.",
+        "Old URLs keep working; the back link returns to the filtered list."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-014",
+      "title": "Vehicle GET returns canInspect / canReportIssue",
+      "module": "fleet",
+      "screen": "GET /api/fleet/vehicles/[vehicleId] (and /api/mobile re-export)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-11"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-R1"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-14"
+        }
+      ],
+      "requirement": "The vehicle GET returns canInspect from canSubmitFleetInspection and the equivalent issue-reporting eligibility, so clients can tell a user before they fill a form that the server will refuse it.",
+      "acceptance": [
+        "Route test: an unlisted view_fleet user gets canInspect=false; an eligible user gets true.",
+        "Native contract row added before implementation (field is additive on a re-exported route).",
+        "The server still enforces eligibility on POST (no change)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB §5: 'D-R1 adds a field to a route the native app re-exports, so it needs a contract row before implementation.'"
+    },
+    {
+      "id": "MOD-FLT-015",
+      "title": "Hide or disable Inspect and Report Issue for ineligible users",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] header",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-11"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-R1"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB §5"
+        }
+      ],
+      "requirement": "Inspect and Report Issue are hidden or disabled with an explanation when the vehicle payload says the user is not eligible, so nobody completes a whole checklist only to get 403.",
+      "acceptance": [
+        "Component test: canInspect=false disables Inspect with a reason; true shows it.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-FLT-014"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on the backend field (MOD-FLT-014) and its native contract row."
+    },
+    {
+      "id": "MOD-FLT-016",
+      "title": "Web photo capture for inspection defects and issue reports",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections and Report Issue",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-05"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-10"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3A"
+        },
+        {
+          "doc": "WR",
+          "ref": "Shorter issue reporting"
+        }
+      ],
+      "requirement": "Web users can add a photo to a defect and to an issue report (camera capture on phones), uploaded to the existing evidence route after the inspection is created, and it appears in History.",
+      "acceptance": [
+        "Component and route test: an upload posts to the existing evidence route and appears in History.",
+        "Upload failure is shown in place; the saved inspection is not resubmitted.",
+        "Uses the shared EvidenceCapture pattern (QuickQualificationCamera)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA classifies FLT-03 as 'Defer (missing capability)'; remediation plan puts web evidence in Phase 2. Native capture requires runtime verification."
+    },
+    {
+      "id": "MOD-FLT-017",
+      "title": "Evidence API validates checklist item and supports a mandatory-photo rule",
+      "module": "fleet",
+      "screen": "POST .../inspections/[inspectionId]/evidence",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-03"
+        }
+      ],
+      "requirement": "The evidence route rejects a checklistItemId that is not on the inspection, writes its audit atomically with the upload, and supports a configurable rule requiring a photo for Damage and Critical defects.",
+      "acceptance": [
+        "Route test: an unknown checklist item returns 400 (T9 no longer reproduces).",
+        "With the rule on, a Critical defect without a photo is reported as incomplete per the decided behaviour."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: whether a photo becomes mandatory for Critical/Damage defects (FLT-03 correction says configurable)."
+    },
+    {
+      "id": "MOD-FLT-018",
+      "title": "Evidence thumbnails open a viewer instead of downloading",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections History",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-52"
+        }
+      ],
+      "requirement": "Tapping an evidence card opens it in a viewer (lightbox via viewUrl) rather than downloading the file.",
+      "acceptance": [
+        "Component test: tapping a thumbnail opens a viewer; download remains available as a secondary action."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-019",
+      "title": "Inspection history shows failed items and defect notes",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Inspections History",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-12"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U5"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-10"
+        }
+      ],
+      "requirement": "Each inspection in History expands its non-Pass items with label, condition and note.",
+      "acceptance": [
+        "Component test: an inspection with a Critical item renders the item label and its note."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-020",
+      "title": "Vehicle list returns safety hold, last inspection result and open work",
+      "module": "fleet",
+      "screen": "GET /api/fleet/vehicles",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-13"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-60"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-23"
+        }
+      ],
+      "requirement": "The fleet list response includes each vehicle's safety-hold state, last inspection result and date, and open work-order count, so the list can be filtered without per-vehicle requests.",
+      "acceptance": [
+        "Route test: a held vehicle's list row carries safetyHold; a vehicle whose last inspection failed carries that result.",
+        "Response stays additive; existing fields unchanged."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-021",
+      "title": "Fleet manager triage: Safety hold / Failed inspection / Open work filters and badges",
+      "module": "fleet",
+      "screen": "/fleet-management (list)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-13"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-60"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U5"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-23"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3B"
+        }
+      ],
+      "requirement": "The fleet list shows a Safety hold badge on held vehicles and offers 'Safety hold', 'Last inspection failed' and 'Open work' filters (URL-synced), with KPI numbers linking to the filtered list.",
+      "acceptance": [
+        "Component test: a held vehicle shows the hold badge in its row/card; the Safety hold filter lists only held vehicles.",
+        "Filters are in the URL and survive reload."
+      ],
+      "dependencies": [
+        "MOD-FLT-020"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on the list API fields (MOD-FLT-020)."
+    },
+    {
+      "id": "MOD-FLT-022",
+      "title": "Safety hold visible on the vehicle header; status buttons disabled while held",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] header and Overview > Manage Status",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-60"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-10"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB §5"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §2 (D-60 + D-15)"
+        }
+      ],
+      "requirement": "A held vehicle shows a 'Safety hold' chip in the record header with source and since-date. While held, Available and Attention are disabled with 'Clear the safety hold first', so a manager is never told 'Saved' for a status that did not change.",
+      "acceptance": [
+        "Component test: with safetyHold present, the header shows the hold and Available/Attention are disabled with the explanation.",
+        "Clearing the hold still requires the existing reason and writes the same audit entry; Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Listed by UX-RB §5 as a 'before production promotion' item not yet done."
+    },
+    {
+      "id": "MOD-FLT-023",
+      "title": "Server refuses a status change that a safety hold would override",
+      "module": "fleet",
+      "screen": "PATCH /api/fleet/vehicles/[vehicleId] and list PATCH",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-60"
+        }
+      ],
+      "requirement": "A PATCH to Available or Attention on a held vehicle returns 409 and does not set status_override_active, instead of 200 with the status silently re-escalated.",
+      "acceptance": [
+        "Route test: PATCH status=Available on a held vehicle returns 409 and leaves the override flag unchanged."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-024",
+      "title": "Manual override semantics after a safety hold is released",
+      "module": "fleet",
+      "screen": "refreshFleetVehicle / clearSafetyHold",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-R2"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §8 item 12"
+        }
+      ],
+      "requirement": "Once a hold is released by a clean inspection or a clearance, the vehicle's status follows the decided override semantics instead of staying Out of Service indefinitely because an override flag was left active.",
+      "acceptance": [
+        "Staging step S12 runtime check performed first.",
+        "Route test (held, override, clean inspection) gives the decided status."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: whether a safety hold should clear a manual status override (remediation plan §8 item 12). Fails safe today."
+    },
+    {
+      "id": "MOD-FLT-025",
+      "title": "List status is read-only; status changes go through the record",
+      "module": "fleet",
+      "screen": "/fleet-management (list)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-15"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §2 (D-60 + D-15)"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3B"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        }
+      ],
+      "requirement": "The inline status <select> and prompt are removed from list rows; the row shows a status chip and status changes happen through 'Change status…' on the record.",
+      "acceptance": [
+        "Component test: the list has no status <select>.",
+        "Status changes still require a reason and write the same audit; Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blueprint §4 keeps the status change flow unchanged in R1; this lands with the StatusChangeSheet (Stage 3)."
+    },
+    {
+      "id": "MOD-FLT-026",
+      "title": "StatusChangeSheet / ReasonDialog replaces native prompts (status, hold clearance, mileage correction)",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Manage Status; Clear Safety Hold; vehicle form mileage correction",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-35"
+        },
+        {
+          "doc": "UX",
+          "ref": "consolidation 2 (ReasonDialog)"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-16"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3B"
+        },
+        {
+          "doc": "VR",
+          "ref": "Vehicle record"
+        },
+        {
+          "doc": "VR",
+          "ref": "A9 Unfinished seams"
+        },
+        {
+          "doc": "WR",
+          "ref": "Fleet Management (Manage Status pills)"
+        }
+      ],
+      "requirement": "Vehicle status changes and Clear Safety Hold open a sheet with a required reason, a before → after summary, an audit notice and a submit button naming the effect; one-tap coloured status pills and window.prompt are removed. Cancelling or an empty reason shows a message instead of silently aborting.",
+      "acceptance": [
+        "Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b).",
+        "Destructive or broad-impact actions use a ConfirmDialog naming the record and impact; accountable state changes use a sheet with a required reason and an audit notice, with no extra 'Are you sure?' (blueprint §1b).",
+        "No window.prompt remains in the fleet pages (grep).",
+        "Same PATCH endpoints and payloads (reason included) as the baseline; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "design-system: Sheet / ReasonDialog (BP #11)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-027",
+      "title": "Vehicle add/edit modal: in-modal errors, in-modal correction reason, sectioned form",
+      "module": "fleet",
+      "screen": "/fleet-management Add/Edit Vehicle modal",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-08"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-57"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F2"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-02"
+        }
+      ],
+      "requirement": "Validation and save errors render inside the vehicle modal footer; lowering mileage shows an in-modal 'correction reason' field beside Save instead of a window.prompt; the ~26 fields are grouped into sections with a sticky footer.",
+      "acceptance": [
+        "Component test: a 400 from PATCH renders inside the modal.",
+        "Lowering mileage shows the required reason field; cancelling shows a message, never a silent abort.",
+        "The footer stays visible while scrolling.",
+        "Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b)."
+      ],
+      "dependencies": [
+        "design-system: Dialog with error slot (WP-1)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-028",
+      "title": "Fleet dialogs: Escape, focus trap, initial focus",
+      "module": "fleet",
+      "screen": "FleetWorkOrderDialog, FleetEquipmentDialog, vehicle modal, QR modal",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-38"
+        }
+      ],
+      "requirement": "All fleet dialogs close on Escape, trap focus, set initial focus and return focus to the trigger.",
+      "acceptance": [
+        "Component and axe test per dialog: Esc closes, focus is trapped and returns to the trigger; no new axe violations."
+      ],
+      "dependencies": [
+        "design-system: Dialog (BP shared components)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-029",
+      "title": "Remove the editable 'Open Issues' field",
+      "module": "fleet",
+      "screen": "/fleet-management Add/Edit Vehicle modal",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-14"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-19"
+        }
+      ],
+      "requirement": "The vehicle form no longer offers an editable Open Issues count; the count is shown read-only from the server.",
+      "acceptance": [
+        "Component test: the field is absent from the form; the list still shows the computed count."
+      ],
+      "dependencies": [
+        "MOD-FLT-030"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-030",
+      "title": "Server ignores client openIssueCount on vehicle create and edit",
+      "module": "fleet",
+      "screen": "POST/PATCH /api/fleet/vehicles",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-14"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-19"
+        }
+      ],
+      "requirement": "Vehicle POST and PATCH ignore openIssueCount; the count is always derived from open work orders, including on create.",
+      "acceptance": [
+        "Route test: POST with openIssueCount: 5 stores 0 (or the real count); PATCH cannot change it."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B4 fixed FLT-19 only partially ('field remains'); register-D shows a typed count still persists on create (api/fleet/vehicles/route.ts:188)."
+    },
+    {
+      "id": "MOD-FLT-031",
+      "title": "Consolidate the two vehicle PATCH endpoints",
+      "module": "fleet",
+      "screen": "PATCH /api/fleet/vehicles and /api/fleet/vehicles/[vehicleId]",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-20"
+        }
+      ],
+      "requirement": "Both vehicle PATCH paths go through one service function with the same status validation, monotonic mileage rule, audit and readiness refresh.",
+      "acceptance": [
+        "Route tests: an invalid status returns 400 on both paths; both refresh readiness; both audit identically."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B4 aligned FLT-20 partially (remediation-status: 'FLT-19/20 (partial)'). Remaining scope to be confirmed against the integration branch."
+    },
+    {
+      "id": "MOD-FLT-032",
+      "title": "A manual status override never masks a critical defect",
+      "module": "fleet",
+      "screen": "Fleet status automation (refreshFleetVehicle, PATCH routes)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-01"
+        }
+      ],
+      "requirement": "Manual overrides can only escalate; a critical inspection defect after any manual status change still puts the vehicle Out of Service, and critical safety holds always apply.",
+      "acceptance": [
+        "Fleet handler test T1b no longer reproduces: PATCH Available, then a Critical defect, gives Out of Service (staging step S2)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "f43dc42c8c591653010d16a0ac357066ff5104af",
+          "96e86b393ab0dde26650dfd338e2c9ed26d81658",
+          "51d6e0e1bebfa74edbacb54d66515e6700d41698"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batches B4 (overrides escalate only) and F3/F6a (safety hold, 046 status guard). Not validated on staging. UI consequences are MOD-FLT-022, MOD-FLT-023 and MOD-FLT-024."
+    },
+    {
+      "id": "MOD-FLT-033",
+      "title": "Odometer only moves forward; blank is not zero; corrections need a reason",
+      "module": "fleet",
+      "screen": "Work-order, issue, inspection and vehicle PATCH routes",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-09"
+        }
+      ],
+      "requirement": "No write path lowers current_mileage except an explicit odometer correction with a reason and audit; empty or null mileage means 'not provided', never 0.",
+      "acceptance": [
+        "Fleet handler tests T2, T3 and T4 no longer reproduce.",
+        "A correction without a reason is refused and the audit records before/after."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "f43dc42c8c591653010d16a0ac357066ff5104af"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B4. The FLT-09 upper sanity bound on large jumps is not confirmed in the batch notes; verify. UI for the correction reason is MOD-FLT-027."
+    },
+    {
+      "id": "MOD-FLT-034",
+      "title": "Issue report: no operability default; 'Limited use' wired or removed",
+      "module": "fleet",
+      "screen": "Report a Vehicle Issue (FleetWorkOrderDialog)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-09"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-10"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F7"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U4"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-13"
+        }
+      ],
+      "requirement": "The operability question starts with no selection and Submit is blocked until a choice is made; 'Limited use / needs review' either maps to Attention with a review flag or is removed, so it is never recorded the same as 'Safe to operate'.",
+      "acceptance": [
+        "Component test: Submit shows 'choose operability' when nothing is selected.",
+        "Route/component test: each operability choice maps to the expected affects_availability and readiness."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: remove 'Limited use' or wire it to Attention plus a review flag (D-09 / FLT-13). Wiring it needs a backend change."
+    },
+    {
+      "id": "MOD-FLT-035",
+      "title": "Shorter issue reporting: one drivability question, mileage carried over",
+      "module": "fleet",
+      "screen": "Report a Vehicle Issue",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements (report a vehicle issue)"
+        },
+        {
+          "doc": "WR",
+          "ref": "Fleet Management"
+        },
+        {
+          "doc": "WR",
+          "ref": "Shorter issue reporting"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3A"
+        }
+      ],
+      "requirement": "Issue reporting asks what's wrong and 'Can it be driven?' (priority derived from the answer), carries mileage from the last reading, and the submit label names whoever owns fleet repairs instead of 'Submit to Mechanic' when no mechanic role exists.",
+      "acceptance": [
+        "Officer path drops from ~12 to ~6 clicks (walkthrough recorded).",
+        "Same work-order POST payload semantics as the baseline (priority and affectsAvailability still sent); Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "MOD-FLT-034"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-036",
+      "title": "Vehicle damage / collision record with supervisor review",
+      "module": "fleet",
+      "screen": "Fleet work orders",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-13"
+        }
+      ],
+      "requirement": "A 'Vehicle damage / collision' record type captures incident date/time, location, other party, injuries, report number, photos and a required supervisor acknowledgement.",
+      "acceptance": [
+        "Route and UI tests: a damage record cannot be closed without supervisor acknowledgement; it links to the incident number."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer."
+    },
+    {
+      "id": "MOD-FLT-037",
+      "title": "Repeat inspection defects append to the open work order",
+      "module": "fleet",
+      "screen": "Inspection → work orders",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-07"
+        }
+      ],
+      "requirement": "Defects are keyed by vehicle and checklist item; a defect already on an open work order adds an 'observed again' note instead of a new work order, and the checklist shows 'known open defect (WO #)'.",
+      "acceptance": [
+        "Route test T7: three identical defective inspections produce one work order with two 'observed again' notes."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Defer (missing capability)."
+    },
+    {
+      "id": "MOD-FLT-038",
+      "title": "Fleet alerts generated without the recipient opening the app",
+      "module": "fleet",
+      "screen": "Notifications generation for fleet",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-05"
+        }
+      ],
+      "requirement": "Critical defects, out-of-service transitions and due dates create notifications for fleet managers and mechanics on a schedule (and ideally on write), honouring notify_by_email and escalation_hours, so a phone-only manager sees them in the inbox.",
+      "acceptance": [
+        "Staging: a critical defect creates an inbox item and email for a fleet manager who has not opened the web app."
+      ],
+      "dependencies": [
+        "B6 (claude/fix-b6-notification-delivery, awaiting infrastructure authorization)"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B6 adds scheduled per-department generation (TRN-01/FLT-05) but is kept out of the integration pending the infrastructure decision. Write-time enqueue is not in B6. Overlaps the platform notification work."
+    },
+    {
+      "id": "MOD-FLT-039",
+      "title": "Fleet rule settings are enforced or removed",
+      "module": "fleet",
+      "screen": "/api/fleet/rules consumers (fleet-server, fleet-notifications)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-06"
+        }
+      ],
+      "requirement": "Each fleet rule (require_return_to_service_approval, default_service_*, *_warning_days, escalation_hours, notify_by_email, fleet_manager_role_codes) is either implemented server-side or removed from the rules API.",
+      "acceptance": [
+        "Per decided rule: a handler test proves the rule changes behaviour, or the field is gone from GET/PUT."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: FLT-06 'Fix – owner decision on intended behavior' (implement vs hide each inert setting; return-to-service approval would also need the approvals queue)."
+    },
+    {
+      "id": "MOD-FLT-040",
+      "title": "Fleet Rules: inert or always-on settings shown honestly",
+      "module": "fleet",
+      "screen": "/settings/fleet and Settings > Rules > Fleet (FleetRulesPanel)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-31"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-61"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-06"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U14"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "Settings that are not enforced are hidden or labelled 'Not yet active', and 'Critical issues remove vehicles from service' is a locked 'Always on' row; the remaining automation toggle states exactly what it governs.",
+      "acceptance": [
+        "Component test: no inert setting renders as a live switch; the critical rule renders as locked 'Always on'.",
+        "Stored rule values and the PUT payload are unchanged except for removed controls; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "MOD-FLT-039"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "E-61 comes from UX appendix E (Admin group); kept here because it is the Fleet Rules panel."
+    },
+    {
+      "id": "MOD-FLT-041",
+      "title": "Fleet Rules role lists: commas typeable, role picker",
+      "module": "fleet",
+      "screen": "FleetRulesPanel comma-list and role-code inputs",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-27"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-32"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F6"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-5"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB §5"
+        }
+      ],
+      "requirement": "Role-code and other comma lists can be typed key by key (parse on blur or chip input), and inspection/routing roles are chosen from a multi-select fed by department roles, so a typo cannot make every officer ineligible to inspect.",
+      "acceptance": [
+        "Component test: typing 'officer, sergeant' key by key sends both codes in the PUT body.",
+        "The role picker lists only existing department roles."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB §5 lists D-27 as not done. Impact raised by F2 (inspection_role_codes now excludes unlisted members)."
+    },
+    {
+      "id": "MOD-FLT-042",
+      "title": "Fleet Rules cannot save defaults after a failed load",
+      "module": "fleet",
+      "screen": "FleetRulesPanel",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-28"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-30"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F6"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-2"
+        }
+      ],
+      "requirement": "A failed rules GET shows an explicit error with Try again, and Save is unavailable until the real rules load, so defaults can never overwrite agency policy.",
+      "acceptance": [
+        "FleetRulesPanel.test.tsx: HTTP 500 → error, no Save, no PUT; retry loads."
+      ],
+      "implementation": {
+        "branch": "",
+        "commits": [
+          "8bfbab2"
+        ],
+        "pr": ""
+      },
+      "evidence": [
+        "FleetRulesPanel.test.tsx",
+        "ux-rb2-evidence/rb2-2-*"
+      ],
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Fixed in UX-RB2-2 (commit 8bfbab2) per register-SV SV-30; branch not named in the sources. SV-30 is live evidence of the defect on staging 22e543d, not of the fix."
+    },
+    {
+      "id": "MOD-FLT-043",
+      "title": "Fleet Rules: sticky SaveBar, unsaved-changes guard, confirm template removal",
+      "module": "fleet",
+      "screen": "FleetRulesPanel",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-30"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U9"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Fleet Rules has a sticky SaveBar showing dirty state, warns on navigating away with unsaved changes, and checklist-template Remove asks for confirmation.",
+      "acceptance": [
+        "Component test: Remove asks for confirmation; navigating away while dirty warns.",
+        "Destructive or broad-impact actions use a ConfirmDialog naming the record and impact; accountable state changes use a sheet with a required reason and an audit notice, with no extra 'Are you sure?' (blueprint §1b)."
+      ],
+      "dependencies": [
+        "design-system: SaveBar + useDirtyGuard"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-044",
+      "title": "Fleet Rules checklist template uses the dark theme",
+      "module": "fleet",
+      "screen": "FleetRulesPanel template section",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-29"
+        }
+      ],
+      "requirement": "The checklist template section uses the dark token palette instead of a light-theme island.",
+      "acceptance": [
+        "Visual regression at 1280/768/375 shows no light-theme surfaces in the panel."
+      ],
+      "dependencies": [
+        "design-system: tokens (BP #1)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-045",
+      "title": "One location for Fleet Rules",
+      "module": "fleet",
+      "screen": "/settings/fleet vs Settings > Rules > Fleet; vehicle header gear",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-33"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-08"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        }
+      ],
+      "requirement": "Fleet rules live in one Settings location; the other entry becomes a 'Manage' link, and the standalone back link returns to the right place.",
+      "acceptance": [
+        "Old /settings/fleet URL redirects to the single location; the vehicle gear links there."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "E-08 (Settings tab not in URL) belongs to the settings module; only the fleet duplicate is here."
+    },
+    {
+      "id": "MOD-FLT-046",
+      "title": "Fleet list as DataTable with phone CardList and record drawer",
+      "module": "fleet",
+      "screen": "/fleet-management (list)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-16"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-16"
+        },
+        {
+          "doc": "BP",
+          "ref": "#8"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3B"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4"
+        },
+        {
+          "doc": "VR",
+          "ref": "Fleet Management"
+        },
+        {
+          "doc": "VR",
+          "ref": "A8"
+        },
+        {
+          "doc": "VR",
+          "ref": "Phone (375px)"
+        },
+        {
+          "doc": "WR",
+          "ref": "Fleet Management"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard (Fleet Management)"
+        }
+      ],
+      "requirement": "The fleet list fits 1280px with Unit, Vehicle, Assigned, Status, Next due and Issues (unit and plate in mono); the row is the link and opens a drawer with reason and work order plus 'Open record'; below 640px rows render as cards; filters collapse to one 'Filters (n)' button below 768px; dark scrollbars.",
+      "acceptance": [
+        "Visual regression at 1280, 768 and 375 (loaded, empty, loading, error, many rows).",
+        "No horizontal scroll at 1280px; at 375px each card shows unit, plate, status, next due and issues.",
+        "Existing filters, sorts and URL parameters keep working; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity).",
+        "Verified with Officer, Fleet Manager, Supervisor and Admin accounts: what each role can see and do matches the baseline (blueprint §4)."
+      ],
+      "dependencies": [
+        "design-system: DataTable + CardList + FilterBar + Drawer (BP #8)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "R1 representative screen. The status change flow is unchanged in R1."
+    },
+    {
+      "id": "MOD-FLT-047",
+      "title": "Fleet KPI strip: neutral at zero, every number linked",
+      "module": "fleet",
+      "screen": "/fleet-management summary cards",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#12"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3B"
+        },
+        {
+          "doc": "VR",
+          "ref": "A6"
+        },
+        {
+          "doc": "VR",
+          "ref": "Top 15 (One KpiTile)"
+        }
+      ],
+      "requirement": "Fleet summary tiles use the shared KpiTile: neutral at zero, coloured only when attention is needed, each linking to the filtered list.",
+      "acceptance": [
+        "Visual regression shows no coloured zero tiles; each tile links to its filtered list."
+      ],
+      "dependencies": [
+        "design-system: KpiTile + StatusChip (BP #12)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-048",
+      "title": "Vehicle record header: one primary 'Inspect vehicle', labelled icon buttons, flattened overview",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId]",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-37"
+        },
+        {
+          "doc": "VR",
+          "ref": "Vehicle record"
+        },
+        {
+          "doc": "VR",
+          "ref": "A5"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        },
+        {
+          "doc": "BP",
+          "ref": "#7"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard (Vehicle record)"
+        }
+      ],
+      "requirement": "The vehicle record keeps its header pattern but has one primary action (Inspect vehicle), secondary/quiet buttons instead of green/amber/blue fills, aria-labels on the gear and refresh icon buttons, and overview fields as a definition list instead of one bordered tile each.",
+      "acceptance": [
+        "axe: the icon buttons have accessible names.",
+        "Visual regression: exactly one primary button in the header."
+      ],
+      "dependencies": [
+        "design-system: PageHeader + Button (BP #6)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-049",
+      "title": "Vehicle load failure: Back, Retry and access message",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] load error",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-36"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Dashboards & data (AsyncState)"
+        }
+      ],
+      "requirement": "A failed vehicle load shows Back, Retry, and a plain explanation for 403 versus not found, which matters for QR and native-app arrivals.",
+      "acceptance": [
+        "Component test: 403 shows the access message with Back; a network error shows Retry."
+      ],
+      "dependencies": [
+        "design-system: AsyncState"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-050",
+      "title": "Preview vehicle and 'migration' copy only behind a dev flag",
+      "module": "fleet",
+      "screen": "/fleet-management, /fleet-management/preview",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-48"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-2"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "The fake PREVIEW_VEHICLE and 'Local preview mode' copy appear only with a development flag; otherwise a 'migration not applied' error shows a real error state.",
+      "acceptance": [
+        "Component test: with the flag off, a 'migration' error shows the error state and no vehicle row."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-051",
+      "title": "Fleet copy and labels: no jargon, raw codes or stale claims",
+      "module": "fleet",
+      "screen": "/fleet-management list subtitle; vehicle Maintenance and History tabs",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-15"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-47"
+        },
+        {
+          "doc": "WR",
+          "ref": "Terminology (Hybrid readiness)"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "BP",
+          "ref": "#18"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Terminology"
+        }
+      ],
+      "requirement": "The list subtitle reads e.g. 'Status updates automatically from inspections and repairs' instead of 'Current status is authoritative…'; 'Hybrid readiness' is removed; raw role codes and action enums in Maintenance and History display as labels.",
+      "acceptance": [
+        "No 'authoritative' or 'hybrid readiness' text in fleet pages (grep).",
+        "History and Maintenance render mapped labels; component test with a raw enum input shows its label."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-052",
+      "title": "One message region on the vehicle record",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] page and inspection banners",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-55"
+        }
+      ],
+      "requirement": "Page and inspection banners no longer stack and persist; completed actions use a toast and errors stay where the action was taken.",
+      "acceptance": [
+        "Component test: two successive actions show one current message."
+      ],
+      "dependencies": [
+        "design-system: Toast"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-053",
+      "title": "12px type floor on fleet screens",
+      "module": "fleet",
+      "screen": "QuickInspectionPanel, fleet list, vehicle record",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-53"
+        },
+        {
+          "doc": "BP",
+          "ref": "#7"
+        },
+        {
+          "doc": "VR",
+          "ref": "A2"
+        }
+      ],
+      "requirement": "No fleet text renders under 12px; labels are sentence case at 13px.",
+      "acceptance": [
+        "Automated scan of fleet pages finds no computed font-size under 12px."
+      ],
+      "dependencies": [
+        "design-system: tokens / type scale (BP #1, #7)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-054",
+      "title": "Vehicle equipment: one source of truth with Equipment, with edit and remove",
+      "module": "fleet",
+      "screen": "/api/fleet/vehicles/[vehicleId]/equipment, equipment_assets.assigned_vehicle_id",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-18"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-45"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-46"
+        }
+      ],
+      "requirement": "Linking equipment to a vehicle sets equipment_assets.assigned_vehicle_id in the same transaction, Fleet reads vehicle equipment from it, PATCH and remove (with reason) exist, and fleet managers can read unassigned and vehicle-assigned assets for the picker.",
+      "acceptance": [
+        "Route test: linking in Fleet sets assigned_vehicle_id; custody then refuses a personal check-out of that asset.",
+        "Remove requires a reason and writes an audit entry."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Defer (missing capability)."
+    },
+    {
+      "id": "MOD-FLT-055",
+      "title": "Vehicle Equipment tab: edit/remove, 'Unit' naming, inventory on the vehicle",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Equipment tab; FleetEquipmentDialog",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-45"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-46"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-72"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-18"
+        }
+      ],
+      "requirement": "The vehicle Equipment tab can edit and remove linked equipment, uses 'Unit 3101' everywhere (not 'Vehicle 3101'), and lists inventory items checked out to the vehicle.",
+      "acceptance": [
+        "Component test: Edit and Remove are offered to permitted users; Remove asks for a reason.",
+        "No 'Vehicle <unit>' strings remain where 'Unit <unit>' is meant (grep).",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-FLT-054",
+        "MOD-INV-021"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on the single linkage API (MOD-FLT-054) and the inventory-by-recipient query (MOD-INV-021)."
+    },
+    {
+      "id": "MOD-FLT-056",
+      "title": "Vehicle assignment and pool checkout/return linked to people",
+      "module": "fleet",
+      "screen": "Fleet vehicles (assigned_to free text)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-12"
+        },
+        {
+          "doc": "BP",
+          "ref": "#4"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements (inspect assigned vehicle)"
+        }
+      ],
+      "requirement": "Vehicle assignments reference members (user_id) with start/end, mileage and condition; a pre-shift inspection can act as check-out and post-shift as return, which also feeds a 'My vehicle' card.",
+      "acceptance": [
+        "Route tests: an assignment links to a member; 'who drove unit X last night' is answerable from records."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer. The 'My vehicle' Home card itself belongs to the Home module (BP #4)."
+    },
+    {
+      "id": "MOD-FLT-057",
+      "title": "Patrol officers can reach vehicle inspection by default",
+      "module": "fleet",
+      "screen": "Role seeds (officer), Fleet nav entry",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-15"
+        }
+      ],
+      "requirement": "Default officer roles can perform fleet inspections (or fleet onboarding prompts for it), so scan-to-inspect works on day one.",
+      "acceptance": [
+        "Staging: a default officer can open a vehicle from a scan and submit an inspection."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: OA 'Defer (missing capability)'; seeding perform_fleet_inspections for officer changes default permissions and needs owner approval. Permission changes stay server-side."
+    },
+    {
+      "id": "MOD-FLT-058",
+      "title": "Fleet GET routes check a fleet permission in the bridge runtime",
+      "module": "fleet",
+      "screen": "GET /api/fleet/vehicles, /api/fleet/vehicles/[id] (and /api/mobile GETs)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-14"
+        }
+      ],
+      "requirement": "Fleet read routes require view_fleet (or a related permission) in the handler, matching RLS under AWS-native, so the Supabase-bridge runtime does not expose VINs, document URLs and costs to any member.",
+      "acceptance": [
+        "Route test (bridge mode): a member without fleet permissions gets 403 on both GETs."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: data visibility (README §6 item 'who should read …', FLT-14 'owner decision on intended behavior'). F2 fixed the write side (MOD-FLT-059)."
+    },
+    {
+      "id": "MOD-FLT-059",
+      "title": "Fleet field writes authorised consistently (inspections, issues, AWS-native RLS)",
+      "module": "fleet",
+      "screen": "Inspection, work-order and audit writes",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-01"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-14"
+        }
+      ],
+      "requirement": "Inspectors and officers can complete field writes under AWS-native RLS (work-order creation, status/mileage refresh, audit insert), one eligibility rule decides who may inspect or report issues, and inspectors do not receive cost data.",
+      "acceptance": [
+        "Staging step S2: an inspector-only user's critical inspection creates the work order, sets Out of Service and returns 2xx; tenant-negative tests still deny."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "b5976f4e19db24e243840fd8e208f3d1dd25fcd7",
+          "3de7ee73a65946d7808f2afcb54d6a5481a7afa8"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batches B2 (field-write authorization, 040/041) and F2 (fleet authorization decisions, 045). Not validated on staging. NEW-01 also covers equipment custody and armory; shared with Platform/Armory."
+    },
+    {
+      "id": "MOD-FLT-060",
+      "title": "Fleet report: bounded queries, no silent truncation, aligned permissions",
+      "module": "fleet",
+      "screen": "GET /api/fleet/report",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-22"
+        }
+      ],
+      "requirement": "Fleet reports use date-bounded queries instead of per-vehicle fan-out, never truncate inspections silently, and report-definition permissions match the endpoint.",
+      "acceptance": [
+        "Route test: a yearly inspection report for a daily-inspected vehicle returns all rows; perform_fleet_inspections either sees the report or it is not listed."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-061",
+      "title": "Behavioural tests for fleet status, mileage and inspection rules",
+      "module": "fleet",
+      "screen": "src/lib/fleet, fleet API handlers",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-24"
+        }
+      ],
+      "requirement": "Status, mileage, override and inspection-routing rules are pure functions with unit tests, and handler tests replace source-regex tests.",
+      "acceptance": [
+        "CI runs handler tests for inspection POST, refreshFleetVehicle, work-order mileage and override logic."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B4/F2/F3 added fleet handler tests on the integration branch; remaining coverage to confirm."
+    },
+    {
+      "id": "MOD-FLT-062",
+      "title": "Vehicle document expirations are alerted",
+      "module": "fleet",
+      "screen": "fleet-notifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-21"
+        }
+      ],
+      "requirement": "Expiring vehicle documents (insurance and others, not only registration) generate fleet alerts.",
+      "acceptance": [
+        "Notification test: an insurance document expiring within the warning window produces an alert."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "FLT-21 partially resolved: upload, edit, replace and archive exist (UX D-34 fixed in RC)."
+    },
+    {
+      "id": "MOD-FLT-063",
+      "title": "Vehicle document Archive: in-app confirm and accessible name",
+      "module": "fleet",
+      "screen": "/fleet-management/[vehicleId] Documents",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-34"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Archiving a vehicle document uses a ConfirmDialog naming the document, and the Archive icon has an aria-label.",
+      "acceptance": [
+        "axe: the Archive button has an accessible name; no window.confirm in the Documents tab.",
+        "Destructive or broad-impact actions use a ConfirmDialog naming the record and impact; accountable state changes use a sheet with a required reason and an audit notice, with no extra 'Are you sure?' (blueprint §1b)."
+      ],
+      "dependencies": [
+        "design-system: ConfirmDialog"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-FLT-064",
+      "title": "/inspections becomes a chooser (Vehicle / Firearm / Equipment)",
+      "module": "fleet",
+      "screen": "/inspections",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "GEN-01"
+        }
+      ],
+      "requirement": "/inspections offers the inspection types the user may perform instead of redirecting everyone to firearm inspections.",
+      "acceptance": [
+        "A patrol officer opening /inspections sees Vehicle inspection, not an unauthorized firearms page; old links still resolve."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "The stale docs/backup-file hygiene part of GEN-01 belongs to Platform (B11 left armory backup files)."
+    },
+    {
+      "id": "MOD-FLT-065",
+      "title": "Distinct sidebar icons for Fleet and Inventory",
+      "module": "fleet",
+      "screen": "Sidebar (Assets & Fleet group)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-50"
+        }
+      ],
+      "requirement": "Fleet uses a vehicle icon and Inventory a package icon instead of four identical 'Boxes' icons.",
+      "acceptance": [
+        "Visual regression of the sidebar shows distinct icons."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Sidebar is owned by the shell; coordinate with MOD-SHELL work."
+    },
+    {
+      "id": "MOD-FLT-066",
+      "title": "Shift inspection compliance view and overdue-alert exemptions",
+      "module": "fleet",
+      "screen": "Fleet supervisor view; fleet-notifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "FLT-23"
+        }
+      ],
+      "requirement": "Supervisors see units on shift today that were not inspected, and vehicles out of service or not in use are exempt from 'Critical' overdue alerts.",
+      "acceptance": [
+        "Notification test: a parked spare does not raise a Critical overdue alert; the compliance view lists uninspected on-shift units."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer. Triage filters in MOD-FLT-021 cover part of the manager view."
+    },
+    {
+      "id": "MOD-EQP-001",
+      "title": "Equipment QR label: app-required copy, gated Print, status label",
+      "module": "equipment",
+      "screen": "/equipment asset detail modal (QR Label)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-02"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-43"
+        },
+        {
+          "doc": "OA",
+          "ref": "FLT-04"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F15"
+        }
+      ],
+      "requirement": "The equipment label and modal say 'Scan with the TracePoint app', Print/Download are offered only to users who can manage equipment, and the asset status shows its label rather than the raw enum.",
+      "acceptance": [
+        "Component test: the label print DOM contains the app hint; a non-manager does not see Print.",
+        "Status renders via the status label map.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-FLT-001"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-002",
+      "title": "Web route to an equipment item (/equipment?asset=<id>)",
+      "module": "equipment",
+      "screen": "/equipment",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-02"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        }
+      ],
+      "requirement": "/equipment?asset=<id> opens that item's detail, giving labels, alerts and search a web target.",
+      "acceptance": [
+        "Route/component test: /equipment?asset=<id> opens the detail; an unknown or unauthorized id shows a not-found state."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-003",
+      "title": "Gear held by separated members stays visible and can be marked out of service",
+      "module": "equipment",
+      "screen": "/equipment table and readiness; PATCH /api/equipment/assets",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-01"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-04"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-12"
+        }
+      ],
+      "requirement": "Items held by inactive members show 'Name (inactive)'; lifecycle changes are allowed for inactive holders or retired vehicles; dates are validated; out-of-service and remove take a reason written to the audit.",
+      "acceptance": [
+        "Staging step S19: a separated officer's gear lists with their name and can be marked out of service; assignment history closes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "330ce2042fd12150b469f0d59c635f7bfb241a14"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B9 (separated custody, 049). Not validated on staging. The reason is collected by window.prompt (MOD-EQP-004)."
+    },
+    {
+      "id": "MOD-EQP-004",
+      "title": "Equipment OOS / Remove reason in an in-app dialog with success feedback",
+      "module": "equipment",
+      "screen": "/equipment table actions",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-35"
+        },
+        {
+          "doc": "UX",
+          "ref": "consolidation 2 (ReasonDialog)"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Out of Service and Remove/Retire collect the required reason in a ReasonDialog (empty or cancel shows a message), and a success message follows OOS, Return to Service and Retire.",
+      "acceptance": [
+        "Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b).",
+        "No window.prompt or window.confirm remains in the equipment page (grep).",
+        "Component test: a successful action shows a toast."
+      ],
+      "dependencies": [
+        "MOD-EQP-003",
+        "design-system: ReasonDialog / ConfirmDialog"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-005",
+      "title": "Officers open Equipment on their own readiness; view choice remembered",
+      "module": "equipment",
+      "screen": "/equipment",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-17"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U7"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-13"
+        }
+      ],
+      "requirement": "Users without department-wide scope land on their own Officer Readiness view, and the selected view is remembered.",
+      "acceptance": [
+        "Component test: an officer lands on Readiness; a manager keeps the Equipment table; the choice persists across reload."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-006",
+      "title": "Readiness card shows since-date and target, not constant placeholder text",
+      "module": "equipment",
+      "screen": "/equipment Officer Readiness card",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-19"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-05"
+        }
+      ],
+      "requirement": "The custody cell shows the issue date and assignment target instead of the constants 'Assigned' / 'Current inventory assignment'.",
+      "acceptance": [
+        "Component test: an assigned item shows its issue_date and target."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-007",
+      "title": "Equipment terminology: 'Return to Service', 'Retire item', 'Delete type', clear add/issue actions",
+      "module": "equipment",
+      "screen": "/equipment table, type manager and header actions",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-20"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-42"
+        },
+        {
+          "doc": "WR",
+          "ref": "Terminology (Requirement / Assign/Add to Inventory)"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan glossary"
+        }
+      ],
+      "requirement": "'Return' becomes 'Return to Service'; asset 'Remove' becomes 'Retire item…' and type removal 'Delete type…'; 'Requirement' and 'Assign/Add to Inventory' become 'Add item', 'Issue to officer' and 'Set required gear'.",
+      "acceptance": [
+        "Copy snapshot test of the equipment page; actions and endpoints unchanged (Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity).)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-008",
+      "title": "Readiness card lists items once and the badge and % agree",
+      "module": "equipment",
+      "screen": "/equipment Officer Readiness",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-22"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-6"
+        }
+      ],
+      "requirement": "Badge and percentage are computed from one affectsReadiness set, and duplicate asset/requirement rows are merged.",
+      "acceptance": [
+        "Unit test on the grouping helper: a missing tracked-only item does not make the group Not Ready, and % and badge agree."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Display-only; the readiness source of truth itself is owned by the development conversation."
+    },
+    {
+      "id": "MOD-EQP-009",
+      "title": "One equipment requirement editor with edit and deactivate",
+      "module": "equipment",
+      "screen": "/equipment requirement modal; Settings > Rules > Equipment",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-23"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-24"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U12"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized fixes (One home per configuration)"
+        }
+      ],
+      "requirement": "Equipment requirements have one editor (consistent pickers, officer scope and defaults) that supports edit and deactivate via the existing PATCH, shows existing requirements with a count, and confirms saves; the other location links to it.",
+      "acceptance": [
+        "Only one requirement editor component remains; the other screen links to it.",
+        "Component test: editing and deactivating a requirement call the existing PATCH; save shows success."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-010",
+      "title": "Equipment Rules scope shown as labels, not enums/UUIDs",
+      "module": "equipment",
+      "screen": "Settings > Rules > Equipment list",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-25"
+        },
+        {
+          "doc": "BP",
+          "ref": "#18"
+        }
+      ],
+      "requirement": "Requirement scope displays readable labels (rank, unit, officer name) instead of raw enum and UUID values.",
+      "acceptance": [
+        "Component test: no UUID-shaped text renders in the rules list."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-011",
+      "title": "Equipment Rules quantity input keeps what the user types",
+      "module": "equipment",
+      "screen": "EquipmentRulesPanel quantity",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-26"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-5"
+        }
+      ],
+      "requirement": "Clearing the quantity and typing 5 saves 5; clamping happens on blur/submit.",
+      "acceptance": [
+        "Component test: clear, type 5, save → 5 is sent."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-012",
+      "title": "Equipment modals: in-modal errors, labelled fields, one 'Assign to' control, grouped form",
+      "module": "equipment",
+      "screen": "/equipment Type, Requirement, Asset detail and Asset add/edit modals",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-08"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-38"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-39"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-40"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F2"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Equipment & Inventory (16-field Assign form)"
+        }
+      ],
+      "requirement": "Errors render inside each equipment modal; every input has a visible label; the custody selects become one 'Assign to' control; dependent day fields appear only when their checkbox is on; the asset form groups issue-time fields (who, what, serial) before maintenance data; dialogs support Escape, focus trap and initial focus.",
+      "acceptance": [
+        "Component test: a 400 renders inside the modal.",
+        "axe: no placeholder-only inputs and no new violations; Esc closes and focus returns.",
+        "Same asset POST/PATCH payloads as the baseline; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "design-system: Dialog + Field (BP shared components)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-013",
+      "title": "Equipment empty state and guided first-run (types → requirements → items)",
+      "module": "equipment",
+      "screen": "/equipment (empty agency)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#15"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4"
+        },
+        {
+          "doc": "VR",
+          "ref": "Equipment"
+        },
+        {
+          "doc": "WR",
+          "ref": "Equipment & Inventory"
+        },
+        {
+          "doc": "WR",
+          "ref": "Guided first-run setup"
+        }
+      ],
+      "requirement": "An agency with no equipment sees an EmptyState with a primary action and the three set-up steps (types, then requirements, then items); selectors with no types explain the prerequisite instead of being empty.",
+      "acceptance": [
+        "Visual regression of the empty state at three widths.",
+        "Verified with Officer, Fleet Manager, Supervisor and Admin accounts: what each role can see and do matches the baseline (blueprint §4)."
+      ],
+      "dependencies": [
+        "design-system: EmptyState (BP #15)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blueprint §4 names Equipment empty states and first-run guidance as an R1 representative screen; the guided flow beyond copy and links is Stage 3."
+    },
+    {
+      "id": "MOD-EQP-014",
+      "title": "Move the equipment type manager off the daily page",
+      "module": "equipment",
+      "screen": "/equipment Equipment Types toolbar",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-41"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        }
+      ],
+      "requirement": "Type management moves to Settings (or a setup area) with a 'Manage types' link from Equipment.",
+      "acceptance": [
+        "The daily page has no type toolbar; the link opens the type manager; type endpoints unchanged."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-015",
+      "title": "Equipment table: lifecycle filter, sort, pagination and phone CardList",
+      "module": "equipment",
+      "screen": "/equipment table",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-44"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-13"
+        },
+        {
+          "doc": "BP",
+          "ref": "#8"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 2"
+        }
+      ],
+      "requirement": "The equipment table uses the shared DataTable with Active / Out of service / Retired filter, sortable headers, pagination, URL-synced filters and a card mode under 640px.",
+      "acceptance": [
+        "Visual regression at 1280/768/375; no horizontal page scroll at 375px.",
+        "Filters are in the URL."
+      ],
+      "dependencies": [
+        "design-system: DataTable + CardList + FilterBar (BP #8)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-016",
+      "title": "Equipment header, KPI tiles and type size",
+      "module": "equipment",
+      "screen": "/equipment header and summary cards; readiness cards",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "VR",
+          "ref": "Equipment"
+        },
+        {
+          "doc": "VR",
+          "ref": "A6"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-53"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        },
+        {
+          "doc": "BP",
+          "ref": "#7"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        }
+      ],
+      "requirement": "Equipment uses the shared PageHeader (no wrapped buttons), neutral-at-zero KpiTiles linking to filtered lists, and nothing under 12px on readiness cards.",
+      "acceptance": [
+        "Visual regression: no coloured zero tiles, no wrapped header buttons, no text under 12px."
+      ],
+      "dependencies": [
+        "design-system: PageHeader, KpiTile, tokens"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-017",
+      "title": "Officer self-service check-out / check-in for serialized equipment (web)",
+      "module": "equipment",
+      "screen": "/equipment (officer), item record",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-18"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-06"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U12"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements (find my firearms and equipment)"
+        }
+      ],
+      "requirement": "Officers can check serialized equipment out and in, with condition, through the existing custody API, using an accountable sheet with an audit notice.",
+      "acceptance": [
+        "Staging step S3 equivalent on the web: an officer checks out then returns an item and both appear in custody history.",
+        "Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b).",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-EQP-018"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: the OA records the native client as the intended UI for self-service custody (R5 EQP-06); whether the web also offers it, and the 'My gear' placement (BP #4, Home module), need the owner. GitHub #9 scope."
+    },
+    {
+      "id": "MOD-EQP-018",
+      "title": "Equipment custody works for officers under AWS-native RLS",
+      "module": "equipment",
+      "screen": "/api/equipment/custody (and /api/mobile re-export)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-06"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-01"
+        }
+      ],
+      "requirement": "Officers can check their own items in and out under AWS-native RLS, and the custody lookup accepts the printed label.",
+      "acceptance": [
+        "Staging step S3: an officer checks out and returns an assigned item; both appear in custody history."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "b5976f4e19db24e243840fd8e208f3d1dd25fcd7",
+          "df849ed9bdd12f1a016af9b0a30f46842432bb64"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batches B2 (field-write authorization) and B5 (label strip in custody GET). Owner to confirm custody lookup of another officer's item returns not found (B2 decision). Not validated on staging."
+    },
+    {
+      "id": "MOD-EQP-019",
+      "title": "Department-level equipment alerts for quartermasters and supervisors",
+      "module": "equipment",
+      "screen": "Notifications (equipment)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-02"
+        }
+      ],
+      "requirement": "Users with department scope receive aggregated equipment alerts (e.g. '12 body armor expiring within 30 days') linking to a filtered list, plus per-item alerts for out-of-service and expired required gear.",
+      "acceptance": [
+        "Notification test: a quartermaster gets an aggregated expiry alert that links to the filtered equipment list."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Defer (missing capability). Depends on scheduled alert generation (B6)."
+    },
+    {
+      "id": "MOD-EQP-020",
+      "title": "Expiry and inspection evaluated per asset, not only for required officer gear",
+      "module": "equipment",
+      "screen": "equipment-readiness, /api/readiness/equipment",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-03"
+        }
+      ],
+      "requirement": "Expiration and inspection due dates are evaluated for every asset (vehicle, location and pool gear included), and asset-level due/expired lists feed the quartermaster, separately from requirement-based readiness.",
+      "acceptance": [
+        "Unit test: an expired AED in a vehicle appears on the asset-level due list."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Defer (missing capability)."
+    },
+    {
+      "id": "MOD-EQP-021",
+      "title": "Command department readiness returns department data",
+      "module": "equipment",
+      "screen": "/api/readiness/equipment, /api/equipment/assets, Command Dashboard",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-11"
+        }
+      ],
+      "requirement": "Users with view_command_dashboard / view_analytics see department equipment readiness instead of silently only their own row.",
+      "acceptance": [
+        "Route test: a command user gets all members' readiness; an officer still gets only their own."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: EQP-11 'Fix – owner decision on intended behavior' (who should read other officers' readiness: README §6)."
+    },
+    {
+      "id": "MOD-EQP-022",
+      "title": "Officer property sheet and separation clearance",
+      "module": "equipment",
+      "screen": "Personnel / equipment / firearms / fleet",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-05"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-72"
+        }
+      ],
+      "requirement": "One view lists everything an officer holds (firearms, equipment, vehicle, inventory checkouts), with a printable separation checklist, and deactivation warns while property is outstanding.",
+      "acceptance": [
+        "Route test: the property endpoint returns all holdings for a member; deactivation of a holder shows the warning."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer. Cross-module with Personnel (Administration) and Firearms; UI placement (person page / My gear) to be agreed."
+    },
+    {
+      "id": "MOD-EQP-023",
+      "title": "Bulk kit issue for academy classes",
+      "module": "equipment",
+      "screen": "/equipment issue",
+      "category": "workflow",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-07"
+        }
+      ],
+      "requirement": "A 'Kit issue' flow issues a kit template to several recruits in one guided session (serials entered or scanned in sequence, issue date today, expiration from the type).",
+      "acceptance": [
+        "Issuing a 5-item kit to 25 recruits takes one session and writes 125 audited assignments."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer. Kit templates need storage (track C)."
+    },
+    {
+      "id": "MOD-EQP-024",
+      "title": "Lost / stolen / damaged lifecycle and condition on every return",
+      "module": "equipment",
+      "screen": "Equipment lifecycle; custody check-in",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-08"
+        }
+      ],
+      "requirement": "Lost and stolen states with a required incident number and supervisor review, condition captured on every return and reassignment, and officer acknowledgement of issued items.",
+      "acceptance": [
+        "Route test: marking lost requires an incident number; a reassignment records condition."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer."
+    },
+    {
+      "id": "MOD-EQP-025",
+      "title": "Equipment count / audit sessions",
+      "module": "equipment",
+      "screen": "Equipment inventory audit",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-10"
+        }
+      ],
+      "requirement": "An audit session builds an expected list (by location, officer or vehicle), confirms or scans each item, produces a variance report and records sign-off.",
+      "acceptance": [
+        "A completed session stores the variance report and sign-off with actor and time."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer."
+    },
+    {
+      "id": "MOD-EQP-026",
+      "title": "Record equipment inspections (pass/fail, notes, photo)",
+      "module": "equipment",
+      "screen": "/equipment item actions",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-14"
+        },
+        {
+          "doc": "BP",
+          "ref": "#9"
+        }
+      ],
+      "requirement": "A 'Record inspection' action stores pass/fail, notes and photo with history and advances the next inspection date from the type interval; the UI reuses the field-grade Checklist.",
+      "acceptance": [
+        "Route test: recording an inspection stores history and advances next_inspection_date."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer."
+    },
+    {
+      "id": "MOD-EQP-027",
+      "title": "Behavioural tests for equipment readiness and custody",
+      "module": "equipment",
+      "screen": "equipment-readiness.ts, custody route",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-15"
+        }
+      ],
+      "requirement": "Unit tests cover evaluateAsset (expiry, inspection, scopes) and an integration test covers custody against Postgres, replacing source-regex tests.",
+      "acceptance": [
+        "CI runs the new tests; mobile-custody-route.test.ts no longer relies on regex over source."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-028",
+      "title": "Lifecycle CHECK accepts out_of_service on clean builds",
+      "module": "equipment",
+      "screen": "database/aws migrations (equipment_assets)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "EQP-09"
+        }
+      ],
+      "requirement": "A clean bootstrap, new agency or DR rebuild accepts lifecycle_status 'out_of_service'.",
+      "acceptance": [
+        "Clean bootstrap validator passes; 038 is a no-op on an already-patched database."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "a39d26329397cd4dddb7018ae72b9b53e1a22c53"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B0 (proof foundation, migration 038). Production constraint state still to be checked with \\d equipment_assets."
+    },
+    {
+      "id": "MOD-EQP-029",
+      "title": "API for an officer to report a problem with an issued item",
+      "module": "equipment",
+      "screen": "Equipment / Inventory items",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements (report an equipment issue)"
+        },
+        {
+          "doc": "BP",
+          "ref": "#4"
+        }
+      ],
+      "requirement": "An endpoint lets an officer report a problem on an item they hold, routed to the quartermaster and recorded on the item.",
+      "acceptance": [
+        "Route test: an officer can report on their own item only; the quartermaster is notified."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-EQP-030",
+      "title": "'Report a problem' on each of an officer's items",
+      "module": "equipment",
+      "screen": "/equipment officer readiness (My gear)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements (report an equipment issue)"
+        },
+        {
+          "doc": "BP",
+          "ref": "#4"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-13"
+        }
+      ],
+      "requirement": "Each item an officer holds offers 'Report a problem'.",
+      "acceptance": [
+        "Component test: the action appears on the officer's own items and posts to the new endpoint.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-EQP-029"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on the report API (MOD-EQP-029)."
+    },
+    {
+      "id": "MOD-EQP-031",
+      "title": "Explain Equipment vs Inventory vs Ammunition and align custody vocabulary",
+      "module": "equipment",
+      "screen": "/equipment, /inventory headers and nav",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-72"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U12"
+        },
+        {
+          "doc": "WR",
+          "ref": "Equipment & Inventory (three stock systems)"
+        }
+      ],
+      "requirement": "The UI states the boundary ('Serialized gear → Equipment; counted stock → Shared supplies') on both pages and in the nav, uses one meaning of 'Return' per action, and aligns recipient types (officer / unit / vehicle / location) and their labels across the two modules.",
+      "acceptance": [
+        "Both page headers carry the boundary line; recipient-type labels are identical in both modules.",
+        "Endpoints unchanged; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "MOD-EQP-007"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Showing inventory checkouts on the readiness card and vehicle tab is MOD-INV-022 / MOD-FLT-055."
+    },
+    {
+      "id": "MOD-INV-001",
+      "title": "Checkout API returns recipient display names",
+      "module": "inventory",
+      "screen": "GET /api/inventory/checkouts",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-62"
+        }
+      ],
+      "requirement": "Outstanding checkouts include a resolved recipient_label (officer name with '(inactive)', 'Unit N' for vehicles), reusing equipmentHolderName.",
+      "acceptance": [
+        "Route test: GET checkouts returns recipient_label for officer, unit and vehicle recipients, including inactive members."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX audit treats inventory defects as likely live in production (UX-RB §0)."
+    },
+    {
+      "id": "MOD-INV-002",
+      "title": "Outstanding checkouts and Return show who holds the item, never UUIDs",
+      "module": "inventory",
+      "screen": "/inventory Outstanding checkouts; Return form",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-62"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F8"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-6"
+        },
+        {
+          "doc": "BP",
+          "ref": "#18 (EntityLabel)"
+        }
+      ],
+      "requirement": "Rows and the return form show the recipient label instead of 'officer: <uuid>'.",
+      "acceptance": [
+        "Component test: no UUID-shaped text is rendered in the outstanding list or return form."
+      ],
+      "dependencies": [
+        "MOD-INV-001"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on MOD-INV-001."
+    },
+    {
+      "id": "MOD-INV-003",
+      "title": "Inventory-scoped recipient endpoint authorised by adjust_inventory",
+      "module": "inventory",
+      "screen": "New recipient endpoint for inventory checkout",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-63"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F8"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-6"
+        }
+      ],
+      "requirement": "A user with adjust_inventory can list active members and agency vehicles as checkout recipients without unrelated permissions.",
+      "acceptance": [
+        "Route test: a user with only adjust_inventory gets all active members and vehicles; a user without it is refused."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-004",
+      "title": "Checkout recipient picker uses the inventory endpoint",
+      "module": "inventory",
+      "screen": "/inventory Temporary checkout recipient",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-63"
+        },
+        {
+          "doc": "UX",
+          "ref": "consolidation 10"
+        }
+      ],
+      "requirement": "Officer and vehicle pickers load from the inventory-scoped endpoint and show an error when loading fails; one SearchablePicker replaces the local RecipientPicker.",
+      "acceptance": [
+        "Component test: the picker lists more than the clerk; a failed load shows an error, not a single name.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-INV-003"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on MOD-INV-003."
+    },
+    {
+      "id": "MOD-INV-005",
+      "title": "Inventory API returns canAdjust / canManage",
+      "module": "inventory",
+      "screen": "/api/inventory/*",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-64"
+        }
+      ],
+      "requirement": "The inventory page payload includes canAdjust and canManage computed server-side.",
+      "acceptance": [
+        "Route test: view_inventory-only users get canAdjust=false; the server still refuses adjust calls from them."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-006",
+      "title": "Hide or disable inventory actions the user cannot perform",
+      "module": "inventory",
+      "screen": "/inventory action bar, checkout form, Return buttons",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-64"
+        }
+      ],
+      "requirement": "Add Item, Receive, Move, More, the checkout form and Return are hidden or disabled with a reason for view-only users.",
+      "acceptance": [
+        "Component test: a view-only user sees no enabled adjust actions.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-INV-005"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on MOD-INV-005."
+    },
+    {
+      "id": "MOD-INV-007",
+      "title": "Inventory submit buttons have a pending state (no duplicate ledger rows)",
+      "module": "inventory",
+      "screen": "/inventory Check out, Receive stock, Move stock, Add item",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-65"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F4"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §5 #4"
+        }
+      ],
+      "requirement": "Every inventory submit is disabled with a busy state while its request is in flight, as Return already is.",
+      "acceptance": [
+        "Component test: a double click sends exactly one POST for each action.",
+        "Saved / not saved status is shown only from the server response, never optimistically (blueprint §1b)."
+      ],
+      "dependencies": [
+        "design-system: Button busy / SubmitButton"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-008",
+      "title": "Idempotency key for inventory transactions and checkouts",
+      "module": "inventory",
+      "screen": "/api/inventory/transactions, /api/inventory/checkouts",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-65"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        }
+      ],
+      "requirement": "Inventory POSTs accept an idempotency key so a retried request cannot write a second append-only ledger row.",
+      "acceptance": [
+        "Route test: two POSTs with the same key write one ledger row."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-009",
+      "title": "Confirm the ledger accepts an audited negative adjust for consumables",
+      "module": "inventory",
+      "screen": "record_inventory_transaction (035), /api/inventory/transactions",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-70"
+        }
+      ],
+      "requirement": "The existing adjust transaction accepts a negative quantity with a required reason and writes an audit/ledger row; if it does not, the backend change is made first.",
+      "acceptance": [
+        "Route test: adjust -3 on a consumable lowers on-hand by 3 and writes an adjust ledger row with the reason."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-010",
+      "title": "'Issue / use' for consumables and staff count correction",
+      "module": "inventory",
+      "screen": "/inventory item actions",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-70"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F8"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-6"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §8 item 11"
+        }
+      ],
+      "requirement": "Consumable items offer 'Issue / use' and staff get 'Adjust (count correction)', both with a required reason, so consumable balances can be drawn down; otherwise the 'used up as it is issued' copy is corrected.",
+      "acceptance": [
+        "Component test: issuing 3 consumables posts an adjust of -3 with the reason and the on-hand shown is from the server reply.",
+        "Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-INV-009"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: expose consumable draw-down (and who may adjust), or correct the copy (remediation plan §8 item 11)."
+    },
+    {
+      "id": "MOD-INV-011",
+      "title": "Inventory action panels open where the user tapped; errors inside the panel",
+      "module": "inventory",
+      "screen": "/inventory Add Item / Receive / Move / More",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-61"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F2"
+        }
+      ],
+      "requirement": "Action panels open directly under the action bar (or as a bottom sheet on phones) and scroll into view, and their success and error messages render inside the panel.",
+      "acceptance": [
+        "At 375px, tapping Receive Stock shows the panel in view; a 400 renders inside it."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-012",
+      "title": "Checkout form: per-location availability, labels, unit picker, due presets",
+      "module": "inventory",
+      "screen": "/inventory Temporary checkout (InventoryCheckoutForm)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-66"
+        },
+        {
+          "doc": "WR",
+          "ref": "Equipment & Inventory"
+        }
+      ],
+      "requirement": "The item picker shows stock per location and auto-selects a single location; Reason and Reference have labels; 'Unit' is a picker, not free text; due date offers presets such as 'End of shift'; controls are ≥44px on phones.",
+      "acceptance": [
+        "Component test: an item stocked at one location auto-selects it; free-text unit is no longer accepted.",
+        "axe: all inputs have labels; targets ≥44px at 375px.",
+        "Same checkout payload shape; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-013",
+      "title": "Outstanding checkouts: load errors, search, overdue filter and sort, confirm Return All",
+      "module": "inventory",
+      "screen": "/inventory Outstanding checkouts",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-67"
+        },
+        {
+          "doc": "WR",
+          "ref": "Equipment & Inventory"
+        }
+      ],
+      "requirement": "A failed load shows an error with Retry instead of 'No inventory is currently checked out'; the list has search, an Overdue filter and overdue-first sort; Return All asks for confirmation with the quantity.",
+      "acceptance": [
+        "Component test: a 500 shows the error state, not the empty message.",
+        "Return All shows a confirmation naming item and quantity before posting."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-014",
+      "title": "Close a checkout as lost or damaged, with condition on return",
+      "module": "inventory",
+      "screen": "/api/inventory/checkouts return",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-67"
+        },
+        {
+          "doc": "OA",
+          "ref": "EQP-08"
+        }
+      ],
+      "requirement": "A checkout can be closed as lost, damaged or short with a reason, and returns record condition, so unreturned items do not stay outstanding forever.",
+      "acceptance": [
+        "Route test: closing as lost removes it from outstanding, adjusts stock and writes an audited ledger row."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Product decision shared with EQP-08 (lost/damaged workflow)."
+    },
+    {
+      "id": "MOD-INV-015",
+      "title": "'Close as lost/damaged' and return condition in the UI",
+      "module": "inventory",
+      "screen": "/inventory Return",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-67"
+        }
+      ],
+      "requirement": "Return offers a condition and a 'Close as lost/damaged' path with a required reason.",
+      "acceptance": [
+        "Reason fields stay required where they are today, and the same audit entry (actor, time, reason, before and after) is still written (blueprint §1b).",
+        "Component test: the close path posts the new operation with its reason."
+      ],
+      "dependencies": [
+        "MOD-INV-014"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on MOD-INV-014."
+    },
+    {
+      "id": "MOD-INV-016",
+      "title": "Remove the duplicated 'Temporary checkout' heading and nested card",
+      "module": "inventory",
+      "screen": "/inventory Temporary checkout",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-68"
+        },
+        {
+          "doc": "VR",
+          "ref": "A3"
+        },
+        {
+          "doc": "VR",
+          "ref": "Inventory"
+        }
+      ],
+      "requirement": "The checkout has one heading and no card inside a card.",
+      "acceptance": [
+        "Visual regression: a single 'Temporary checkout' heading, no nested bordered card."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-017",
+      "title": "Inventory copy: labels, terminology, action-specific messages, Help article",
+      "module": "inventory",
+      "screen": "/inventory; Help Center",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-69"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Terminology"
+        },
+        {
+          "doc": "WR",
+          "ref": "Terminology (Pooled stock · Standing total)"
+        }
+      ],
+      "requirement": "tracking_mode shows labels; the 'reserved for a later phase' copy is removed; each action has its own success message; the module uses 'Shared supplies' and 'On hand'; a Help article covers Inventory.",
+      "acceptance": [
+        "No 'pooled'/'consumable' raw values or 'later phase' text render (grep/snapshot).",
+        "Help search for 'inventory' returns the new article."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-018",
+      "title": "Inventory dates use the shared formatter",
+      "module": "inventory",
+      "screen": "/inventory Outstanding checkouts",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-54"
+        }
+      ],
+      "requirement": "Outstanding checkout dates use formatDateTime instead of raw toLocaleString().",
+      "acceptance": [
+        "No toLocaleString() in inventory components (grep)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-019",
+      "title": "Inventory on the List template with row actions that open sheets",
+      "module": "inventory",
+      "screen": "/inventory",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "VR",
+          "ref": "Inventory"
+        },
+        {
+          "doc": "VR",
+          "ref": "Top 15 (Inventory and Training Alerts onto the list template)"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard (Inventory)"
+        },
+        {
+          "doc": "BP",
+          "ref": "#8"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 2"
+        }
+      ],
+      "requirement": "Inventory uses the PageHeader with Add Item as primary, a DataTable/CardList of items by location, and Receive, Move and Check out as row or toolbar actions opening sheets (check-out is an accountable sheet with an audit notice); the permanent checkout form, the 'More' menu hiding locations and Refresh-as-primary are gone. A balance row's 'Check out' pre-fills item and location.",
+      "acceptance": [
+        "Counter checkout drops from ~10 taps to ~6 (walkthrough recorded).",
+        "Destructive or broad-impact actions use a ConfirmDialog naming the record and impact; accountable state changes use a sheet with a required reason and an audit notice, with no extra 'Are you sure?' (blueprint §1b).",
+        "Same inventory endpoints and payloads; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity).",
+        "Verified with Officer, Fleet Manager, Supervisor and Admin accounts: what each role can see and do matches the baseline (blueprint §4)."
+      ],
+      "dependencies": [
+        "design-system: PageHeader, DataTable + CardList, Sheet"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-020",
+      "title": "Inventory guided first-run: location → item → receive",
+      "module": "inventory",
+      "screen": "/inventory (empty agency)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Equipment & Inventory (first-run path broken)"
+        },
+        {
+          "doc": "WR",
+          "ref": "Guided first-run setup"
+        },
+        {
+          "doc": "BP",
+          "ref": "#15"
+        }
+      ],
+      "requirement": "A new agency is guided to add a location, then an item, then receive stock; 'Add location' is reachable without the More menu, and the checkout is not offered while there is no stock.",
+      "acceptance": [
+        "Walkthrough on an empty agency completes the three steps without help; EmptyState shows the next step."
+      ],
+      "dependencies": [
+        "design-system: EmptyState (BP #15)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-021",
+      "title": "Query outstanding inventory by officer or vehicle",
+      "module": "inventory",
+      "screen": "/api/inventory/checkouts (filter by recipient)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-72"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-46"
+        }
+      ],
+      "requirement": "Outstanding checkouts can be read for one officer or one vehicle, scoped by role, so readiness cards and the vehicle record can show them.",
+      "acceptance": [
+        "Route test: an officer can read their own outstanding checkouts; a fleet manager can read a vehicle's."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-INV-022",
+      "title": "Show pooled checkouts on the officer readiness card",
+      "module": "inventory",
+      "screen": "/equipment Officer Readiness",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "D-72"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U12"
+        }
+      ],
+      "requirement": "An officer's readiness card lists shared-supply items checked out to them, separately labelled from serialized equipment.",
+      "acceptance": [
+        "Component test: a radio checked out to an officer appears on their card under Shared supplies."
+      ],
+      "dependencies": [
+        "MOD-INV-021"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on MOD-INV-021. The vehicle tab part is MOD-FLT-055."
+    },
+    {
+      "id": "MOD-DOC-001",
+      "title": "'Use template' as the main action on each published template",
+      "module": "agency-documents",
+      "screen": "/agency-documents template list",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#17"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b B"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Agency Documents"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized fixes (Use template)"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard (Agency Documents)"
+        },
+        {
+          "doc": "VR",
+          "ref": "Agency Documents"
+        }
+      ],
+      "requirement": "Each published template row has a primary 'Use template' action that starts generation through the existing generate endpoint; 'Generate Document › Choose template' leads to it instead of only scrolling.",
+      "acceptance": [
+        "The existing generate endpoint is confirmed on the verified baseline before work starts.",
+        "An instructor can produce a form from a published template in one action from the row.",
+        "Draft templates do not offer 'Use template'.",
+        "Same generate endpoint and payload as the baseline; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity).",
+        "Verified with Officer, Fleet Manager, Supervisor and Admin accounts: what each role can see and do matches the baseline (blueprint §4)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blueprint §2b: 'existing generate endpoint, if confirmed on the baseline'. If it is not, this becomes track C."
+    },
+    {
+      "id": "MOD-DOC-002",
+      "title": "Template row: one primary action plus a '…' menu; confirm Archive/Unpublish",
+      "module": "agency-documents",
+      "screen": "/agency-documents template list",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "VR",
+          "ref": "Agency Documents"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Edit, Publish/Unpublish, Duplicate and Archive move into a labelled '…' menu beside the primary action; no icon-only controls; Archive and Unpublish open a ConfirmDialog naming the template and impact.",
+      "acceptance": [
+        "axe: every row control has an accessible name.",
+        "Destructive or broad-impact actions use a ConfirmDialog naming the record and impact; accountable state changes use a sheet with a required reason and an audit notice, with no extra 'Are you sure?' (blueprint §1b).",
+        "Same endpoints for each action; Network-log comparison shows the same endpoints and payloads as the baseline, and no audit-log difference (blueprint §4 feature parity)."
+      ],
+      "dependencies": [
+        "MOD-DOC-001",
+        "design-system: ConfirmDialog"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-DOC-003",
+      "title": "Lead with the template list; keep status chips and Template Builder steps",
+      "module": "agency-documents",
+      "screen": "/agency-documents",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "VR",
+          "ref": "Agency Documents"
+        },
+        {
+          "doc": "WR",
+          "ref": "Agency Documents"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 2"
+        }
+      ],
+      "requirement": "The two feature cards that repeat the header are removed so the template list leads; Draft/Published chips, version and date metadata and the Template Builder's numbered steps are kept.",
+      "acceptance": [
+        "Visual regression: the template list is the first content below the PageHeader; chips and builder steps are unchanged."
+      ],
+      "dependencies": [
+        "design-system: PageHeader, StatusChip"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-DOC-004",
+      "title": "Agency Documents list on DataTable with phone CardList",
+      "module": "agency-documents",
+      "screen": "/agency-documents template list",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#8"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 2"
+        }
+      ],
+      "requirement": "Templates render in the shared DataTable with sortable headers and a card mode under 640px.",
+      "acceptance": [
+        "Visual regression at 1280/768/375; no horizontal page scroll at 375px."
+      ],
+      "dependencies": [
+        "design-system: DataTable + CardList (BP #8)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-DOC-005",
+      "title": "Agency Documents empty state and first-run guidance",
+      "module": "agency-documents",
+      "screen": "/agency-documents (no templates)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#15"
+        }
+      ],
+      "requirement": "An agency with no templates sees an EmptyState with the next step (create or import a template) and a short set-up guide.",
+      "acceptance": [
+        "Visual regression of the empty state; the primary action opens the Template Builder."
+      ],
+      "dependencies": [
+        "design-system: EmptyState (BP #15)"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-DOC-006",
+      "title": "Generated-documents list API",
+      "module": "agency-documents",
+      "screen": "Agency Documents backend",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#17"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        }
+      ],
+      "requirement": "An endpoint lists documents generated from templates (template, version, who, when), scoped by role.",
+      "acceptance": [
+        "Route test: a generated document appears in the list for permitted users only."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-DOC-007",
+      "title": "Generated-documents list on the Agency Documents screen",
+      "module": "agency-documents",
+      "screen": "/agency-documents",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#17"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        }
+      ],
+      "requirement": "Users can see and open the documents they (or their agency, per role) generated.",
+      "acceptance": [
+        "Component test: after 'Use template', the new document appears in the list and opens.",
+        "The UI only hides or disables controls; the server stays the authority for permissions and no permission logic moves into components (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-DOC-006",
+        "MOD-DOC-001"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked on the track C API (MOD-DOC-006)."
+    }
+  ]
+}

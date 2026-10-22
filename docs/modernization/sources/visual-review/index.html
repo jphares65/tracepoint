@@ -1,0 +1,350 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>TracePoint Visual Review</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: review binder — sticky contents rail, one reading column, screenshot beside each module's findings */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --ink:#141922; --muted:#586272; --line:#dce1e8;
+  --accent:#2350d8; --accent-soft:#e8eefc;
+  --good:#1c7a46; --good-soft:#e4f4ea; --warn:#9a5a00; --warn-soft:#fff3df; --bad:#b42318; --bad-soft:#fdeceb;
+  --shot-bg:#0b111b;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1016; --surface:#151a22; --ink:#e6eaf0; --muted:#98a3b3; --line:#29303b;
+  --accent:#86a6ff; --accent-soft:#1a2340;
+  --good:#6fd29b; --good-soft:#11291c; --warn:#f0b65c; --warn-soft:#33240d; --bad:#ff8c82; --bad-soft:#3a1715; --shot-bg:#05080d;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1016; --surface:#151a22; --ink:#e6eaf0; --muted:#98a3b3; --line:#29303b;
+  --accent:#86a6ff; --accent-soft:#1a2340;
+  --good:#6fd29b; --good-soft:#11291c; --warn:#f0b65c; --warn-soft:#33240d; --bad:#ff8c82; --bad-soft:#3a1715; --shot-bg:#05080d;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15.5px;line-height:1.6}
+.wrap{max-width:1200px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:30px 80px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:40px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 20px);align-self:start;font-size:13.5px}
+nav.toc .lbl{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+nav.toc a{display:block;color:var(--muted);text-decoration:none;padding:4px 0 4px 10px;border-left:2px solid var(--line)}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--accent);border-left-color:var(--accent);outline:none}
+main{min-width:0}
+header.top{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:8px}
+.eyebrow{font-family:var(--f-mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:var(--f-display);font-size:clamp(28px,4vw,40px);line-height:1.1;margin:6px 0 10px;text-wrap:balance}
+h2{font-family:var(--f-display);font-size:25px;line-height:1.2;margin:50px 0 12px;text-wrap:balance;scroll-margin-top:16px}
+h3{font-size:17px;margin:0 0 6px;line-height:1.35}
+p{margin:0 0 12px;max-width:74ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted)}
+.meta b{color:var(--ink);font-weight:600}
+.note{background:var(--warn-soft);color:var(--ink);border-radius:6px;padding:10px 14px;font-size:14px;margin-top:14px}
+.verdict{font-size:17px;line-height:1.6;max-width:72ch}
+.score{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin:16px 0}
+.score div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.score .k{font-size:13px;color:var(--muted)}
+.score .v{font-family:var(--f-mono);font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+.score .v small{font-size:13px;color:var(--muted)}
+.bar{height:5px;border-radius:3px;background:var(--line);margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar i.lo{background:var(--bad)} .bar i.mid{background:var(--warn)} .bar i.hi{background:var(--good)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface);margin:12px 0}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:640px}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-top:1px solid var(--line)}
+th{font-family:var(--f-mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);background:var(--bg);border-top:0}
+td.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--accent-soft);padding:1px 5px;border-radius:3px;overflow-wrap:anywhere}
+.issue{display:grid;grid-template-columns:2.6em minmax(0,1fr);gap:0 12px;padding:16px 0;border-top:1px solid var(--line)}
+.issue .id{font-family:var(--f-mono);color:var(--accent);font-weight:500;padding-top:2px}
+.issue p{margin:0 0 6px}
+.issue .fix{color:var(--muted);font-size:14.5px}
+.issue .fix b{color:var(--ink)}
+.mod{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:20px;padding:22px 0;border-top:1px solid var(--line);align-items:start}
+.mod.tall{grid-template-columns:minmax(0,.6fr) minmax(0,1fr)}
+.mod figure{margin:0;background:var(--shot-bg);border-radius:8px;padding:6px;border:1px solid var(--line)}
+.mod figure img{display:block;width:100%;height:auto;border-radius:4px}
+.mod figcaption{font-size:12px;color:var(--muted);padding:6px 4px 0;background:var(--surface);margin:6px -6px -6px;padding:6px 10px;border-radius:0 0 7px 7px}
+.mod ul{margin:6px 0 0;padding-left:18px}
+.mod li{margin:4px 0;font-size:14.5px}
+.good{color:var(--good);font-weight:600}
+.tag{display:inline-block;font-family:var(--f-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:3px;margin-right:6px;vertical-align:2px}
+.t-keep{background:var(--good-soft);color:var(--good)}
+.t-fix{background:var(--bad-soft);color:var(--bad)}
+.t-tune{background:var(--warn-soft);color:var(--warn)}
+.tokens{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:12px 0}
+.tokens>div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.tokens h3{font-family:var(--f-display);font-size:18px}
+.tokens ul{margin:4px 0 0;padding-left:18px;font-size:14px}
+.tokens li{margin:3px 0}
+.swatches{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.sw{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+.sw i{width:18px;height:18px;border-radius:4px;border:1px solid var(--line);display:inline-block}
+ol.top{list-style:none;counter-reset:t;padding:0;margin:10px 0}
+ol.top li{counter-increment:t;display:grid;grid-template-columns:2.4em minmax(0,1fr) auto;gap:0 12px;padding:11px 0;border-top:1px solid var(--line);align-items:baseline}
+ol.top li::before{content:counter(t,decimal-leading-zero);font-family:var(--f-mono);color:var(--accent)}
+ol.top b{display:block}
+ol.top span.d{color:var(--muted);font-size:14px}
+ol.top .eff{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+a{color:var(--accent)}
+@media (max-width:900px){.wrap{grid-template-columns:minmax(0,1fr)} nav.toc{display:none} .mod,.mod.tall{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Sections">
+  <div class="lbl">Contents</div>
+  <a href="#verdict">Verdict</a>
+  <a href="#measured">Measured evidence</a>
+  <a href="#cross">Cross-cutting issues</a>
+  <a href="#modules">Module review</a>
+  <a href="#responsive">Tablet &amp; phone</a>
+  <a href="#direction">Design direction</a>
+  <a href="#priorities">Top 15 changes</a>
+</nav>
+
+<main>
+<header class="top">
+  <div class="eyebrow">Phase 2 · Aesthetic and intuitive UI review</div>
+  <h1>TracePoint Visual Review</h1>
+  <div class="meta"><span>Date <b>22 Oct 2026</b></span><span>Build <b>22e543d</b> (deployed staging)</span><span>Tenant <b>Demo Township PD</b></span><span>Role <b>Administrator</b></span><span>Viewports <b>1440 · 1280 · 768 · 375</b></span></div>
+  <p class="note">The Phase 2 brief arrived cut off after Part 1 ("Opportunities for…"). This review covers Part 1 in full. Later parts will be added once the rest of the brief is shared. Functional defects are left to the development conversation and are only mentioned where they show up visually.</p>
+</header>
+
+<section id="verdict">
+<h2>Verdict</h2>
+<p class="verdict">TracePoint already has a believable identity: a dark command-center look, navy surfaces, one blue accent and Geist type. A handful of screens look premium today: the Help Center, the vehicle record header, the Qualifications split view and the Settings profile form. What keeps it from feeling like polished enterprise software is that <b>no two modules are built from the same parts</b>. Every page styles itself by hand. The result is small, faint, uppercase text everywhere, cards nested inside cards, four different header treatments, and tables that don't adapt below desktop width.</p>
+<p>The fix is mostly foundational, not cosmetic: about a dozen tokens and eight components, applied page by page. None of it needs new features.</p>
+<div class="score" role="list">
+  <div role="listitem"><div class="k">Visual identity</div><div class="v">3.5 <small>/ 5</small></div><div class="bar"><i class="mid" style="width:70%"></i></div></div>
+  <div role="listitem"><div class="k">Consistency across modules</div><div class="v">1.5 <small>/ 5</small></div><div class="bar"><i class="lo" style="width:30%"></i></div></div>
+  <div role="listitem"><div class="k">Typography &amp; hierarchy</div><div class="v">2 <small>/ 5</small></div><div class="bar"><i class="lo" style="width:40%"></i></div></div>
+  <div role="listitem"><div class="k">Color &amp; status</div><div class="v">2.5 <small>/ 5</small></div><div class="bar"><i class="mid" style="width:50%"></i></div></div>
+  <div role="listitem"><div class="k">Tables, filters, density</div><div class="v">2 <small>/ 5</small></div><div class="bar"><i class="lo" style="width:40%"></i></div></div>
+  <div role="listitem"><div class="k">Dashboards &amp; data</div><div class="v">2.5 <small>/ 5</small></div><div class="bar"><i class="mid" style="width:50%"></i></div></div>
+  <div role="listitem"><div class="k">Tablet &amp; phone</div><div class="v">2 <small>/ 5</small></div><div class="bar"><i class="lo" style="width:40%"></i></div></div>
+  <div role="listitem"><div class="k">Finish &amp; polish</div><div class="v">2 <small>/ 5</small></div><div class="bar"><i class="lo" style="width:40%"></i></div></div>
+</div>
+<p style="font-size:13.5px;color:var(--muted)">These scores are my own judgment, informed by the measurements below. A 5 would mean the module set reads as one product built from one kit.</p>
+</section>
+
+<section id="measured">
+<h2>Measured evidence</h2>
+<p>Measured in the browser across 23 screens at 1440×900, plus a scan of the deployed source (<code>22e543d</code>).</p>
+<div class="tbl"><table>
+<thead><tr><th>What</th><th>Found</th><th>Healthy target</th></tr></thead>
+<tbody>
+<tr><td>Global stylesheet</td><td><code>globals.css</code> is the untouched create-next-app default (white background, Arial fallback). No color, spacing or type tokens.</td><td>One token file every page uses</td></tr>
+<tr><td>Shared UI components</td><td>No shared Button, Card, Input, Table, Dialog or PageHeader. The only header component is Armory-only.</td><td>8–10 core components</td></tr>
+<tr><td>Page-title styles</td><td class="num">~20 class variants; rendered at 22, 24, 30, 36px</td><td class="num">1 (with one display size)</td></tr>
+<tr><td>Text at 9–11px</td><td class="num">636 uses in code (9px ×77, 10px ×355, 11px ×204)</td><td class="num">0 below 12px</td></tr>
+<tr><td>Uppercase share of visible text</td><td class="num">Range Days 41% · Agency Training 40% · Inspections 39% · Qualifications 36%</td><td class="num">&lt;10% (table headers only)</td></tr>
+<tr><td>Letter-spacing values for labels</td><td class="num">8 (0.12–0.26em)</td><td class="num">1</td></tr>
+<tr><td>Corner radii in use</td><td class="num">8 / 12 / 16 / 24 / 32px, plus full pills</td><td class="num">3 (control, card, pill)</td></tr>
+<tr><td>Filled-button heights</td><td class="num">28–56px; text 11–16px</td><td class="num">2 sizes (32 / 40px)</td></tr>
+<tr><td>Primary button colors</td><td><code>blue-500</code> ×182, <code>blue-600</code> ×160, violet ×22, plus solid green on the vehicle page</td><td class="num">1 accent</td></tr>
+<tr><td>KPI number sizes</td><td class="num">22 / 24 / 30px; 3 tile layouts</td><td class="num">1 tile, 1 size</td></tr>
+<tr><td>Faint small text (≤12px, low luminance)</td><td class="num">Qualifications 59 · Help 43 · Range Days 41 · Analytics 40 · Dashboard 37</td><td>Secondary text ≥ 4.5:1</td></tr>
+<tr><td>Controls under 32px tall</td><td class="num">Inspection form 58 · Help 16 · Agency Docs 14 · Firearms 8</td><td>≥ 36px desktop, ≥ 44px touch</td></tr>
+<tr><td>Longest screens</td><td class="num">Help 5,320px · Inspection form 4,042px · Import wizard 3,590px</td><td>Progressive disclosure</td></tr>
+<tr><td>Largest single page file</td><td class="num"><code>range-days/page.tsx</code> 324 KB; settings 193 KB; import 218 KB</td><td>Composable sections</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="cross">
+<h2>Cross-cutting issues</h2>
+<div class="issue"><div class="id">A1</div><div><h3>Every page is hand-built, so nothing matches</h3><p>Headers, buttons, tiles, chips and tables are re-styled on each page. That one root cause produces most of what follows. It also means each new screen drifts further.</p><p class="fix"><b>Fix:</b> a token layer (color roles, type scale, spacing, radius) and a small component kit. Migrate the highest-traffic pages first.</p></div></div>
+<div class="issue"><div class="id">A2</div><div><h3>Micro-type and uppercase labels make screens hard to read</h3><p>Most labels are 9–11px, uppercase, widely letter-spaced and dim. On Range Days and Qualifications they're 36–41% of all text, so everything looks equally unimportant and the actual data (names, dates, scores) doesn't stand out.</p><p class="fix"><b>Fix:</b> a 12px minimum, sentence-case labels at 13px in muted color, uppercase reserved for table headers, and data set one step larger and brighter than its label.</p></div></div>
+<div class="issue"><div class="id">A3</div><div><h3>Cards inside cards inside cards</h3><p>A rounded header card sits above rounded section cards that hold rounded tiles: every vehicle field is its own bordered box, each range-day card nests three more boxes, and Inventory has a "Temporary checkout" card inside a "Temporary checkout" card. With everything framed, nothing reads as more important.</p><p class="fix"><b>Fix:</b> use cards only for things (a vehicle, a range day, an alert). Sections become plain areas with a heading and a divider. Field lists become two-column definition lists with no boxes.</p></div></div>
+<div class="issue"><div class="id">A4</div><div><h3>Four different page headers</h3><ul style="margin:6px 0 8px;padding-left:18px">
+<li>The title sits in a rounded card on Dashboard, Range Days, Fleet, Settings and Equipment, and on the plain page on Firearms, Inventory and Qualifications.</li>
+<li>Header heights run from 89 to 377px.</li>
+<li>Eyebrows contradict the menu ("Readiness" above Equipment, "Training" above Certifications), or are absent.</li>
+<li>The firearm record shows its name twice, at 30px and 22px.</li></ul><p class="fix"><b>Fix:</b> one <code>PageHeader</code>: breadcrumb, a title at 24px, optional status chip, one primary action and an overflow menu, on the page background with no card.</p></div></div>
+<div class="issue"><div class="id">A5</div><div><h3>Buttons don't agree on size, color or emphasis</h3><ul style="margin:6px 0 8px;padding-left:18px">
+<li>The vehicle record has three filled buttons in green, amber and blue.</li>
+<li>Training Alerts puts outline, tinted-blue and tinted-green actions side by side.</li>
+<li>Labels wrap inside buttons ("Save Agency Profile", "Reset Wizard").</li>
+<li>Inventory uses only small outline buttons, and Custody uses violet.</li></ul><p class="fix"><b>Fix:</b> three variants (primary, secondary, quiet) plus destructive, in two heights, with one primary per view. Green and amber are for status, never for buttons.</p></div></div>
+<div class="issue"><div class="id">A6</div><div><h3>KPI tiles: three designs, rainbow icons, alarming zeros</h3><ul style="margin:6px 0 8px;padding-left:18px">
+<li>The label sits above the number on some screens and below it on others.</li>
+<li>Numbers render at 22, 24 or 30px.</li>
+<li>Icons sit in red, green, teal, yellow and orange squares that carry no meaning.</li>
+<li>Equipment and Fleet tint tiles green, orange and red even when the value is 0.</li>
+<li>Command Pulse leaves an empty slot at the end of the grid.</li></ul><p class="fix"><b>Fix:</b> one <code>KpiTile</code>: label, number, one context line and an optional trend. Neutral by default, colored only when the value means something needs attention, with the grid sized to the tile count.</p></div></div>
+<div class="issue"><div class="id">A7</div><div><h3>Color is decorative instead of meaningful</h3><p>Status chips mix uppercase outline pills, tinted fills and colored text, and "Due soon" is yellow text in Fleet but an amber chip elsewhere. Violet appears for custody. Red marks zero-value tiles. Users can't learn what a color means.</p><p class="fix"><b>Fix:</b> five semantic roles (success, warning, danger, info, neutral), each with one chip style. Status color appears only on status.</p></div></div>
+<div class="issue"><div class="id">A8</div><div><h3>Tables and filters don't adapt</h3><ul style="margin:6px 0 8px;padding-left:18px">
+<li>The Fleet table is 1,260px wide, so Status and the row actions are cut off even at a 1280px screen width.</li>
+<li>The Fleet table and the Settings tab bar show bright white native scrollbars on the dark theme.</li>
+<li>Firearms uses selects for sort and grouping, while Fleet uses sortable column headers plus a "Filters" button.</li>
+<li>Filter bars stack into five or more full-width rows on a phone.</li></ul><p class="fix"><b>Fix:</b> one <code>DataTable</code> with a pinned first column, a column chooser, sortable headers and dark scrollbars, plus a single filter bar that collapses into a "Filters" sheet below 768px. Under 640px, rows render as cards.</p></div></div>
+<div class="issue"><div class="id">A9</div><div><h3>Unfinished seams</h3><p>Small finish issues each undercut the premium feel:</p><ul style="margin:6px 0 8px;padding-left:18px">
+<li>Developer copy on the Inspections page.</li>
+<li>A stray "Qualification records loaded" status line.</li>
+<li>Raw firearm UUIDs and raw API error text.</li>
+<li>A location pin icon with nothing next to it on range-day cards.</li>
+<li>The logo PNG in its own dark rectangle that doesn't match the header.</li>
+<li>Native <code>window.prompt</code> and native scrollbars.</li>
+<li>Default browser date pickers.</li></ul><p class="fix"><b>Fix:</b> a polish pass with a checklist: no IDs, no developer copy, no native dialogs, no empty icon rows, and a transparent SVG logo.</p></div></div>
+</section>
+
+<section id="modules">
+<h2>Module review</h2>
+<p><span class="tag t-keep">Keep</span>what already works&nbsp; <span class="tag t-tune">Tune</span>small change&nbsp; <span class="tag t-fix">Fix</span>visibly broken or inconsistent</p>
+
+<div class="mod"><figure><img src="img/dashboard.jpg" alt="Command Pulse dashboard with KPI tiles in a grid" loading="lazy"><figcaption>Command Pulse, 1280px</figcaption></figure><div><h3>Command Pulse</h3><ul>
+<li><span class="tag t-keep">Keep</span>The sidebar is clean, grouped and calm, with a clear active state.</li>
+<li><span class="tag t-fix">Fix</span>"Items Requiring Attention", the reason the screen exists, sits below nine tiles. Lead with it.</li>
+<li><span class="tag t-fix">Fix</span>Five colored icon squares carry no meaning. Tile labels wrap ("Qualification / Readiness"). A big "—" stands in for "not configured". The grid leaves an empty slot.</li>
+<li><span class="tag t-tune">Tune</span>Two wide tiles followed by seven narrow ones has no rhythm. Use one row of four headline KPIs, then the action list, then module cards.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/range-days.jpg" alt="Range Days list with KPI tiles, filters and large range day cards" loading="lazy"><figcaption>Range Days, 1280px</figcaption></figure><div><h3>Range Days</h3><ul>
+<li><span class="tag t-fix">Fix</span>Each card repeats the same four-line "Day outline" boilerplate and three nested boxes, so only two days fit on a desktop screen.</li>
+<li><span class="tag t-fix">Fix</span>An empty location row shows a bare pin icon. The Archive button sits inside the card's top-right corner.</li>
+<li><span class="tag t-tune">Tune</span>Show a compact list: date block, title, type and status chips, lead, roster and readiness meter, and one "Open" action. Keep the outline for the detail view.</li>
+<li><span class="tag t-keep">Keep</span>The filter row (search, status, type) is well proportioned.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/firearms.jpg" alt="Department Firearms table with toolbar and inventory counters" loading="lazy"><figcaption>Department Firearms, 1280px</figcaption></figure><div><h3>Department Firearms</h3><ul>
+<li><span class="tag t-keep">Keep</span>The table is the closest thing to an enterprise data grid in the app: sortable headers, clear status pills and readable names.</li>
+<li><span class="tag t-fix">Fix</span>Serial numbers are nearly invisible gray, yet they're the armorer's key identifier. Set them in mono at full contrast.</li>
+<li><span class="tag t-tune">Tune</span>The counters strip inside the card is a fourth KPI style. The Standard/Focus toggle is unexplained. The header is plain while sibling modules use a card.</li>
+<li><span class="tag t-fix">Fix</span>Selecting a row opens details below the table, off-screen. Use a right-side drawer or the record page.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/firearm-record.jpg" alt="Firearm record page with duplicated title" loading="lazy"><figcaption>Firearm record</figcaption></figure><div><h3>Firearm record</h3><ul>
+<li><span class="tag t-fix">Fix</span>The title appears twice: a 30px page title that wraps to two lines, then the same name again at 22px.</li>
+<li><span class="tag t-tune">Tune</span>The header style differs from the vehicle record. The two record pages should share one layout: header with status chip, facts grid, tabs.</li>
+<li><span class="tag t-keep">Keep</span>Labelled sections (Assignment, Record Activity, Physical Custody) with one-line explanations are clear.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/inspection-form.jpg" alt="Inspection checklist items each in their own card with small Pass Fail NA buttons" loading="lazy"><figcaption>New firearm inspection</figcaption></figure><div><h3>Inspection form</h3><ul>
+<li><span class="tag t-fix">Fix</span>Nineteen items each sit in their own card in a narrow left column while the right half stays empty, so the form is 4,042px tall.</li>
+<li><span class="tag t-fix">Fix</span>The Pass / Fail / N/A buttons are under 32px and wrap inconsistently, and every item shows a notes field whether it's needed or not.</li>
+<li><span class="tag t-tune">Tune</span>Use a compact checklist table: item, critical marker, a segmented control across the full width. The note field opens only on Fail. Keep a sticky summary bar with the result.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/fleet.jpg" alt="Fleet table cut off at the right with white scrollbar" loading="lazy"><figcaption>Fleet Management, 1280px</figcaption></figure><div><h3>Fleet Management</h3><ul>
+<li><span class="tag t-fix">Fix</span>At 1280px the table is clipped (Status reads "AVAILAB") and needs a white sideways scrollbar.</li>
+<li><span class="tag t-fix">Fix</span>Repeated "NOT SCHEDULED" micro-caps and "1 mi / 1 hrs" stacked without labels. Unit numbers wrap onto two lines.</li>
+<li><span class="tag t-tune">Tune</span>Drop columns down to Unit, Vehicle, Assignment, Status, Next due and Issues, and move the rest to the record. Make the row the link instead of VIEW QR / EDIT / OPEN text buttons.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/vehicle.jpg" alt="Vehicle record with three colored action buttons and status list" loading="lazy"><figcaption>Vehicle record</figcaption></figure><div><h3>Vehicle record</h3><ul>
+<li><span class="tag t-keep">Keep</span>This is the best page header in the product: back link, icon, title, status chip and actions in one row. Make it the template.</li>
+<li><span class="tag t-fix">Fix</span>It has three filled action colors (green, amber, blue) plus two unlabeled icon buttons.</li>
+<li><span class="tag t-fix">Fix</span>Each overview field sits in its own bordered tile. "Manage Status" is a stack of colored pills where one click changes status, which looks decorative and is easy to misclick.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/qualifications.jpg" alt="Qualification History split view with officer list and detail" loading="lazy"><figcaption>Qualification History</figcaption></figure><div><h3>Qualifications</h3><ul>
+<li><span class="tag t-keep">Keep</span>The split view (list on the left, officer detail on the right) is the right pattern. Reuse it for Training Alerts and Off-Duty requests.</li>
+<li><span class="tag t-fix">Fix</span>59 blocks of faint small text, a stray "Qualification records loaded" line, raw firearm IDs, and "No record" in muted gray instead of a warning.</li>
+<li><span class="tag t-tune">Tune</span>The title says "Qualification History" while the menu says "Qualifications".</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/training-alerts.jpg" alt="Training Alerts inbox with large alert card and chip groups" loading="lazy"><figcaption>Training Alerts</figcaption></figure><div><h3>Training Alerts</h3><ul>
+<li><span class="tag t-fix">Fix</span>Every alert is a full-width card with four boilerplate blocks and a chip cloud, so three alerts take three screens. An inbox should be a dense list.</li>
+<li><span class="tag t-fix">Fix</span>Three action styles sit side by side (outline, tinted blue, tinted green).</li>
+<li><span class="tag t-tune">Tune</span>Use list rows (severity bar, officer, issue, age, status) with a detail drawer, and one primary "Review" action.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/equipment.jpg" alt="Equipment page with tinted zero KPI tiles and empty state" loading="lazy"><figcaption>Equipment, empty agency</figcaption></figure><div><h3>Equipment</h3><ul>
+<li><span class="tag t-fix">Fix</span>The header buttons wrap ("Refresh" drops to a second line). Zero-value tiles are tinted green, amber and red.</li>
+<li><span class="tag t-keep">Keep</span>The centered empty state with an icon is the right idea.</li>
+<li><span class="tag t-tune">Tune</span>Give the empty state its primary action and the three set-up steps: types, then requirements, then items.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/inventory.jpg" alt="Inventory page with small outline buttons and inline checkout form" loading="lazy"><figcaption>Inventory</figcaption></figure><div><h3>Inventory</h3><ul>
+<li><span class="tag t-fix">Fix</span>It looks like a different product: plain header, all-outline square buttons, a "More" menu that hides key setup, and Refresh in the primary spot.</li>
+<li><span class="tag t-fix">Fix</span>A permanent checkout form takes half the page, its heading is duplicated, and its fields are placeholder-only.</li>
+<li><span class="tag t-tune">Tune</span>Use the list template (header with Add Item, a table of items by location), with Receive, Move and Check out as row or toolbar actions that open sheets.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/agency-docs.jpg" alt="Agency Documents landing with feature cards and template rows" loading="lazy"><figcaption>Agency Documents</figcaption></figure><div><h3>Agency Documents</h3><ul>
+<li><span class="tag t-tune">Tune</span>The two feature cards above the list repeat what the header already says. Lead with the template list.</li>
+<li><span class="tag t-fix">Fix</span>Each row has five small controls, two of them icon-only (Duplicate, Archive). Use a main "Use template" action plus a "…" menu.</li>
+<li><span class="tag t-keep">Keep</span>The Draft and Published chips and the version and date metadata are well structured.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/settings.jpg" alt="Admin Settings with overflowing tab bar and white scrollbar" loading="lazy"><figcaption>Admin Settings</figcaption></figure><div><h3>Settings</h3><ul>
+<li><span class="tag t-keep">Keep</span>The Agency Profile form is the cleanest form in the app: two columns, real labels, comfortable inputs. Use it as the form template.</li>
+<li><span class="tag t-fix">Fix</span>Nine horizontal tabs overflow with a white scrollbar at 1280px, and the save button's label wraps onto two lines.</li>
+<li><span class="tag t-tune">Tune</span>Replace the tabs with a left settings rail (Agency, People &amp; roles, Policies by module, Integrations, Personal), the pattern most enterprise admin consoles use.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/import.jpg" alt="Import wizard with step tracker and three importer cards" loading="lazy"><figcaption>Import / Export</figcaption></figure><div><h3>Import wizard</h3><ul>
+<li><span class="tag t-fix">Fix</span>The five-step tracker shows before you've picked an importer, and only the classic importer uses those steps.</li>
+<li><span class="tag t-tune">Tune</span>Three bordered cards in green, blue and violet compete. Pick one recommended path and show the others as secondary links.</li></ul></div></div>
+
+<div class="mod"><figure><img src="img/help.jpg" alt="Help Center with hero, search and topic rail" loading="lazy"><figcaption>Help Center</figcaption></figure><div><h3>Help Center <span class="good">· benchmark</span></h3><ul>
+<li><span class="tag t-keep">Keep</span>This is the most premium screen: a focused hero, a large search field, quick chips, a topic rail and an even card grid. Its spacing and hierarchy are the target for the rest of the app.</li>
+<li><span class="tag t-tune">Tune</span>At 5,320px the topic grid is long. Paginate or group it by role.</li></ul></div></div>
+</section>
+
+<section id="responsive">
+<h2>Tablet and phone</h2>
+<div class="mod tall"><figure><img src="img/phone-range.jpg" alt="Range Days card on a phone, 565 pixels tall" loading="lazy"><figcaption>Range Days, 375px: one card is 565px tall</figcaption></figure><div><h3>Phone (375px)</h3><ul>
+<li><span class="tag t-fix">Fix</span>Range-day cards are 565px each, about 70% of the screen, mostly the same repeated outline.</li>
+<li><span class="tag t-fix">Fix</span>The Fleet table stays a 1,260px table in a 350px window. Only Unit and Vehicle are visible.</li>
+<li><span class="tag t-fix">Fix</span>Filter controls stack into five or more full-width rows before any data, and on Firearms the first row starts at y≈770.</li>
+<li><span class="tag t-fix">Fix</span>The 37.6px hamburger and the 9–11px labels are too small for gloved or on-the-move use.</li>
+<li><span class="tag t-keep">Keep</span>The scoring board's large score inputs, decimal keypad and sticky save bar are the right phone pattern.</li></ul>
+<h3 style="margin-top:18px">Tablet (768px)</h3><ul>
+<li><span class="tag t-fix">Fix</span>The sidebar collapses into a hamburger at 768px. Tablets (range, armory, fleet bay) should keep a collapsed icon rail.</li>
+<li><span class="tag t-fix">Fix</span>The Fleet table and the Settings tab bar both show white native scrollbars.</li>
+<li><span class="tag t-tune">Tune</span>Two-column KPI tiles take a whole screen before any content. On tablet, use one compact strip of four.</li></ul></div></div>
+<div class="mod"><figure><img src="img/phone-fleet.jpg" alt="Fleet on a phone with stacked filters and clipped table" loading="lazy"><figcaption>Fleet, 375px</figcaption></figure><figure><img src="img/tablet-settings.jpg" alt="Settings on a tablet with overflowing tabs and white scrollbar" loading="lazy"><figcaption>Settings, 768px</figcaption></figure></div>
+</section>
+
+<section id="direction">
+<h2>Design direction</h2>
+<p>Keep the dark command-center identity. It suits a readiness product used in dispatch rooms, range shacks and patrol cars. Make it calmer and more legible: fewer frames, larger data, color only where it means something. Use the Help Center and the vehicle record header as the reference screens.</p>
+<div class="tokens">
+<div><h3>Type scale</h3><ul>
+<li>12 caption · 13 label · 14 body · 16 emphasis · 20 section · 24 page title · 32 KPI</li>
+<li>Labels in sentence case at 13px, muted. Uppercase only in table headers (11px, +0.06em).</li>
+<li>Serials, asset tags, plates and scores in Geist Mono with tabular figures.</li></ul></div>
+<div><h3>Space &amp; shape</h3><ul>
+<li>4px base: 4, 8, 12, 16, 24, 32, 48.</li>
+<li>Radius: 6 (controls), 10 (cards), full (chips). Drop 16, 24 and 32.</li>
+<li>Page gutter 24 desktop, 16 phone. Section gap 32.</li>
+<li>Elevation through surface tone, not borders: page → surface → raised.</li></ul></div>
+<div><h3>Color roles</h3><ul>
+<li>Neutrals tinted toward navy: page, surface, raised, line, text, muted.</li>
+<li>One accent (today's blue-500) for actions, selection and focus.</li>
+<li>Status: success, warning, danger, info, neutral, each with a text color, a soft fill and a chip.</li></ul>
+<div class="swatches"><span class="sw"><i style="background:#070b12"></i>page</span><span class="sw"><i style="background:#0f1622"></i>surface</span><span class="sw"><i style="background:#162031"></i>raised</span><span class="sw"><i style="background:#3b82f6"></i>accent</span><span class="sw"><i style="background:#22c55e"></i>success</span><span class="sw"><i style="background:#f59e0b"></i>warning</span><span class="sw"><i style="background:#ef4444"></i>danger</span></div></div>
+<div><h3>Page templates</h3><ul>
+<li><b>List:</b> PageHeader, KPI strip (optional), filter bar, DataTable or cards, side drawer.</li>
+<li><b>Record:</b> header with status, facts grid, tabs, activity.</li>
+<li><b>Dashboard:</b> action list first, then KPIs, then module cards.</li>
+<li><b>Form:</b> two-column fields, sticky footer with one primary action.</li>
+<li><b>Settings:</b> left rail plus a form panel.</li></ul></div>
+<div><h3>Core components</h3><ul>
+<li>PageHeader · Button (3 variants × 2 sizes) · StatusChip · KpiTile</li>
+<li>DataTable (card mode under 640px) · FilterBar / FilterSheet</li>
+<li>Field (label, help, error) · Segmented control · Sheet / Drawer · ConfirmDialog</li>
+<li>EmptyState (icon, line, primary action) · Skeleton · Toast</li></ul></div>
+<div><h3>Rules of thumb</h3><ul>
+<li>One primary button per view.</li>
+<li>No card inside a card.</li>
+<li>Color on status only, and never on a zero.</li>
+<li>Nothing under 12px. Touch targets ≥ 44px.</li>
+<li>The page title matches the menu label.</li>
+<li>No IDs, developer copy or native dialogs in the UI.</li></ul></div>
+</div>
+</section>
+
+<section id="priorities">
+<h2>Top 15 visual changes, highest value first</h2>
+<ol class="top">
+<li><div><b>Ship the token layer</b><span class="d">Color roles, type scale, spacing and radius in <code>globals.css</code> and the Tailwind theme, replacing the create-next-app default.</span></div><span class="eff">S · foundation</span></li>
+<li><div><b>One PageHeader on every screen</b><span class="d">Removes four header styles, the duplicate firearm title and the misleading eyebrows.</span></div><span class="eff">S</span></li>
+<li><div><b>Raise the type floor to 12px and drop most uppercase</b><span class="d">The single biggest legibility gain, across Range Days, Qualifications, Fleet and Alerts.</span></div><span class="eff">M</span></li>
+<li><div><b>Button kit with one primary per view</b><span class="d">Fixes the rainbow actions on the vehicle record and Alerts, and the wrapped labels.</span></div><span class="eff">S</span></li>
+<li><div><b>Flatten card-in-card</b><span class="d">Vehicle overview, range-day cards, Inventory checkout, Settings sections.</span></div><span class="eff">M</span></li>
+<li><div><b>DataTable with phone card mode</b><span class="d">Fleet, Firearms and Inventory: pinned first column, dark scrollbars, fewer columns.</span></div><span class="eff">M</span></li>
+<li><div><b>One KpiTile, neutral at zero</b><span class="d">Dashboard, Range, Fleet, Equipment, Alerts and Off-Duty, with meaningless icon colors removed.</span></div><span class="eff">S</span></li>
+<li><div><b>Semantic StatusChip</b><span class="d">One chip per status role. Due-soon and overdue look the same everywhere.</span></div><span class="eff">S</span></li>
+<li><div><b>Command Pulse: action list first</b><span class="d">Reorder the layout and fix the grid gap and wrapped labels.</span></div><span class="eff">S</span></li>
+<li><div><b>Compact range-day list</b><span class="d">Date block, chips, lead, roster and readiness meter, so 6–8 days fit per screen.</span></div><span class="eff">M</span></li>
+<li><div><b>Inspection checklist as a compact table</b><span class="d">Full-width rows, a segmented control, the note field only on Fail, a sticky result bar.</span></div><span class="eff">M</span></li>
+<li><div><b>Settings left rail</b><span class="d">Replaces nine overflowing tabs and separates personal from agency settings.</span></div><span class="eff">M</span></li>
+<li><div><b>Tablet icon rail</b><span class="d">Keep navigation visible at 768–1024px.</span></div><span class="eff">S</span></li>
+<li><div><b>Polish pass</b><span class="d">Transparent SVG logo, styled date pickers and scrollbars, no empty icon rows, no stray status text, no UUIDs.</span></div><span class="eff">S</span></li>
+<li><div><b>Inventory and Training Alerts onto the list template</b><span class="d">Bring the two outlier screens into the same family as Firearms and Qualifications.</span></div><span class="eff">M</span></li>
+</ol>
+<p style="font-size:13.5px;color:var(--muted)">Effort: S = days, M = 1–2 weeks for one engineer, after the token layer exists.</p>
+</section>
+</main>
+</div>
+
+</body></html>

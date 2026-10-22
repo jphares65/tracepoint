@@ -1,0 +1,3409 @@
+{
+  "requirements": [
+    {
+      "id": "MOD-SET-001",
+      "title": "One save model per Rules Engine panel",
+      "module": "settings",
+      "screen": "/settings → Rules Engine (all sub-tabs)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-04"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-33"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-29"
+        },
+        {
+          "doc": "OA",
+          "ref": "§4 Save patterns"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements: Admin · change a module rule"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard: Settings & Rules"
+        }
+      ],
+      "requirement": "Each Rules Engine sub-tab has exactly one save control that names what it saves and saves only that panel. The header \"Save Rules Engine\" is removed or shown only on sub-tabs whose content is the parent rules object. All rules panels share one RulesPanelShell (dirty state, Save, Reset, inline status), replacing the seven panel-local feedback variants. Panels that write immediately (Secure Storage) are marked \"Saves immediately\" and have no Save button.",
+      "acceptance": [
+        "On the Certifications, Equipment, Off-Duty, Agency Training and Fleet sub-tabs no header Save is offered; each panel's own Save persists that panel and a reload shows the saved values.",
+        "On Firearms/Range sub-tabs the remaining Save is labelled with its scope and persists only the parent rules (component test).",
+        "SV-29 reproduction (change Off-Duty rules, save, reload) shows the change persisted and a visible confirmation.",
+        "Every rules panel renders through the shared RulesPanelShell (one feedback style, one Save/Reset layout).",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-002",
+        "MOD-SET-004"
+      ],
+      "status": "Not Started",
+      "notes": "WP-5 (UX remediation plan). SV-29 confirmed live on staging 22e543d. Save semantics (what each endpoint writes) are unchanged; only which button calls which existing endpoint changes."
+    },
+    {
+      "id": "MOD-SET-002",
+      "title": "Settings success notices actually display",
+      "module": "settings",
+      "screen": "/settings (all tabs)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "AE-R1"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-29"
+        }
+      ],
+      "requirement": "Success notices after any Settings save remain visible (loadSettings no longer clears the notice in the same batch), including the invite result \"added using an existing TracePoint account\", which is the admin's only signal that no invitation email was sent.",
+      "acceptance": [
+        "Component test: after saveRules resolves, \"Operational rules saved.\" is in the DOM.",
+        "All 14 success sites in settings/page.tsx show their message after the save completes.",
+        "The existing-account invite message is visible after invite.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "Present in PROD/STG/RC per register-AE. XS fix. Settings save-lifecycle merge (E-04 + E-06 + E-07 + AE-R1)."
+    },
+    {
+      "id": "MOD-SET-003",
+      "title": "Background refresh after save keeps the tab mounted",
+      "module": "settings",
+      "screen": "/settings (all tabs)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-07"
+        }
+      ],
+      "requirement": "Saving does not unmount the active tab into a full-page spinner. The initial load and post-save refresh are separated (refreshing flag); scroll position and context are kept and feedback is shown next to the control that saved.",
+      "acceptance": [
+        "Component test: after a save the active tab keeps the same DOM node and the success notice remains visible.",
+        "Scroll position is unchanged after a save on a long tab.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-002"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-004",
+      "title": "Unsaved-changes guard in Settings",
+      "module": "settings",
+      "screen": "/settings (all tabs and rules sub-tabs)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-06"
+        },
+        {
+          "doc": "OA",
+          "ref": "§4 Save patterns (no unsaved-changes warning)"
+        }
+      ],
+      "requirement": "A shared useDirtyGuard warns before unsaved edits are lost through tab or sub-tab change, Refresh, navigation or browser unload, and an \"Unsaved\" pill marks the dirty tab.",
+      "acceptance": [
+        "Edit a Certification rules field, switch sub-tab: a confirmation appears; cancel keeps the edit.",
+        "Refresh with a dirty panel asks first.",
+        "Unit test: the hook registers beforeunload only while dirty and unregisters when clean."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-005",
+      "title": "Range & Qualification rules: one save scope, remove hidden legacy block",
+      "module": "settings",
+      "screen": "/settings → Rules → Range & Qualifications",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-05"
+        }
+      ],
+      "requirement": "The qualification cycle cards and the RangeQualificationRulesPanel save through one save scope. The hidden legacy Qualification Standards block and its fetch are deleted.",
+      "acceptance": [
+        "Only one Save control exists on the Range sub-tab and it persists both cycle cards and panel values (reload shows them).",
+        "No element with the legacy hidden block renders and its fetch is no longer issued (network log).",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "dependencies": [
+        "MOD-SET-001"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-006",
+      "title": "Settings tab and section in the URL",
+      "module": "settings",
+      "screen": "/settings",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-08"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-29"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        }
+      ],
+      "requirement": "The active Settings tab and sub-section are read from and written to the URL (?tab=&section=). Existing links that target a section (/settings/fleet → rules, import report \"View Users & Roles\", shell patch \"Open department branding settings\") open the intended section.",
+      "acceptance": [
+        "/settings?tab=rules opens the Rules tab; clicking a tab updates the URL with router.replace.",
+        "Back/forward and refresh restore the tab.",
+        "The three cited links land on the correct tab and section.",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "status": "Not Started",
+      "notes": "ADM-29 only for the patch-link destination; the patch-link target for non-admins (Home or account) is shell scope."
+    },
+    {
+      "id": "MOD-SET-007",
+      "title": "Settings left rail with search and one home per field",
+      "module": "settings",
+      "screen": "/settings",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-09"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 4"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review: Settings"
+        },
+        {
+          "doc": "VR",
+          "ref": "Page templates"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard: Settings & Rules"
+        }
+      ],
+      "requirement": "Replace the nine overflowing horizontal tabs with the Settings template: a left rail (Agency, People & roles, Policies by module, Integrations; personal settings out) plus a form panel, with a settings filter/search. Each field has exactly one home (agency display name edited in one place, not both \"Short display name\" and \"Agency display name\").",
+      "acceptance": [
+        "At 1280px no horizontal tab scroller or white native scrollbar is shown; all nine former tabs are reachable from the rail.",
+        "Searching a setting name (e.g. \"timeout\", \"secure storage\") lists and opens its section.",
+        "The agency display name has exactly one editable control.",
+        "Parity inventory for /settings is 100% checked; old ?tab= links redirect to the new sections.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "dependencies": [
+        "MOD-SET-006"
+      ],
+      "status": "Not Started",
+      "notes": "Blueprint: Settings reorganization is R2/R3 (Stage 4, weeks 9–16). Agency Profile form is the form template to keep (VR)."
+    },
+    {
+      "id": "MOD-SET-008",
+      "title": "Usable Settings tab navigation on phones and tablets",
+      "module": "settings",
+      "screen": "/settings (phone and tablet widths)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-10"
+        },
+        {
+          "doc": "VR",
+          "ref": "Tablet (768px)"
+        }
+      ],
+      "requirement": "Below sm the tab bar becomes a select (or the rail collapses to a select), the active tab is scrolled into view, and no white native scrollbar shows on the dark theme.",
+      "acceptance": [
+        "At 375px and 768px every tab and sub-tab is reachable without horizontal page scroll.",
+        "The active tab is visible on load.",
+        "No light native scrollbar is visible on the tab bar at 768px."
+      ],
+      "status": "Not Started",
+      "notes": "Superseded by MOD-SET-007 when the left rail ships; keep as the interim fix."
+    },
+    {
+      "id": "MOD-SET-009",
+      "title": "One home per configuration: module policies in Settings with Manage links",
+      "module": "settings",
+      "screen": "/settings → Policies by module; /settings/fleet",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module findings: Settings, Rules Engine & Import"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes: One home per configuration"
+        },
+        {
+          "doc": "UX",
+          "ref": "Consolidation #9"
+        }
+      ],
+      "requirement": "Each rule set has one editor in Settings: personally owned rifle program settings, ammunition agency defaults (verification schedules), secure storage locations and fleet rules (Rules → Fleet vs /settings/fleet). Modules link to their settings with a \"Manage\" link instead of hosting duplicate editors.",
+      "acceptance": [
+        "Rifle program, ammunition defaults, secure storage and fleet rules each have exactly one editable location (parity inventory lists the removed duplicates and their redirects).",
+        "/settings/fleet redirects to the Fleet section of Settings.",
+        "Values saved in the single editor are what the module uses (same endpoints and payloads as today).",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "status": "Not Started",
+      "notes": "Blueprint Stage 1 puts \"Manage\" links from modules in R1; moving the editors is part of the Settings reorganization (R2/R3). The module-side Manage links on Firearms (custody), Personally Owned Rifles and Ammunition belong to the Armory group and should depend on this requirement."
+    },
+    {
+      "id": "MOD-SET-010",
+      "title": "Remove the Dashboard Views tab and orphan dashboard settings route",
+      "module": "settings",
+      "screen": "/settings → Dashboard Views; /settings/command-dashboard-analytics",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-34"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-30"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module findings: Command Pulse & Analytics"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes: One home per configuration"
+        }
+      ],
+      "requirement": "Remove the Settings Dashboard Views tab (it only links back to Customize Dashboard/Analytics) and the orphan /settings/command-dashboard-analytics page; delete or wire the unused AnalyticsDashboardSettingsPanel. The customize entry points on Command Dashboard and Analytics remain.",
+      "acceptance": [
+        "No Dashboard Views tab in Settings; /settings/command-dashboard-analytics redirects to the Command Dashboard customize view.",
+        "AnalyticsDashboardSettingsPanel has no dead copy left (deleted or imported and used).",
+        "Customize Dashboard and Customize Analytics still save as before.",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "status": "Not Started",
+      "notes": "OA ADM-30 only for the orphan route (the rest of ADM-30 is repo hygiene, platform scope)."
+    },
+    {
+      "id": "MOD-SET-011",
+      "title": "Personal notification preferences live in one place",
+      "module": "settings",
+      "screen": "/settings → My Notifications; /notifications → Preferences",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-59"
+        },
+        {
+          "doc": "BP",
+          "ref": "#2"
+        },
+        {
+          "doc": "VR",
+          "ref": "Top 15: Settings left rail"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard: Settings & Rules"
+        }
+      ],
+      "requirement": "Remove the Settings \"My Notifications\" tab (or render it with exactly the same props) and link to /notifications preferences, which become addressable (?view=preferences) so the user menu can deep-link to them.",
+      "acceptance": [
+        "Settings shows no second, different version of the preferences panel.",
+        "/notifications?view=preferences opens the preferences view directly.",
+        "Officers reach their preferences without Settings access (ADM-06 behaviour preserved)."
+      ],
+      "status": "Not Started",
+      "notes": "ADM-06 reachability is already fixed in B11 (see MOD-SET-016). The user-menu link itself is shell scope (blueprint #2)."
+    },
+    {
+      "id": "MOD-AUTH-001",
+      "title": "Security Policy controls state what is enforced (MFA, session timeout, retention)",
+      "module": "auth",
+      "screen": "/settings → Audit & Security → Security Policy",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "A",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-16"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-13"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module findings: Settings, Rules Engine & Import"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes: Honest status copy"
+        }
+      ],
+      "requirement": "Every Security Policy row carries an honest state: MFA is shown as \"Always required\" (disabled switch) in aws-native because the Cognito pool requires TOTP; department session timeout and data retention are badged \"Recorded, not yet enforced\" until wired; export logging is badged \"Enforced\". No control implies enforcement that does not exist.",
+      "acceptance": [
+        "In aws-native the MFA switch is disabled and labelled \"Always required\" (component test).",
+        "Session timeout and retention show a \"Not enforced\" badge until MOD-AUTH-008 ships.",
+        "Export logging shows \"Enforced\".",
+        "Copy contains no developer phrasing (\"enforcement will be connected as the security layer is completed\").",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: hide the unenforced session-timeout/MFA controls or label them (UX plan §8 item 8; OA README §6 ADM-13). Copy-only work; the module owner is deployment per MODULES but the change is presentational."
+    },
+    {
+      "id": "MOD-SET-012",
+      "title": "Audit log: filtered, paginated query with resolved actors; every export audited",
+      "module": "settings",
+      "screen": "/api/settings/audit-log, /api/settings/audit-log/export",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-12"
+        },
+        {
+          "doc": "OA",
+          "ref": "security-backlog ADM-12"
+        }
+      ],
+      "requirement": "Provide a server-side audit query filterable by actor, entity, action, record and date with pagination, resolving actor names including platform staff and removed users. The Settings CSV export goes through the audited export endpoint (recordDataExport) with no silent 5,000-row cap.",
+      "acceptance": [
+        "Route test: filters narrow results; pages return stable ordering.",
+        "Actor name resolves for a platform admin and for a removed member.",
+        "Exporting from the Audit tab writes a data-export audit record.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability). OWNER DECISION NEEDED: unaudited CSV exports (security-backlog ADM-12). CSV formula guard already applied by B11 (shared csvCell)."
+    },
+    {
+      "id": "MOD-SET-013",
+      "title": "Audit Recent Activity shows names, filters and hides raw IDs",
+      "module": "settings",
+      "screen": "/settings → Audit & Security → Recent Activity",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-17"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-12"
+        }
+      ],
+      "requirement": "Recent Activity shows actor and record names instead of raw UUIDs (IDs behind a copy control), never renders [object Object], and offers the filters the audit query supports. The CSV omits the raw \"Changed By User ID\" column or pairs it with the name.",
+      "acceptance": [
+        "No raw UUID is visible in the list by default; a copy control reveals it.",
+        "Filtering by actor and date returns matching rows.",
+        "Help text about audit filters matches what the screen offers.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-012"
+      ],
+      "status": "Blocked",
+      "notes": "Name resolution for current members is possible today; filters and platform/removed actors need MOD-SET-012."
+    },
+    {
+      "id": "MOD-SET-014",
+      "title": "Branding preview does not persist before Save",
+      "module": "settings",
+      "screen": "/settings → Branding",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-18"
+        }
+      ],
+      "requirement": "Palette and brightness drafts preview with applyAppearanceToDocument only; persistence happens on Save, the preview reverts on leaving without saving, and the hint copy is corrected.",
+      "acceptance": [
+        "Unit/component test: a draft change does not write tracepoint.appearance.v1; Save does.",
+        "Leaving Branding without saving restores the saved appearance.",
+        "The hint no longer says \"persists for this browser after save\" inaccurately."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-015",
+      "title": "High contrast becomes a per-user display preference",
+      "module": "settings",
+      "screen": "/settings → Branding → Screen brightness",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-19"
+        }
+      ],
+      "requirement": "High Contrast is a personal display preference (user menu / personal settings), not an agency-wide setting that changes every user's display.",
+      "acceptance": [
+        "Turning High Contrast on for one user does not change another user's display.",
+        "The agency branding section no longer offers High Contrast."
+      ],
+      "status": "Not Started",
+      "notes": "If per-user server persistence is wanted (across devices), that storage is a track C request to deployment; browser-local storage is acceptable as an interim."
+    },
+    {
+      "id": "MOD-SET-016",
+      "title": "My Notifications reachable by every role",
+      "module": "settings",
+      "screen": "/notifications; shell nav",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-06"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-20"
+        }
+      ],
+      "requirement": "Personal notification preferences are reachable by every member (nav \"My Notifications\" → /notifications hosting NotificationPreferencesPanel), and Help's email-notifications article points there.",
+      "acceptance": [
+        "An officer without Settings permissions opens their preferences without reaching /unauthorized.",
+        "Help article route matches the reachable page."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B11 admin correctness (claude/fix-b11-admin-correctness @ b8b3475), merged into the integration branch; UX E-20 confirms it in RC 5b6cc00. Staging step S23 not yet recorded."
+    },
+    {
+      "id": "MOD-SET-017",
+      "title": "Notification delivery schedule copy uses agency time and admin-only notes",
+      "module": "settings",
+      "screen": "/notifications → Preferences; /settings → My Notifications",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-21"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-14"
+        }
+      ],
+      "requirement": "The Delivery Schedule shows the digest time in the agency's time zone instead of the hard-coded \"around 9:00 AM Eastern\", and the admin-oriented \"New-agency qualification safeguard\" note is shown only to administrators.",
+      "acceptance": [
+        "An agency set to America/Chicago sees the digest time in Central time.",
+        "An officer does not see the qualification safeguard note."
+      ],
+      "status": "Not Started",
+      "notes": "Applying the department time zone app-wide (ADM-14) is an owner decision and platform scope; this requirement covers only the panel copy. NotificationPreferencesPanel lives in app/settings/components but renders on /notifications; coordinate with the notifications module."
+    },
+    {
+      "id": "MOD-SET-018",
+      "title": "Digest frequency cards are an accessible radio group",
+      "module": "settings",
+      "screen": "/notifications → Preferences",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-22"
+        }
+      ],
+      "requirement": "Digest choice cards use radio-group semantics (role=radiogroup/radio or native inputs) with visible focus and selected state.",
+      "acceptance": [
+        "axe reports no violation on the digest control.",
+        "Screen reader announces the selected option; arrow keys move between options."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-019",
+      "title": "Inbox source mutes never hide Critical items",
+      "module": "settings",
+      "screen": "/api/notifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-58"
+        }
+      ],
+      "requirement": "Server-side source preferences do not remove Critical inbox items (or the response reports how many items were hidden by source settings), and the source list is derived from the sources the API actually emits.",
+      "acceptance": [
+        "Route test: with source_preferences.Range=false, Critical Range items are still returned.",
+        "The response exposes a hidden-count when items are filtered."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: whether Critical inbox items may be muted (UX plan §8 item 7; WP-5). Related A-28 (hard-coded 4 sources) is in the platform group's notifications scope."
+    },
+    {
+      "id": "MOD-SET-020",
+      "title": "Inbox Sources section: own heading, message, placement and hidden-count",
+      "module": "settings",
+      "screen": "/notifications → Preferences → Inbox Sources",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-58"
+        }
+      ],
+      "requirement": "Inbox Sources has its own heading and save message (\"Inbox sources saved\", not \"Email notification preferences saved\"), sits next to its own Save, and the Inbox shows \"N items hidden by your source settings — show\" when sources are muted. The \"Inbox remains the authoritative location\" copy is consistent with the muting rule.",
+      "acceptance": [
+        "Component test: saving only sources shows \"Inbox sources saved\".",
+        "The section is not below a Save button that does not apply to it.",
+        "With a muted source the Inbox shows the hidden count.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-019"
+      ],
+      "status": "Blocked",
+      "notes": "Hidden-count display needs MOD-SET-019; heading/message/placement can ship first."
+    },
+    {
+      "id": "MOD-SET-021",
+      "title": "Remove developer and vendor language from Settings",
+      "module": "settings",
+      "screen": "/settings (Rules, Users & Roles, restricted state)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-25"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-29"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes: Honest status copy"
+        },
+        {
+          "doc": "WR",
+          "ref": "Terminology"
+        }
+      ],
+      "requirement": "Settings copy contains no developer notes or vendor names: remove \"Modules should consume these rules…\" and \"Loaded permissions: N\"; replace the login-email hint with a user workflow (\"Contact TracePoint support to change a login email.\"); align menu labels and page titles (\"Settings\" vs \"Department settings\" vs \"Admin Settings\").",
+      "acceptance": [
+        "grep of settings UI strings finds no \"Modules should consume\", \"Loaded permissions\", \"Supabase\" or \"Cognito\".",
+        "Nav label and page title for Settings match.",
+        "The email hint tells the admin what to do."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-022",
+      "title": "Accessible dialogs for all Settings modals",
+      "module": "settings",
+      "screen": "/settings modals (Invite, Edit member, Role permissions, Assign Password)",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-28"
+        },
+        {
+          "doc": "UX",
+          "ref": "Consolidation #1"
+        }
+      ],
+      "requirement": "Every Settings modal uses the shared Dialog primitive: role=dialog with label, initial focus, focus trap, Escape to close, inline error slot and busy lock.",
+      "acceptance": [
+        "axe shows no dialog violations; Escape closes; Tab stays within the dialog.",
+        "Focus returns to the opener on close."
+      ],
+      "dependencies": [
+        "design-system: shared Dialog primitive"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-023",
+      "title": "Settings hint text meets contrast minimum",
+      "module": "settings",
+      "screen": "/settings (all tabs)",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-29"
+        }
+      ],
+      "requirement": "Hint and secondary text use a token at or above slate-400 on the dark surfaces, including placeholders, at no smaller than 12px.",
+      "acceptance": [
+        "No text-slate-600 / placeholder:text-slate-700 remains on slate-900/950 in Settings.",
+        "Contrast ≥ 4.5:1 for hint text (axe)."
+      ],
+      "dependencies": [
+        "design-system: tokens"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-024",
+      "title": "Settings touch targets at least 40–44px",
+      "module": "settings",
+      "screen": "/settings (Notice dismiss, Organization icons, role matrix Edit)",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-30"
+        }
+      ],
+      "requirement": "The Notice dismiss, Organization icon buttons and role-matrix Edit have a hit area of at least 40px (44px on phone).",
+      "acceptance": [
+        "Measured hit areas ≥ 44px at 375px width for the cited controls."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-025",
+      "title": "Agency Profile option lists and honest Configuration Status",
+      "module": "settings",
+      "screen": "/settings → Agency Profile",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-31"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-17"
+        }
+      ],
+      "requirement": "State, County and Agency type use the same option lists as Create Agency. The always-green \"Configuration Status\" is relabelled so it does not claim \"Live readiness based on saved department data\" for checks that are always true.",
+      "acceptance": [
+        "Agency Profile and CreateAgencyForm share the option lists (one constant).",
+        "On a new agency with no imported personnel and unreviewed rules, the panel does not show those items as Configured."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-026",
+      "title": "Onboarding checklist computed from real agency data",
+      "module": "settings",
+      "screen": "/settings → Agency Profile (Configuration Status)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-17"
+        },
+        {
+          "doc": "BP",
+          "ref": "#15"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2i verdict"
+        }
+      ],
+      "requirement": "Replace the Configuration Status panel with a setup checklist computed from existing data: enabled modules, personnel beyond the admin, pending activations, certification types, qualification standards, rules reviewed, imported records; each item deep-links to where it is done.",
+      "acceptance": [
+        "A new agency shows the incomplete items; completing one (e.g. importing personnel) turns it complete after refresh.",
+        "Every checklist item links to the exact Settings section or module page.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-006"
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability). If an item has no existing data source it becomes a track C request."
+    },
+    {
+      "id": "MOD-SET-027",
+      "title": "Qualification cycle dates validated",
+      "module": "settings",
+      "screen": "/settings → Rules → Range → Cycles",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-32"
+        }
+      ],
+      "requirement": "Cycle start/end use month/day selects or inline validation instead of free-text MM-DD.",
+      "acceptance": [
+        "Entering 13-40 is impossible or blocked with an inline error before Save."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-SET-028",
+      "title": "Secure Storage locations panel: labels, busy state, errors, confirmed deactivate",
+      "module": "settings",
+      "screen": "/settings → Rules → Armory → Secure Storage",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-60"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements: Armorer · set up secure storage"
+        },
+        {
+          "doc": "UX",
+          "ref": "D-71"
+        }
+      ],
+      "requirement": "Secure Storage is explicitly marked \"Saves immediately\"; inputs have labels; Save/Deactivate have busy and disabled states (no double submit); network failures show an error; Deactivate uses ConfirmDialog naming the location; a \"Show inactive\" toggle lists deactivated locations; Edit focuses and highlights the form; Edit/Deactivate are real buttons; copy is consistent; the BOM is removed.",
+      "acceptance": [
+        "Double-clicking Add creates one location (component test).",
+        "A rejected save shows an inline error.",
+        "Deactivate requires confirmation; cancelling sends no request.",
+        "Inactive locations are visible with Show inactive.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "design-system: ConfirmDialog"
+      ],
+      "status": "Not Started",
+      "notes": "Reactivating an inactive location needs an existing API path; if none exists, reactivate is a track C request. Moving secure storage out of policy rules and linking it from custody is covered by MOD-SET-009 and the Armory group's Manage link."
+    },
+    {
+      "id": "MOD-SET-029",
+      "title": "Inert fleet critical-issue toggle shown as locked \"Always on\"",
+      "module": "settings",
+      "screen": "/settings → Rules → Fleet; /settings/fleet",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-61"
+        }
+      ],
+      "requirement": "\"Critical issues remove vehicles from service\" renders as a locked \"Always on\" row (no switch), and the automatic vehicle status toggle states exactly what it governs (non-critical status derivation).",
+      "acceptance": [
+        "No switch exists for the critical rule; its row reads Always on.",
+        "The remaining automation toggle's description names only non-critical behaviour.",
+        "Saved fleet rules payload is unchanged (network log)."
+      ],
+      "status": "Not Started",
+      "notes": "Follows F6a (critical holds always apply). FleetRulesPanel is fleet-owned code (Assets & Documents group, FLT-06); this is the Settings screen copy only."
+    },
+    {
+      "id": "MOD-SET-030",
+      "title": "Organization lists: inline rename and labelled deactivate",
+      "module": "settings",
+      "screen": "/settings → Organization",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-15"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-18"
+        }
+      ],
+      "requirement": "Rename uses an inline edit or modal instead of window.prompt and shows how many members and requirements use the value; Deactivate/Reactivate is a labelled control; the three copy-pasted cards become one OrgListCard.",
+      "acceptance": [
+        "No window.prompt in Organization.",
+        "Deactivate shows a text label and accessible name.",
+        "Rename dialog shows the affected-member count before Save."
+      ],
+      "dependencies": [
+        "MOD-SET-031"
+      ],
+      "status": "Not Started",
+      "notes": "Affected counts are display-only from existing member data; the cascade itself is MOD-SET-031."
+    },
+    {
+      "id": "MOD-SET-031",
+      "title": "Unit and rank renames propagate to members and scoped requirements",
+      "module": "settings",
+      "screen": "Organization rename API / database",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-18"
+        }
+      ],
+      "requirement": "Renaming a unit or rank updates members and unit-scoped equipment requirements in one transaction (or members reference unit/title IDs), with an audit entry.",
+      "acceptance": [
+        "Rename \"Patrol\" → \"Patrol Division\": members and unit-scoped requirements now match the new name.",
+        "One audit record per rename.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability)."
+    },
+    {
+      "id": "MOD-ADM-001",
+      "title": "Invite, member and role errors shown inside the dialog",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles (Invite, Edit member, Role permissions modals)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-01"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-19"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-32"
+        }
+      ],
+      "requirement": "Server errors from the Invite, Edit member and Role permissions modals render in an inline alert inside the open dialog (the modal stays open), not in the page Notice behind the modal backdrop. This includes the deliberate 409 \"This person is already a member… Nothing was changed\".",
+      "acceptance": [
+        "Component test: invite API returns 409; the dialog shows the message in role=alert and stays open.",
+        "Save member and role-permission failures render inside their dialogs.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-022"
+      ],
+      "status": "Not Started",
+      "notes": "Listed in the UX plan as a before-production RC-worsened item and in UX-RB §5 as not done. WP-1."
+    },
+    {
+      "id": "MOD-ADM-002",
+      "title": "Member Save disabled until groups load; failed load never wipes groups",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Edit {member}",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-20"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-29"
+        }
+      ],
+      "requirement": "The groups block shows a loading state and Save Access stays disabled until the member's groups have loaded; if loading fails the save omits p_group_ids so existing groups are untouched, and the error copy is not raw database text.",
+      "acceptance": [
+        "Component test: when the groups fetch rejects, Save is disabled or the RPC payload has no p_group_ids.",
+        "Opening and saving a member on a slow network never clears their groups.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b)."
+      ],
+      "dependencies": [
+        "MOD-ADM-003"
+      ],
+      "status": "Not Started",
+      "notes": "Present in PROD (non-atomic) and RC (atomic since B11). WP-5."
+    },
+    {
+      "id": "MOD-ADM-003",
+      "title": "save_department_member treats absent p_group_ids as no change",
+      "module": "personnel",
+      "screen": "/api/settings/data (save_department_member)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-02"
+        }
+      ],
+      "requirement": "Confirm (and if necessary make) the atomic member save leave group memberships unchanged when p_group_ids is absent, distinct from an explicit empty list.",
+      "acceptance": [
+        "Route/SQL test: absent p_group_ids keeps existing memberships; [] clears them."
+      ],
+      "status": "Not Started",
+      "notes": "Verification may show no change is needed; record the test either way."
+    },
+    {
+      "id": "MOD-ADM-004",
+      "title": "Invite modal shows one Groups picker",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Invite",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "Consolidation #5"
+        }
+      ],
+      "requirement": "The Invite modal renders exactly one \"Groups / Assignments\" picker (shared GroupChipPicker also used in Edit member), and the duplicate state reset is removed.",
+      "acceptance": [
+        "Component test: the invite modal contains exactly one Groups / Assignments group."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-005",
+      "title": "Users & Roles list: search, filters, compact table and overflow actions",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-11"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-29"
+        }
+      ],
+      "requirement": "The member list has search (name, badge, email) and filters (Active / Pending / Inactive, role, unit, activation), sorts, a compact table at lg, and secondary account actions in an overflow menu.",
+      "acceptance": [
+        "In a 150-member seed, typing a name narrows the list to that person.",
+        "Status filter Pending shows only pending activations.",
+        "Each row has at most one primary action visible; the rest are in the overflow menu.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "dependencies": [
+        "design-system: DataTable + FilterBar"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-006",
+      "title": "Dedicated, confirmed \"Deactivate member…\" action",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Edit {member}",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-12"
+        },
+        {
+          "doc": "UX",
+          "ref": "AE-R2"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-05"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-E"
+        }
+      ],
+      "requirement": "Replace the \"Active department membership\" toggle saved with routine edits by a danger action \"Deactivate member…\" with a ConfirmDialog that states the consequences (signs them out and blocks login in this agency) and lists the person's open assignments known to the UI.",
+      "acceptance": [
+        "Component test: deactivation opens a confirmation; cancelling leaves is_active true in the payload.",
+        "Confirmation copy is verified against multi-agency behaviour (AE-R2) before release.",
+        "The same endpoint and payload are used as today on confirm.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b).",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "dependencies": [
+        "MOD-AUTH-004",
+        "design-system: ConfirmDialog"
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: copy and policy for the deactivation confirmation (register-AE E-12 \"copy and policy decision\"). AE-R2: check whether deactivation blocks login for someone still active in another agency before writing \"blocks login\"."
+    },
+    {
+      "id": "MOD-ADM-007",
+      "title": "Role permission changes show affected members and a diff before Save",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Edit {role} Permissions",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-13"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b When to ask for confirmation"
+        }
+      ],
+      "requirement": "Before saving role permissions the dialog shows \"affects N members\" and a list of added/removed permissions, as a broad-impact ConfirmDialog.",
+      "acceptance": [
+        "Removing a permission shows \"−permission\" and the member count before Save.",
+        "Payload and endpoint unchanged.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-008",
+      "title": "Rank and unit selects show the stored value even if legacy",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Invite / Edit (Rank, Unit)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-14"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-18"
+        }
+      ],
+      "requirement": "Rank and Unit selects always include the member's current stored value, labelled \"(legacy)\" when it is not an active organization item, instead of displaying \"Not assigned\".",
+      "acceptance": [
+        "A member with rank \"Sgt (old)\" shows \"Sgt (old) (legacy)\" selected; an untouched save keeps it."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-009",
+      "title": "Invite/Edit hints link to Settings → Organization",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Invite / Edit",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-26"
+        }
+      ],
+      "requirement": "Hints say \"Configured in Settings → Organization\" and link there (deep link to the section).",
+      "acceptance": [
+        "Clicking the hint opens Settings → Organization."
+      ],
+      "dependencies": [
+        "MOD-SET-006"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-010",
+      "title": "One account-action eligibility rule with visible reasons (Settings and Platform)",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles; /platform/[departmentId]",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-27"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-56"
+        },
+        {
+          "doc": "UX",
+          "ref": "Consolidation #10"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-07"
+        }
+      ],
+      "requirement": "A shared helper decides whether Send Activation, Assign Password and Send Password Reset are enabled for a member (pending, activated, inactive) and why not; the reason is shown as inline helper text (not only a title tooltip), and Settings and Platform use the same confirmation behaviour.",
+      "acceptance": [
+        "Send Password Reset is disabled for inactive members as well as unactivated ones.",
+        "The disabled reason is visible as text on phones and to assistive tech.",
+        "Settings and Platform Send Activation behave identically (both confirm or neither).",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "Eligibility mirrors server rules; the server stays authoritative."
+    },
+    {
+      "id": "MOD-ADM-011",
+      "title": "Password-reset refusal message without vendor name",
+      "module": "personnel",
+      "screen": "/api/settings/users/password-reset",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-56"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-25"
+        }
+      ],
+      "requirement": "The 409 refusal returns a stable code and user language (\"This account can't receive a reset code yet — resend the activation instead\") rather than \"Cognito cannot send a reset code…\", and does not steer admins to the permanent admin-known password path as the first option.",
+      "acceptance": [
+        "Route test: refusal body has a code and no vendor name; UI renders it beside the row."
+      ],
+      "status": "Not Started",
+      "notes": "ADM-07b remedy messages were changed on claude/fix-adm07-invited-reset; re-check the RC text against this requirement before starting."
+    },
+    {
+      "id": "MOD-ADM-012",
+      "title": "Assign Password dialog: inline error, live checklist, generate/copy",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Assign Password",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-54"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-B"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-27"
+        }
+      ],
+      "requirement": "Errors appear only in the dialog (onError no longer duplicates them to the hidden page Notice); a live requirement checklist reflects the 14-character policy; generate and copy actions exist; Escape closes; the BOM is removed.",
+      "acceptance": [
+        "Typing a password updates each policy item live.",
+        "A server rejection appears once, inside the dialog."
+      ],
+      "dependencies": [
+        "MOD-SET-022"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-013",
+      "title": "Assign Password warns that self-service recovery depends on a verified email",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Assign Password (pending account)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-57"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-07"
+        }
+      ],
+      "requirement": "For a pending account the warning and success text tell the admin that the person cannot reset their own password until their email is verified, and recommend Send Activation.",
+      "acceptance": [
+        "Assign Password on a pending member shows the recovery caveat before and after submit."
+      ],
+      "dependencies": [
+        "MOD-AUTH-007"
+      ],
+      "status": "Not Started",
+      "notes": "Copy must match the outcome of the ADM-07c owner decision (MOD-AUTH-007) and the ADM-07a fix (Assign Password no longer marks email verified without proof)."
+    },
+    {
+      "id": "MOD-ADM-014",
+      "title": "Member save is one atomic operation",
+      "module": "personnel",
+      "screen": "/api/settings/data (save_department_member)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-20"
+        }
+      ],
+      "requirement": "Profile fields, roles and groups for a member are saved in one transaction.",
+      "acceptance": [
+        "A role-update failure leaves the member unchanged (no half-update)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B11 (claude/fix-b11-admin-correctness @ b8b3475): save_department_member RPC in aws-native. Bridge-mode member save stays non-atomic (B11 owner decision). Staging step S23 not yet recorded."
+    },
+    {
+      "id": "MOD-ADM-015",
+      "title": "Invite works at scale and re-invite never overwrites",
+      "module": "personnel",
+      "screen": "/api/settings/users/invite",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-19"
+        }
+      ],
+      "requirement": "Invite looks users up directly (no 2,000-user scan), re-inviting is idempotent (no blanking badge/rank/unit or silent reactivation), and an existing member or other-agency identity gets a deliberate 409 rather than a raw 500.",
+      "acceptance": [
+        "Route test: re-invite of an existing member returns 409 \"already a member… Nothing was changed\".",
+        "Invite of an identity from another agency does not return a raw 500."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B11 (claude/fix-b11-admin-correctness @ b8b3475); the 409 now exists (UX E-01 notes it lands behind the modal — see MOD-ADM-001). Staging S23 pending."
+    },
+    {
+      "id": "MOD-ADM-016",
+      "title": "Admin APIs return sanitised errors",
+      "module": "personnel",
+      "screen": "Admin API routes (invite, activation, personnel import, super-admin, agency-user-administrator, platform agencies)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-32"
+        }
+      ],
+      "requirement": "The admin and platform routes map failures to user messages with a correlation ID and log details server-side; raw database/provider text is not returned.",
+      "acceptance": [
+        "Route test per admin route: a forced database error returns a generic message and correlation ID."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "B11 sanitised the eight admin route files. Residual: about 63 other API routes still pass raw text (security-backlog ADM-32 residual) — platform group (MOD-OPS) scope."
+    },
+    {
+      "id": "MOD-ADM-017",
+      "title": "Separation workflow backend: open items, reason, date, checklist",
+      "module": "personnel",
+      "screen": "Member separation API",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-05"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2d Officer separation"
+        }
+      ],
+      "requirement": "Provide an API that lists a member's open firearms, equipment, vehicles, off-duty and personal-rifle requests and remediation items; records separation reason and date; and returns a separation checklist (PDF optional). Asset resolution uses the existing custody operations; login is disabled through the existing Cognito lifecycle.",
+      "acceptance": [
+        "Route test: a member with one firearm and one open off-duty request returns both items.",
+        "Separation record stores reason and date with an audit entry.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability). Must not change custody semantics; resolution goes through existing custody/approval operations."
+    },
+    {
+      "id": "MOD-ADM-018",
+      "title": "Separate member flow",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → member",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-05"
+        }
+      ],
+      "requirement": "A \"Separate member\" flow shows the member's open items with links to resolve or reassign each through existing screens, captures reason and date, and confirms the deactivation consequence.",
+      "acceptance": [
+        "Open items are listed with links; the flow cannot complete while required items are unresolved (as decided by the backend).",
+        "Reason is required.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "MOD-ADM-017",
+        "MOD-ADM-006"
+      ],
+      "status": "Blocked",
+      "notes": "Blocked on track C separation API (MOD-ADM-017)."
+    },
+    {
+      "id": "MOD-ADM-019",
+      "title": "Audited admin \"change login email\" operation",
+      "module": "personnel",
+      "screen": "Member login-email API",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-29"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        }
+      ],
+      "requirement": "Provide an audited operation that changes a member's login email in the identity provider and profile together (keeping them in sync).",
+      "acceptance": [
+        "After the change the user signs in with the new email; profile and identity email match; one audit record."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability). Bridge AI-importer email divergence (ADM-24) is closed in aws-native by blocking email changes."
+    },
+    {
+      "id": "MOD-ADM-020",
+      "title": "Change login email action in Edit member",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → Edit {member}",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-29"
+        }
+      ],
+      "requirement": "Edit member offers \"Change login email…\" with confirmation, replacing the disabled field and its hint.",
+      "acceptance": [
+        "The action is available only to roles the server permits and confirms before submitting."
+      ],
+      "dependencies": [
+        "MOD-ADM-019"
+      ],
+      "status": "Blocked",
+      "notes": "Blocked on MOD-ADM-019 (track C)."
+    },
+    {
+      "id": "MOD-ADM-021",
+      "title": "Plain-language effective permissions and role meanings",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles (list, role matrix)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-16"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2b Agency administrator configures the department"
+        },
+        {
+          "doc": "OA",
+          "ref": "§4 Terminology"
+        }
+      ],
+      "requirement": "Replace the bare \"N effective permissions\" count with a readable summary, describe each role with what it actually grants (no implied scopes such as subordinate review that do not exist), and keep \"Administrator\" (role), \"Administer department\" (permission) and \"Administration\" (nav) distinguishable.",
+      "acceptance": [
+        "Each member row shows a short permission summary or an expandable list.",
+        "Role descriptions match the permission matrix.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-ADM-022",
+      "title": "Department-scoped custom roles; remove dead role aliases",
+      "module": "personnel",
+      "screen": "Roles / permissions model",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-16"
+        }
+      ],
+      "requirement": "Agencies can define roles cloned from a template, and legacy aliases (department_admin, admin) that grant nothing are removed from server-access.",
+      "acceptance": [
+        "A custom \"Quartermaster\" role can be created with equipment permissions only; aliases no longer appear in code."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Enhancement – defer."
+    },
+    {
+      "id": "MOD-ADM-023",
+      "title": "Supervisor / team scoping",
+      "module": "personnel",
+      "screen": "Permissions model; My Team view",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-15"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2g Supervisors"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-14"
+        }
+      ],
+      "requirement": "If validated with pilot agencies, add supervisor-to-member or group-scoped permissions and a \"My Team\" readiness view.",
+      "acceptance": [
+        "A sergeant scoped to a squad sees readiness exceptions only for that squad (API-enforced)."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: validate the need with pilot agencies (OA ADM-15 \"Potential gap requiring operational validation\"; R6 \"Product decision\")."
+    },
+    {
+      "id": "MOD-ADM-024",
+      "title": "Personnel assignment history with effective dates",
+      "module": "personnel",
+      "screen": "Membership history API",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-35"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2e Transfer"
+        }
+      ],
+      "requirement": "Record rank, unit and status changes with effective dates in a queryable history (not only a JSON diff in audit_events).",
+      "acceptance": [
+        "Query returns when a member moved from Patrol to Investigations."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Enhancement – defer."
+    },
+    {
+      "id": "MOD-ADM-025",
+      "title": "Person page: roles, rank, unit, assigned gear and history",
+      "module": "personnel",
+      "screen": "/settings → Users & Roles → person (new record route)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements: Admin · manage a user's access"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-35"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        }
+      ],
+      "requirement": "A person record (with URL) shows roles, rank, unit, groups, account status and assigned gear, with an assignment/rank/status timeline when the history API exists.",
+      "acceptance": [
+        "Each member row opens the person record; the URL is shareable.",
+        "Edits use the same endpoints as Edit member.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "dependencies": [
+        "MOD-ADM-024"
+      ],
+      "status": "Not Started",
+      "notes": "The page without timeline can ship on existing APIs; the timeline waits for MOD-ADM-024."
+    },
+    {
+      "id": "MOD-ADM-026",
+      "title": "Route tests for invite, import, activation, deactivation, platform and setup",
+      "module": "personnel",
+      "screen": "Test suite",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-36"
+        }
+      ],
+      "requirement": "Add route-level tests covering invite, personnel import, activation/first sign-in, deactivation, platform admin actions and /auth/setup, and a root \"test\" script.",
+      "acceptance": [
+        "CI runs route tests for each listed flow on pull requests."
+      ],
+      "status": "Not Started",
+      "notes": "Partially resolved: B0 added a PR quality gate and B1 added lifecycle tests (first-login-activation, cognito-membership-lifecycle-sql). Remaining route coverage not confirmed in sources."
+    },
+    {
+      "id": "MOD-IMP-001",
+      "title": "One honest import capability statement",
+      "module": "import-export",
+      "screen": "/settings → Import / Export tab; /settings/import-export",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-24"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-23"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "BP",
+          "ref": "#18"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 1"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module findings: Settings, Rules Engine & Import"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes: Honest status copy"
+        }
+      ],
+      "requirement": "State import capability once, generated from IMPORT_TYPES: what each importer can commit. Delete the stale \"Import Support… preview and validation\" card, fix the literal \"?\" arrow glyphs and give the Import and Exports cards distinct destinations.",
+      "acceptance": [
+        "No screen says personnel/qualification history are preview-only while the wizard imports them.",
+        "No literal \"?\" where an arrow glyph is intended.",
+        "The Exports card opens the export section, not the same URL as Import."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-002",
+      "title": "One import entry point with a recommended importer",
+      "module": "import-export",
+      "screen": "/settings/import-export; Settings Import / Export tab; /import",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-36"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review: Import wizard"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements: Admin · import personnel"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard: Import / Export"
+        }
+      ],
+      "requirement": "One Import page reached from one menu entry; the Settings tab links there. One recommended importer is primary and the others are under \"Advanced\", with aligned step names and terms across the classic, AI-assisted and multi-file importers.",
+      "acceptance": [
+        "Only one navigation path leads to the import page (the Settings tab is a link; /import redirects).",
+        "The recommended path is visually primary; three competing coloured cards are gone.",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "dependencies": [
+        "MOD-IMP-001"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-003",
+      "title": "Split Import / Export / Reports and a stepper beside its steps",
+      "module": "import-export",
+      "screen": "/settings/import-export",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-35"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review: Import wizard"
+        },
+        {
+          "doc": "UX",
+          "ref": "Workflow simplification: Classic import"
+        }
+      ],
+      "requirement": "Import, Export and Reports are separate addressable sections; the step tracker appears only after an importer is chosen, only for importers that use it, and stays sticky next to the step content.",
+      "acceptance": [
+        "Choosing nothing shows no step tracker.",
+        "Each section has its own URL; the stepper is visible while scrolling a long step.",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-004",
+      "title": "Onboarding datasets offer mapping for every importable type",
+      "module": "import-export",
+      "screen": "/settings/import-export → Onboarding",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-37"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        }
+      ],
+      "requirement": "Detected Certification and Equipment sheets (and every type in IMPORT_TYPES) offer \"Review Mapping\" instead of \"Mapping support will be added\".",
+      "acceptance": [
+        "Component test: a detected Certifications dataset shows Review Mapping."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-005",
+      "title": "Classic importer accepts Excel or points to the uploader that does",
+      "module": "import-export",
+      "screen": "/settings/import-export → Classic → Upload",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-38"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        }
+      ],
+      "requirement": "The classic upload accepts XLSX (SheetJS is already a dependency) or clearly points to the Onboarding uploader; the \"Excel support can be added after we lock the field mappings\" note is removed.",
+      "acceptance": [
+        "Uploading an .xlsx to classic either parses or shows a link to the Excel-capable uploader; no developer note remains."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-006",
+      "title": "Mapping cannot silently put employee numbers into Badge",
+      "module": "import-export",
+      "screen": "/settings/import-export → Classic → Mapping",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-39"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-26"
+        }
+      ],
+      "requirement": "Remove \"employee number\" from the Badge aliases (4 types and dataset detection), prefer exact-alias priority over file order, add an Employee Number field where the target supports it, show sample values per column, and block duplicate source mappings.",
+      "acceptance": [
+        "Unit test of buildAutoMapping: headers [Employee Number, Badge] map badgeNumber → Badge.",
+        "Mapping one column to two fields shows a blocking error.",
+        "Each mapping row shows sample values."
+      ],
+      "status": "Not Started",
+      "notes": "Badge is the personnel match key, so a mis-map persists wrong badge numbers. Whether the personnel route accepts an employee-number field is to be confirmed; if not, that is part of MOD-IMP-017."
+    },
+    {
+      "id": "MOD-IMP-007",
+      "title": "Import preview: row numbers, errors-only filter, paging, issues CSV",
+      "module": "import-export",
+      "screen": "/settings/import-export → Classic → Preview",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-41"
+        }
+      ],
+      "requirement": "Preview shows a row-number column, an \"Errors only\" filter, paging beyond 25 rows (also when searching), all issues (not first 30), and an issues CSV download.",
+      "acceptance": [
+        "With 120 rows and 40 issues, all 40 are reachable and downloadable and each names its row number."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-008",
+      "title": "Personnel import returns created / updated / unchanged per row",
+      "module": "import-export",
+      "screen": "/api/settings/onboarding/personnel",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-42"
+        }
+      ],
+      "requirement": "The personnel onboarding route returns status created | updated | unchanged for each row.",
+      "acceptance": [
+        "Route test: re-importing an existing member returns updated or unchanged, never created."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-009",
+      "title": "Import report counts what the server did; confirmation, progress and leave guard",
+      "module": "import-export",
+      "screen": "/settings/import-export → Classic → Import Records / Report",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-42"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-04"
+        }
+      ],
+      "requirement": "Import Records asks for confirmation with the row count, shows N-of-M progress with cancel, guards against leaving mid-import, and the report counts created/updated/unchanged from the server's per-row status instead of counting every personnel row as created.",
+      "acceptance": [
+        "Component test: report counts match server statuses.",
+        "Navigating away mid-import asks first.",
+        "Save status is server-confirmed: success is shown only after the server confirms the write, and failures are shown in place (§1b)."
+      ],
+      "dependencies": [
+        "MOD-IMP-008"
+      ],
+      "status": "Blocked",
+      "notes": "Blocked on MOD-IMP-008 for truthful counts; confirmation, progress and beforeunload can ship first."
+    },
+    {
+      "id": "MOD-IMP-010",
+      "title": "Import report: totals, +N more, failures CSV, confirmed reset",
+      "module": "import-export",
+      "screen": "/settings/import-export → Classic → Report",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-43"
+        }
+      ],
+      "requirement": "Reviews and failures show totals and \"+N more\" beyond 50, a CSV of all failures and reviews is downloadable, and Reset / Start New confirm when a report exists.",
+      "acceptance": [
+        "With 120 failures \"+70 more\" is shown and the CSV contains 120 rows; Reset asks for confirmation."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-011",
+      "title": "Report Builder / Export Center: separate errors, human labels, templates for all types",
+      "module": "import-export",
+      "screen": "/settings/import-export → Report Builder, Export Center, Templates",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-44"
+        },
+        {
+          "doc": "UX",
+          "ref": "Consolidation #7"
+        }
+      ],
+      "requirement": "Report Builder and Export Center show their own error state; enum options use human labels (shared formatEnumLabel); templates exist for every import type.",
+      "acceptance": [
+        "An export error appears once, in the section that failed; no option shows an underscore value; six templates are offered."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-012",
+      "title": "Import pages usable at phone width",
+      "module": "import-export",
+      "screen": "/settings/import-export, /ai-importer, /migration (375px)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-45"
+        }
+      ],
+      "requirement": "Below md, import tables become card layouts, nested padding is flattened, and the 7-step grid becomes a \"Step N of 7\" pill.",
+      "acceptance": [
+        "No horizontal page scroll at 375px on the three import routes."
+      ],
+      "dependencies": [
+        "design-system: DataTable + CardList"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-IMP-013",
+      "title": "AI importer: approvals survive non-changing fixes; plain language; honest mode label",
+      "module": "import-export",
+      "screen": "/settings/import-export/ai-importer",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-46"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        }
+      ],
+      "requirement": "A fix that does not change counts keeps prior approvals (one summary confirmation instead of four checkboxes); jargon (\"decision boundary\", \"approval fingerprint\", \"working-state fix(es)\", \"Minimized samples\", \"deterministic\") is replaced with plain language; the default deterministic mode is labelled honestly rather than implying AI interpretation.",
+      "acceptance": [
+        "Applying a fix that leaves counts unchanged does not reset approvals.",
+        "None of the listed jargon strings remain.",
+        "Execution still requires the explicit approval the server requires.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "If approval invalidation is enforced server-side (approval fingerprint), keeping approvals needs a server change → raise with deployment before UI work."
+    },
+    {
+      "id": "MOD-IMP-014",
+      "title": "Multi-file migration: file names, autosave, confirmed merges, labelled close",
+      "module": "import-export",
+      "screen": "/settings/import-export/migration",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-47"
+        }
+      ],
+      "requirement": "Resume rows show file names; work autosaves; bulk merges ask for confirmation naming the count; the dialog close button has an aria-label.",
+      "acceptance": [
+        "Bulk merge cancel sends no request; close button has an accessible name; resume list shows file names."
+      ],
+      "status": "Not Started",
+      "notes": "Undo for merges would need a backend operation (track C) if wanted."
+    },
+    {
+      "id": "MOD-IMP-015",
+      "title": "Re-import never strips roles or silently reactivates",
+      "module": "import-export",
+      "screen": "/api/settings/onboarding/personnel; Cognito personnel writer",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-04"
+        }
+      ],
+      "requirement": "Re-importing existing members preserves roles, treats a missing Active column as no change, does not overwrite with blank cells, does not re-add Officer, and only an Administrator can deactivate an Administrator through import.",
+      "acceptance": [
+        "Route test: re-import of a Sergeant keeps the Supervisor role and active status."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B1a (claude/fix-b1a-reimport-safety @ 6626da7) and F1 (claude/fix-f1-account-import-decisions @ ddcfc58), merged into integration. Staging step S13 not recorded. OWNER DECISION NEEDED (B1a): confirm explicit Active=No deactivates incl. Cognito; aws-native Officer re-add."
+    },
+    {
+      "id": "MOD-IMP-016",
+      "title": "Quote-aware CSV parsing and formula-safe CSV writers",
+      "module": "import-export",
+      "screen": "/settings/import-export (classic parser, exports)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-25"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-40"
+        }
+      ],
+      "requirement": "One RFC-4180 parser keeps line breaks in quoted cells; every CSV writer guards = + - @.",
+      "acceptance": [
+        "A multi-line quoted Notes cell imports into one record; an exported note starting with = is neutralised."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B11 (claude/fix-b11-admin-correctness @ b8b3475); UX E-40 confirms in RC 5b6cc00."
+    },
+    {
+      "id": "MOD-IMP-017",
+      "title": "Personnel import without a badge number",
+      "module": "import-export",
+      "screen": "/api/settings/onboarding/personnel",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-26"
+        }
+      ],
+      "requirement": "Badge is optional for personnel import; employee number or email identifies the person (as Invite already allows).",
+      "acceptance": [
+        "A civilian row with no badge imports successfully and matches on email on re-import."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability)."
+    },
+    {
+      "id": "MOD-IMP-018",
+      "title": "Personnel import permission consistent between UI and API",
+      "module": "import-export",
+      "screen": "/settings/import-export; /api/settings/onboarding/*; /api/settings/ai-importer/*",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-24"
+        },
+        {
+          "doc": "OA",
+          "ref": "§4 UI gate vs API vs RLS"
+        }
+      ],
+      "requirement": "Decide one permission for personnel import and apply it to the UI route gate, classic API (accepts manage_users) and AI importer APIs (administer_department).",
+      "acceptance": [
+        "The same role is allowed or denied in the UI and every import API."
+      ],
+      "status": "Not Started",
+      "notes": "Permission change: deployment-owned; the UI only follows the server."
+    },
+    {
+      "id": "MOD-IMP-019",
+      "title": "Cognito personnel import resends Cognito activation, not legacy email",
+      "module": "import-export",
+      "screen": "Cognito personnel writer",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-D"
+        }
+      ],
+      "requirement": "The aws-native personnel writer no longer calls the legacy issueActivationEmail (which throws after re-enabling the membership) and uses the Cognito resend path.",
+      "acceptance": [
+        "Test: importing a previously inactive pending member re-enables them and sends a Cognito invitation without a 500."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B1 (claude/fix-b1-account-access @ 705b540), merged into integration. Staging S1/S13 not recorded."
+    },
+    {
+      "id": "MOD-IMP-020",
+      "title": "Reports route gated per report definition",
+      "module": "import-export",
+      "screen": "/reports (new route); proxy permissions",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-09"
+        }
+      ],
+      "requirement": "Expose the report builder at its own route whose access is decided per report definition (view_command_dashboard, view_analytics, manage_*), while Import/Export stays administer_department only.",
+      "acceptance": [
+        "A Command Staff user without administer_department can open /reports and only the reports their permissions allow."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability). Permission change → deployment."
+    },
+    {
+      "id": "MOD-IMP-021",
+      "title": "Reports moved out of Import/Export",
+      "module": "import-export",
+      "screen": "/reports; /settings/import-export",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-09"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-35"
+        }
+      ],
+      "requirement": "The Branded Reports builder renders on the Reports route (under Command in the nav) and is removed from the Import page.",
+      "acceptance": [
+        "Report output, filters and exports are identical before and after (network log).",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "dependencies": [
+        "MOD-IMP-020"
+      ],
+      "status": "Blocked",
+      "notes": "Blocked on MOD-IMP-020. Nav placement is shell scope."
+    },
+    {
+      "id": "MOD-PLAT-001",
+      "title": "/platform agencies console: shell, search and post-create link",
+      "module": "platform-admin",
+      "screen": "/platform",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-48"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        },
+        {
+          "doc": "OA",
+          "ref": "§1b Routes not reachable from the nav"
+        }
+      ],
+      "requirement": "/platform renders in the app shell with a nav entry for platform admins, has search and sort over agencies, and Create Agency ends with a success toast and a \"Manage new agency\" link.",
+      "acceptance": [
+        "A platform admin reaches /platform from the nav.",
+        "After Create Agency the new agency's page is one click away.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b)."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-PLAT-002",
+      "title": "/platform/[id] members table: scroll, true status labels, empty state",
+      "module": "platform-admin",
+      "screen": "/platform/[departmentId]",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-49"
+        },
+        {
+          "doc": "UX",
+          "ref": "Consolidation #7"
+        }
+      ],
+      "requirement": "The table scrolls horizontally instead of clipping, status uses an explicit label map (null → \"Not invited\", never \"Activated\" for unknown), an empty state is shown, and per-row guidance moves to one banner.",
+      "acceptance": [
+        "Component test: activation_status null renders \"Not invited\".",
+        "Table container has overflow-x-auto; no clipped columns at 1280px."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-PLAT-003",
+      "title": "Activation guidance banner and Access Agency lands on Users & Roles",
+      "module": "platform-admin",
+      "screen": "/platform/[departmentId]; Access Agency",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-55"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "Workflow simplification: First admin for a new agency"
+        }
+      ],
+      "requirement": "Replace the per-row sentence with one banner (\"To send activations, Access Agency, then use Settings → Users & Roles\") and land Access Agency on Settings → Users & Roles instead of /firearms, so the documented path is two clicks.",
+      "acceptance": [
+        "Access Agency opens Settings → Users & Roles in Support Mode.",
+        "Pending rows no longer carry the guidance sentence.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "MOD-SET-006"
+      ],
+      "status": "Not Started",
+      "notes": "ADM-02 residual is \"verify only\" in B11; this is the UI half."
+    },
+    {
+      "id": "MOD-PLAT-004",
+      "title": "Make Administrator: confirmation, feedback, roles column, hidden where meaningless",
+      "module": "platform-admin",
+      "screen": "/platform/[departmentId]",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-50"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b When to ask for confirmation"
+        }
+      ],
+      "requirement": "Make Administrator opens a ConfirmDialog naming the person and agency, shows a success toast, a Roles column shows the result, and the button is hidden for existing administrators and inactive members.",
+      "acceptance": [
+        "Component test: the click opens a confirmation; the POST happens only on confirm.",
+        "The button is absent for an administrator row.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "design-system: ConfirmDialog"
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-PLAT-005",
+      "title": "Make Administrator adds the role without removing others",
+      "module": "platform-admin",
+      "screen": "/api/platform/agency-user-administrator",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        }
+      ],
+      "requirement": "Promoting a member to Administrator adds the administrator role and keeps their existing roles (today the role set is replaced with officer + administrator).",
+      "acceptance": [
+        "Route test: a Range Master promoted keeps Range Master."
+      ],
+      "status": "Not Started",
+      "notes": "R6 ADM-22 note (admin-access.ts:134)."
+    },
+    {
+      "id": "MOD-PLAT-006",
+      "title": "One platform console with one \"Enter agency (support mode)\" flow",
+      "module": "platform-admin",
+      "screen": "/super-admin, /platform",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-51"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        },
+        {
+          "doc": "OA",
+          "ref": "§4 Terminology"
+        }
+      ],
+      "requirement": "Merge /super-admin and /platform into one console with Agencies, Modules, Members and Support sections; \"Enter Agency\" and \"Access Agency\" become one Support Mode entry; platform staff labels are consistent.",
+      "acceptance": [
+        "Only one entry into an agency exists and it always starts Support Mode.",
+        "Old /super-admin URL redirects into the console.",
+        "Permissions stay server-side: the UI only hides or disables what the server already refuses; no permission logic moves into components (§1b).",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b).",
+        "Feature parity: same endpoints and payloads before and after, verified in network logs; old URLs keep working or redirect (§4)."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-PLAT-007",
+      "title": "Confirm module disable on /super-admin",
+      "module": "platform-admin",
+      "screen": "/super-admin → module toggles",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-52"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB §5"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b When to ask for confirmation"
+        }
+      ],
+      "requirement": "Disabling a module opens a ConfirmDialog naming the agency and module and the effect on its users; cancel sends no PATCH; success shows a toast.",
+      "acceptance": [
+        "Component test: switching a module off opens a confirmation naming agency and module; cancel sends no PATCH.",
+        "Enabling shows a success toast.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "dependencies": [
+        "MOD-PLAT-010"
+      ],
+      "status": "Not Started",
+      "notes": "Before-production item in the UX plan; UX-RB §5 lists it as not done. Becomes effective once B2 (NEW-ADM-C) ships."
+    },
+    {
+      "id": "MOD-PLAT-008",
+      "title": "Support Mode banner: logging notice and honest exit",
+      "module": "platform-admin",
+      "screen": "Global SupportModeBanner",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "E-53"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-21"
+        }
+      ],
+      "requirement": "The banner says \"Actions are logged as {you}\", renders without a late pop-in, and if Exit fails it shows an error instead of redirecting as if exited.",
+      "acceptance": [
+        "Simulated DELETE failure on Exit shows an error and stays in Support Mode (component test)."
+      ],
+      "status": "Not Started"
+    },
+    {
+      "id": "MOD-PLAT-009",
+      "title": "Support Mode: reason on entry, audited exit on sign-out and expiry",
+      "module": "platform-admin",
+      "screen": "/api/platform/support-mode; sign-out",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-21"
+        }
+      ],
+      "requirement": "Entering Support Mode requires a reason/ticket; sign-out, idle sign-out and cookie expiry write support_mode_exited; one authorisation path honours Support Mode for every admin route.",
+      "acceptance": [
+        "Entry without a reason is refused.",
+        "Signing out during Support Mode writes an exit audit event.",
+        "Audit writes are unchanged: the same actions write the same audit entries with the same fields as on the baseline (§1b)."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability). 016 already made invite/edit/password operations support-aware on AWS."
+    },
+    {
+      "id": "MOD-PLAT-010",
+      "title": "Module entitlement writes work in aws-native",
+      "module": "platform-admin",
+      "screen": "/api/super-admin",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-C"
+        }
+      ],
+      "requirement": "The /super-admin PATCH writes through set_platform_entitlement and the read is not limited to agencies where the admin is a member.",
+      "acceptance": [
+        "Staging S7: a platform admin toggles a module and it persists after reload."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B2 (claude/fix-b2-field-write-authorization @ b5976f4), merged into integration. Staging S7 not recorded."
+    },
+    {
+      "id": "MOD-PLAT-011",
+      "title": "First-time module enablement is logged",
+      "module": "platform-admin",
+      "screen": "/api/super-admin; set_platform_entitlement (015)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-C"
+        }
+      ],
+      "requirement": "A missing feature row is treated as previously disabled, so the first enable writes a department_feature_events record.",
+      "acceptance": [
+        "Enabling a module on a new agency writes an enable event with previous=false."
+      ],
+      "dependencies": [
+        "MOD-PLAT-010"
+      ],
+      "status": "Not Started",
+      "notes": "R6: both the route (?? true) and 015 (coalesce(v_previous, true)) skipped the event; verify whether B2 changed this before starting."
+    },
+    {
+      "id": "MOD-PLAT-012",
+      "title": "Agency onboarding status and agency details editable",
+      "module": "platform-admin",
+      "screen": "platform_agency_accounts; /api/platform/agencies",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-22"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2a Platform owner provisions a new agency"
+        }
+      ],
+      "requirement": "Onboarding status is derived or editable (not stuck at agency_created) and agency name, status and plan can be edited after creation.",
+      "acceptance": [
+        "Onboarding status changes as setup progresses or by edit; name and plan edits persist with an audit entry."
+      ],
+      "status": "Not Started",
+      "notes": "OA disposition: Defer (missing capability)."
+    },
+    {
+      "id": "MOD-PLAT-013",
+      "title": "Invite first administrator from the platform",
+      "module": "platform-admin",
+      "screen": "/api/platform (new invite-first-admin operation)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-02"
+        }
+      ],
+      "requirement": "A platform admin can invite an agency's first administrator (invite + Administrator role) in one audited step without entering Support Mode.",
+      "acceptance": [
+        "Route test: platform admin invites a chief to an empty agency; the chief has the Administrator role; one audit record."
+      ],
+      "status": "Not Started",
+      "notes": "Partially resolved: the Support Mode → Settings → Invite path works on AWS (016)."
+    },
+    {
+      "id": "MOD-PLAT-014",
+      "title": "\"Invite first administrator\" action on the agency page",
+      "module": "platform-admin",
+      "screen": "/platform/[departmentId]",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2a Platform owner provisions a new agency"
+        }
+      ],
+      "requirement": "The agency page offers \"Invite first administrator\" when the agency has no administrator.",
+      "acceptance": [
+        "On an agency with no administrator the action is offered and completes the invite; it is hidden once one exists."
+      ],
+      "dependencies": [
+        "MOD-PLAT-013"
+      ],
+      "status": "Blocked",
+      "notes": "Blocked on MOD-PLAT-013 (track C)."
+    },
+    {
+      "id": "MOD-PLAT-015",
+      "title": "Platform Send Activation outside Support Mode",
+      "module": "platform-admin",
+      "screen": "/api/settings/users/activation from /platform/[departmentId]",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-F"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-55"
+        },
+        {
+          "doc": "UX",
+          "ref": "A-71"
+        }
+      ],
+      "requirement": "Either platform Send Activation works for a platform admin outside Support Mode, or the platform page stops offering it (guidance only, as RC does).",
+      "acceptance": [
+        "Platform admin not in Support Mode either sends the activation successfully or sees no Send Activation control."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: whether platform Send Activation should work outside Support Mode (remediation-status B1 owner decisions). RC shows guidance only."
+    },
+    {
+      "id": "MOD-PLAT-016",
+      "title": "Platform copy: consistent staff and tenant terms, no real-agency placeholders",
+      "module": "platform-admin",
+      "screen": "/platform, CreateAgencyForm, /super-admin, support banner",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "§4 Terminology"
+        },
+        {
+          "doc": "OA",
+          "ref": "§2a Platform owner provisions a new agency"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "UX",
+          "ref": "A-45"
+        }
+      ],
+      "requirement": "Use one name for platform staff (instead of Super Admin / Platform Admin / TracePoint Platform Administrator / Platform Support / PLATFORM ADMIN) and one for the tenant (agency vs department vs tenant); Create Agency placeholders do not name a real agency; status labels use the shared enum formatter.",
+      "acceptance": [
+        "Glossary terms used consistently across platform screens; no real agency name in placeholders."
+      ],
+      "status": "Not Started",
+      "notes": "\"pilot/pilot\" defaults are a provisioning data choice — changing the default values is deployment scope; this requirement covers copy only."
+    },
+    {
+      "id": "MOD-AUTH-002",
+      "title": "Invited, imported and migrated users can complete first Cognito sign-in",
+      "module": "auth",
+      "screen": "/api/auth/cognito/callback; identity mapping",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-A"
+        }
+      ],
+      "requirement": "The first successful Cognito sign-in of a pending identity activates its link and membership so invited, imported and migrated users reach the app without an admin Assign Password.",
+      "acceptance": [
+        "Staging S1: invite a new user, sign in through Cognito with MFA enrolment, land in the app (not an error or loop)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B1 (claude/fix-b1-account-access @ 705b540). Staging S1 not recorded. OWNER DECISION NEEDED (B1): whether pending users may activate on their first native-app sign-in."
+    },
+    {
+      "id": "MOD-AUTH-003",
+      "title": "No self-created departments for users without membership",
+      "module": "auth",
+      "screen": "/auth/setup; create_department_with_owner",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-03"
+        }
+      ],
+      "requirement": "create_department_with_owner is not executable by authenticated users; a separated user is told access has ended instead of being offered tenant creation.",
+      "acceptance": [
+        "DB test: an authenticated user with no membership calling create_department_with_owner is denied (E3 db-t5t6t8 reversed)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed for aws-native by B1 (grant revoked, 039). Bridge (Supabase) /auth/setup path unchanged — relevant only while a Supabase environment is in use."
+    },
+    {
+      "id": "MOD-AUTH-004",
+      "title": "Settings deactivation disables login and revokes sessions",
+      "module": "auth",
+      "screen": "Settings member deactivation → Cognito membership lifecycle",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-E"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-05"
+        },
+        {
+          "doc": "UX",
+          "ref": "AE-R2"
+        }
+      ],
+      "requirement": "Deactivating a member in Settings runs the same Cognito disable / global sign-out / session revocation as the import path.",
+      "acceptance": [
+        "Staging S13: a deactivated user's session is rejected and they cannot sign in.",
+        "Multi-agency case verified: deactivation in one agency does not wrongly block a member still active in another (AE-R2)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed by B1 (claude/fix-b1-account-access @ 705b540) together with the 42702 lifecycle bug. AE-R2 multi-agency behaviour not verified in sources."
+    },
+    {
+      "id": "MOD-AUTH-005",
+      "title": "Application password policy matches the Cognito pool",
+      "module": "auth",
+      "screen": "password-policy.ts; Assign Password",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ADM-B"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-54"
+        }
+      ],
+      "requirement": "The app and the Cognito pool enforce the same minimum password length so Assign Password never accepts a value Cognito rejects.",
+      "acceptance": [
+        "Test: a password one character below the pool minimum is rejected by the app before calling Cognito (T4 reversed)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "B1 (partial) and F1 set min 14; UX E-54 confirms the modal enforces 14. OWNER DECISION NEEDED: Cognito password minimum — staging CDK 14 vs production hand-patched to 10."
+    },
+    {
+      "id": "MOD-AUTH-006",
+      "title": "Assign Password no longer marks email verified without proof; clear remedy messages",
+      "module": "auth",
+      "screen": "/api/settings/users/assign-password; password-reset",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-07"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-07a"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-07b"
+        }
+      ],
+      "requirement": "Assign Password does not mark an email verified without proof (ADM-07a), and reset refusals give the admin a correct remedy (ADM-07b).",
+      "acceptance": [
+        "Staging S23-3 (revised) passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "notes": "Fixed on claude/fix-adm07-invited-reset @ 9a7a234, merged into integration. Staging S23-3 not recorded."
+    },
+    {
+      "id": "MOD-AUTH-007",
+      "title": "Invited users who have signed in can self-reset their password",
+      "module": "auth",
+      "screen": "Cognito managed login → Forgot your password?",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-07"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-57"
+        },
+        {
+          "doc": "OA",
+          "ref": "ADM-07c"
+        },
+        {
+          "doc": "UX",
+          "ref": "A-42"
+        }
+      ],
+      "requirement": "Determine whether first sign-in verifies the email; if not, provide a verified-email path so invited users can use \"Forgot your password?\" (recovery still requires MFA).",
+      "acceptance": [
+        "Staging S23-3 step 2: an invited user who has signed in once receives a reset code."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: ADM-07c remedy after S23-3 (revised) step 2 (defect-stage-ledger)."
+    },
+    {
+      "id": "MOD-AUTH-008",
+      "title": "Department security policy enforcement (session timeout, MFA, retention, export logging)",
+      "module": "auth",
+      "screen": "IdleSessionGuard; refresh sessions; Cognito; export audit",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-13"
+        },
+        {
+          "doc": "UX",
+          "ref": "E-16"
+        }
+      ],
+      "requirement": "If chosen, enforce the department session timeout (client guard and server idle), decide MFA policy relative to the pool-wide requirement, implement data retention, and make the export-logging toggle platform-only.",
+      "acceptance": [
+        "An agency set to 15 minutes is signed out after 15 idle minutes on server and client.",
+        "Administrators cannot switch export logging off."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: wire or hide the stored-but-unenforced controls (OA README §6 TRN-07/FLT-06/ADM-13/ADM-14; UX plan §8 item 8). Until decided, the copy requirement MOD-AUTH-001 labels them honestly."
+    },
+    {
+      "id": "MOD-AUTH-009",
+      "title": "Admin-assigned passwords must be changed at next sign-in",
+      "module": "auth",
+      "screen": "Assign Password; sign-in",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-27"
+        }
+      ],
+      "requirement": "An admin-assigned password is temporary: the user must set their own password at next sign-in (Cognito non-permanent password or an enforced flag).",
+      "acceptance": [
+        "A user given a password by an admin is forced to choose a new one at first sign-in."
+      ],
+      "status": "Not Started",
+      "notes": "Partially mitigated (complexity enforced, sessions revoked, MFA required). Check against the agency CJIS policy."
+    },
+    {
+      "id": "MOD-AUTH-010",
+      "title": "Development conveniences removed from the production request path",
+      "module": "auth",
+      "screen": "src/proxy.ts; /auth/signout",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-33"
+        }
+      ],
+      "requirement": "Credentialed localhost CORS is enabled only behind a development flag, and sign-out is POST-only in every runtime mode.",
+      "acceptance": [
+        "In production configuration a request from http://localhost:3000 receives no credentialed CORS headers; GET /auth/signout does not sign out."
+      ],
+      "status": "Not Started",
+      "notes": "Partially resolved: Cognito sign-out is POST-only; bridge GET sign-out and unconditional localhost CORS remain."
+    },
+    {
+      "id": "MOD-AUTH-011",
+      "title": "Bridge mode: imported users can complete activation",
+      "module": "auth",
+      "screen": "Supabase personnel import; /activate",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ADM-01"
+        }
+      ],
+      "requirement": "In bridge (Supabase) mode imported users are created unconfirmed, or activation eligibility uses the membership activation status, so the activation link works.",
+      "acceptance": [
+        "Bridge test T2 reversed: an imported user's activation token validates."
+      ],
+      "status": "Not Started",
+      "notes": "Applies only while a Supabase/bridge environment remains in use (R6). Close when bridge mode is retired; Cognito path is covered by MOD-AUTH-002."
+    },
+    {
+      "id": "MOD-AUTH-012",
+      "title": "Account lockout policy",
+      "module": "auth",
+      "screen": "Sign-in (Cognito)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "§2c User invite, activation and lockout"
+        },
+        {
+          "doc": "OA",
+          "ref": "remediation-status Plan §6 (lockout policy)"
+        }
+      ],
+      "requirement": "Define the account lockout policy and, if needed, an admin unlock path.",
+      "acceptance": [
+        "Documented policy; repeated failed sign-ins behave as the policy states on staging."
+      ],
+      "status": "Not Started",
+      "notes": "OWNER DECISION NEEDED: lockout policy (remediation-status \"Owner decisions outstanding\", Plan §6)."
+    },
+    {
+      "id": "MOD-AUTH-013",
+      "title": "Sign-in returns the user to the page they asked for",
+      "module": "auth",
+      "screen": "/login → /api/auth/cognito/login → /api/auth/cognito/callback",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-64"
+        },
+        {
+          "doc": "UX",
+          "ref": "V-05"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-32"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan WP-7"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F3"
+        }
+      ],
+      "requirement": "The validated `next` destination posted by the login page is stored server-side with the PKCE flow record (internal paths only, via the existing internalAuthRedirect rule) and the callback redirects to it instead of always to `/`. Deep links from notification emails, shared record links, Help and a return after idle sign-out land on the requested record.",
+      "acceptance": [
+        "Route test: begin() with next=/range-days?x=1 followed by a successful callback redirects to /range-days?x=1.",
+        "Route test: an external or protocol-relative next (https://evil.example, //evil.example) is ignored and the callback redirects to /.",
+        "The `next` value is held in the server-side flow record, never trusted from the callback query string.",
+        "Signed out on staging, opening /firearms?x=1 and signing in (including MFA) lands on /firearms?x=1.",
+        "Permissions stay server-side: landing on a page the user may not see still returns the normal 403 / unauthorized handling (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX: Source-evident; production has the same cognito-transport.ts begin/callback code (register-AE). V-05 records that the first hop keeps next. Fix together with MOD-AUTH-014 in cognito-transport.ts (register-AE consolidation note). The sign-in part of SV-32; the inbox side-effect part is MOD-OPS-024."
+    },
+    {
+      "id": "MOD-AUTH-014",
+      "title": "Browser sign-in and sign-out failures redirect to the login page instead of raw JSON",
+      "module": "auth",
+      "screen": "/api/auth/cognito/{login,callback,logout}",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-65"
+        },
+        {
+          "doc": "UX",
+          "ref": "V-06"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan WP-7"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F3"
+        }
+      ],
+      "requirement": "For browser (HTML navigation) requests, Cognito endpoint failures (authorization_rejected after a cancelled, expired, replayed or errored flow; authorization_unavailable; logout_unconfirmed; provider_disabled) redirect to `/login?notice=<code>` instead of rendering a JSON document. API and native callers keep the JSON contract.",
+      "acceptance": [
+        "GET /api/auth/cognito/callback?error=access_denied with Accept: text/html returns a redirect to /login?notice=<code>, not a 401 JSON body (re-run the V-06 curl on staging).",
+        "The same request with Accept: application/json (or from the native client) still returns the existing JSON status and code.",
+        "An expired flow cookie (more than 600 seconds on the hosted UI) produces the redirect, and the login page offers Try again.",
+        "Session cookies are still cleared on a rejected callback exactly as today; no change to what is revoked or audited (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Verified live on staging (V-06, curl 2026-10-22). The login-page copy for each notice code is MOD-AUTH-015."
+    },
+    {
+      "id": "MOD-AUTH-015",
+      "title": "One neutral sign-in notice channel with friendly copy, including legacy activation links",
+      "module": "auth",
+      "screen": "/login, /activate, /auth/setup, /auth/callback, /auth/confirm",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-43"
+        },
+        {
+          "doc": "UX",
+          "ref": "A-67"
+        },
+        {
+          "doc": "UX",
+          "ref": "Appendix A consolidation 7"
+        }
+      ],
+      "requirement": "The login page stops rendering `?error=` free text verbatim. It reads a `?notice=<code>` from a fixed list and shows friendly, non-alarming copy (neutral notice style, not the rose error box) for sign-in timeouts, cancellations and legacy links. Old Supabase activation and reset links (/activate, /auth/setup, /auth/callback, /auth/confirm) redirect to /login with a notice telling the user to sign in with the email and temporary password from their newest TracePoint invitation, or use Forgot your password?.",
+      "acceptance": [
+        "An unknown notice code or arbitrary ?error= text is never echoed to the page.",
+        "Each notice code from MOD-AUTH-014 has reviewed copy and a Try again action.",
+        "Opening an old /activate, /auth/setup, /auth/callback or /auth/confirm link in aws-native shows the neutral legacy-link notice, not an error box.",
+        "No vendor or internal wording (\"legacy authentication callback\", \"AWS Cognito\") appears in the notices."
+      ],
+      "dependencies": [
+        "MOD-AUTH-014"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "A-43 is Partly fixed (no password inputs in aws-native); the remaining part is the verbatim ?error= box."
+    },
+    {
+      "id": "MOD-AUTH-016",
+      "title": "Branded, phone-friendly hosted sign-in without vendor wording",
+      "module": "auth",
+      "screen": "/login → Cognito managed login",
+      "category": "visual",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-66"
+        },
+        {
+          "doc": "UX",
+          "ref": "V-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "V-02"
+        },
+        {
+          "doc": "UX",
+          "ref": "V-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U2"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan §8 item 13"
+        }
+      ],
+      "requirement": "The Cognito managed login carries TracePoint branding (logo, colours, page title, copy) so the hand-off does not look like a different site; the hosted email field uses an email input type with autocomplete so phones show an email keyboard and password managers pair; the TracePoint login page drops the \"AWS Cognito identity service\" footnote and the \"Built for range staff\" tile copy. Optionally auto-continue to the hosted UI when there is no notice to show.",
+      "acceptance": [
+        "On staging at 375px the hosted sign-in shows the TracePoint logo and colours, a browser tab title naming TracePoint, and an email keyboard for the email field.",
+        "The login page contains no \"AWS\" or \"Cognito\" text (banned-strings check, MOD-OPS-014).",
+        "\"Forgot your password?\" remains reachable on the hosted UI; MFA is still required (no change to the pool's MFA or password policy)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: Cognito hosted-UI branding (UX remediation-plan §8 owner decision 13; configuration, not code) and whether to auto-continue past the TracePoint card."
+    },
+    {
+      "id": "MOD-AUTH-017",
+      "title": "Idle sign-out: shared across tabs, visible countdown, return to the same page",
+      "module": "auth",
+      "screen": "IdleSessionGuard (all signed-in pages)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-47"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U10"
+        },
+        {
+          "doc": "UX",
+          "ref": "remediation-plan WP-7"
+        }
+      ],
+      "requirement": "Last activity is shared across tabs, so an idle background tab never signs out the tab the user is working in. The warning shows a countdown and is dismissed only by an explicit Stay signed in action (not any mousedown or scroll). After an idle sign-out and re-sign-in the user returns to the page they were on.",
+      "acceptance": [
+        "Two tabs open, one idle and one active: the session is not ended while the active tab has activity (e2e test).",
+        "The warning shows the remaining time and stays until Stay signed in or sign-out.",
+        "After idle sign-out and sign-in, the user lands on the page they were on (with MOD-AUTH-013).",
+        "Sign-out still posts through the Cognito hosted logout and revokes the session server-side exactly as today (§1b)."
+      ],
+      "dependencies": [
+        "MOD-AUTH-013"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Multi-tab loss is Suspected in the UX audit and confirmed from code in register-AE. Applying the department session-timeout value instead of the hard-coded 25/30 minutes is MOD-AUTH-008 (ADM-13)."
+    },
+    {
+      "id": "MOD-AUTH-018",
+      "title": "Production identity recovery and account disablement tested",
+      "module": "auth",
+      "screen": "Production Cognito pool and admin recovery runbook",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARC-32"
+        }
+      ],
+      "requirement": "Gate G10 is closed on production: help-desk identity recovery (lost MFA device, forgotten password) and account disablement are rehearsed on the production pool, and the result is recorded.",
+      "acceptance": [
+        "A dated production record shows a recovery of a test account through the documented help-desk path, with MFA re-enrolment.",
+        "A dated production record shows that disabling a member blocks sign-in and revokes existing sessions.",
+        "The identity-recovery item in the completion ledger is no longer PENDING."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "R1: Partially resolved — Cognito wired, production pool MFA ON, admin reset guard d84d740; identity recovery PENDING."
+    },
+    {
+      "id": "MOD-AUTH-019",
+      "title": "Live session cookie flags and revocation tested",
+      "module": "auth",
+      "screen": "Session cookie (aws-native)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARC-50"
+        }
+      ],
+      "requirement": "The live opaque-session cookie path is tested against the deployed environment: Secure, HttpOnly and SameSite flags, expiry, and server-side revocation after sign-out, so session theft mitigations are evidenced rather than assumed.",
+      "acceptance": [
+        "A staging check records the Set-Cookie flags of the session cookie (Secure, HttpOnly, SameSite) and expiry.",
+        "A reused cookie after sign-out is refused (401) on staging."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "R1: Partially resolved — unit tests exist (request-session-core, cognito-transport, idle-session-core); no live cookie-flag test."
+    },
+    {
+      "id": "MOD-PLAT-017",
+      "title": "Platform console shows an error with Retry instead of the marketing page or 404",
+      "module": "platform-admin",
+      "screen": "/platform (layout), /platform/[departmentId]",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-70"
+        }
+      ],
+      "requirement": "When the platform access check fails for a reason other than 401/403 (for example a transient database error), the platform console renders an error state with Retry instead of redirecting to /landing; the agency detail page distinguishes 'not found' from 'could not load'.",
+      "acceptance": [
+        "With the access check returning 500, /platform shows a 'Couldn't load · Retry' state, not /landing.",
+        "A missing agency still shows not found; a failed load shows the error state.",
+        "401/403 handling is unchanged; permissions stay server-side (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    }
+  ]
+}
