@@ -44,6 +44,14 @@ Consequence, per blueprint §0 and the program brief:
   presentation changes.
 - "Before" screenshots are re-captured on the declared baseline at 1280, 768 and 375px.
 
+Known sequencing constraints:
+
+- `claude/fix-uxrb-release-safety` changes `src/app/components/TracePointShell.tsx`, so the shell and
+  navigation work (MOD-SHELL) starts after UX-RB is merged into the baseline. None of the files on the
+  foundation branch overlap with UX-RB.
+- `claude/integration-defects-rebased-20261021` is local-only (not on `origin`), so modernization PRs
+  can't target it on GitHub until it is pushed or a baseline branch is agreed.
+
 When the deployment workstream declares the baseline (commit SHA, staging deployment id, passing SV
 checks), record it here and rebase the open modernization branches onto it.
 

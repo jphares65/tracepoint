@@ -1,0 +1,4244 @@
+{
+  "requirements": [
+    {
+      "id": "MOD-FA-001",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Record-page restricted custody transfer uses the live contract",
+      "screen": "/firearms/[firearmId] (Physical Custody)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-63"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-R2"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-4"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F1"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-28"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-4"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "§0"
+        }
+      ],
+      "requirement": "Transfer to Secure Storage / Return to Assigned Officer on the record page sends the CHECK_IN/CHECK_OUT contract the custody route accepts, is offered only when the server says the operation is allowed (active Duty Only restriction plus assignee or manage_restricted_firearm_custody, mirroring database/aws/031), drops the non-functional Reason/administrative-correction fields, and history shows the action with reason and notes.",
+      "acceptance": [
+        "Contract test: the body the page builds is accepted by the custody route parser in both directions; the pre-031 body is refused.",
+        "Buttons render only when the custody GET returns the operation in `operations`; button eligibility equals RPC 031 authorization.",
+        "Staging S28: a Duty Only firearm is transferred to secure storage and back by the assignee; both succeed and history shows reason and notes.",
+        "Custody, assignment and Duty Only / No Carry restriction semantics, eligibility and approval rules are unchanged; the UI uses the frozen custody contract (UX-RB-4) and the server-returned eligibility, never its own rules.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [
+          "8bbbfcb"
+        ]
+      },
+      "notes": "UX-RB-4 (owner chose repair over removal, 2026-10-22). Fixed in code on the UX-RB branch, not yet merged into ec027f50; not validated in staging. Treat the original defect as live in production (UX-RB §0). Administrative correction (028 override) deliberately not restored: owner scope decision."
+    },
+    {
+      "id": "MOD-FA-002",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Restricted tab check-in/out sends the notes the user typed",
+      "screen": "/firearms (Restricted tab)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-64"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-4"
+        }
+      ],
+      "requirement": "Notes typed for a Duty Only Check In or Return to Officer are sent and stored, and the restriction reason, removal reason and custody notes each have their own state so text never carries from one form to the next.",
+      "acceptance": [
+        "Component test: type notes, Check In → request body contains `notes`; the stored custody event shows them.",
+        "Opening Clear restriction after a check-in shows an empty textarea.",
+        "Custody, assignment and Duty Only / No Carry restriction semantics, eligibility and approval rules are unchanged; the UI uses the frozen custody contract (UX-RB-4) and the server-returned eligibility, never its own rules."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [
+          "8bbbfcb"
+        ]
+      },
+      "notes": "UX-RB-4 covers C-64. Not merged into ec027f50; not validated in staging."
+    },
+    {
+      "id": "MOD-FA-003",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Restore ordinary (non-restricted) custody transfer as a distinct operation",
+      "screen": "API /api/armory/firearms/[firearmId]/custody",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "SV",
+          "ref": "SV-28"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        }
+      ],
+      "requirement": "Ordinary authorized custody moves (check-out to an officer, check-in to secure storage, previously transfer_firearm_custody in database/aws 028 with firearm_custody.check_out/check_in) exist again as an operation separate from the restricted Duty Only operation, with the custody GET returning which operations the caller may perform.",
+      "acceptance": [
+        "Route tests: ordinary check-in/out succeeds for holders of the ordinary custody permissions and is refused otherwise; restricted operations are unchanged.",
+        "Each ordinary move writes a custody event with actor, time, reason and notes.",
+        "The GET reports ordinary and restricted operations separately so the UI never infers eligibility."
+      ],
+      "notes": "Staging 555f061 narrowed ordinary transfers to restricted-only; SV-28 says the custody workstream is restoring it. Semantics are deployment-owned; administrative corrections stay disabled (owner decision already recorded in SV-28)."
+    },
+    {
+      "id": "MOD-FA-004",
+      "status": "Blocked",
+      "module": "firearms",
+      "title": "Custody sheet for ordinary moves (From → To, reason, audit notice)",
+      "screen": "/firearms drawer and /firearms/[firearmId]",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armorer · find a firearm and move it to secure storage"
+        }
+      ],
+      "requirement": "An ordinary custody move opens a sheet showing From → To, a storage-location picker with a Manage locations link, a required reason, optional notes, only the other fields the API accepts, a submit button that names the effect ('Move to <location>') and a one-line audit notice; assignment is never changed by it.",
+      "acceptance": [
+        "The sheet posts exactly the payload of the operation delivered by the ordinary-custody API requirement; network log matches.",
+        "Submit is disabled until the required reason and destination are set; the result is shown only on server confirmation.",
+        "Custody, assignment and Duty Only / No Carry restriction semantics, eligibility and approval rules are unchanged; the UI uses the frozen custody contract (UX-RB-4) and the server-returned eligibility, never its own rules.",
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export.",
+        "No extra 'Are you sure?' on accountable state changes; ConfirmDialog only for destructive or broad-impact actions (blueprint §1b)."
+      ],
+      "dependencies": [
+        "MOD-FA-003",
+        "UX-RB-4"
+      ],
+      "notes": "Blueprint §4: custody sheet changes are R2, after the UX-RB-4 contract is verified on the baseline; waits for the ordinary operation (SV-28)."
+    },
+    {
+      "id": "MOD-FA-005",
+      "status": "Blocked",
+      "module": "firearms",
+      "title": "Restricted custody presented in the custody sheet with the restriction header",
+      "screen": "/firearms drawer and /firearms/[firearmId]",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-4"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-63"
+        }
+      ],
+      "requirement": "Restricted check-in/out uses the same sheet layout, with the Duty Only restriction in the sheet header and an amber notice, one restricted-custody form for both /firearms and the record page, and the actions the server's `operations` allow.",
+      "acceptance": [
+        "Only one restricted-custody form component exists and both pages use it.",
+        "The sheet sends the UX-RB-4 body; no new fields are invented.",
+        "Custody, assignment and Duty Only / No Carry restriction semantics, eligibility and approval rules are unchanged; the UI uses the frozen custody contract (UX-RB-4) and the server-returned eligibility, never its own rules.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export.",
+        "Success is shown only after the server confirms the write; a failure is shown in place, next to the action, with the next step."
+      ],
+      "dependencies": [
+        "MOD-FA-001",
+        "UX-RB-4"
+      ],
+      "notes": "Waits for UX-RB-4 to merge and be verified on staging (blueprint §4)."
+    },
+    {
+      "id": "MOD-FA-006",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Decide whether a restricted check-out needs supervisor approval",
+      "screen": "Custody / approvals (track C)",
+      "category": "workflow",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "#5"
+        }
+      ],
+      "requirement": "The blueprint mock shows a Duty Only check-out as 'Request approval' routed to an approvals queue, with custody changing only after approval. Today the assignee or a restricted-custody holder checks out directly (031). Any approval step is a change to custody semantics and must be defined by deployment before the UI shows it.",
+      "acceptance": [
+        "Owner decision recorded.",
+        "If approved: an approvals API and data model exist, and the restricted sheet switches to 'Request approval' only after that API is on the verified baseline.",
+        "If rejected: the sheet keeps the direct check-out and the mock is updated."
+      ],
+      "notes": "OWNER DECISION NEEDED: add an approval requirement to restricted check-out or keep direct check-out. The UI must not add approval from its side."
+    },
+    {
+      "id": "MOD-FA-007",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Storage locations reachable from custody controls",
+      "screen": "/firearms (header, Restricted tab, custody sheet)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "SV",
+          "ref": "SV-31"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armorer · set up secure storage before the first transfer"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        }
+      ],
+      "requirement": "Storage-location management is linked from the Firearms header ('Storage locations') and from every storage picker ('Manage locations'), shown only to users the server lets manage locations.",
+      "acceptance": [
+        "Page contract test: the link appears for a location manager and is absent for an officer.",
+        "The link opens the existing Secure Storage settings panel; no new storage API.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "notes": "The Secure Storage panel's own defects (D-71, E-60) belong to the settings/admin and assets groups."
+    },
+    {
+      "id": "MOD-FA-008",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Focus view no longer dead-ends armorers",
+      "screen": "/firearms (Focus view drawer)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "CR-4"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-14"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armory: Firearms, Inspections, Ammunition, Personally Owned Rifles"
+        }
+      ],
+      "requirement": "The Focus-view drawer stops sending users to a page without custody actions: its call to action switches to Standard view with the firearm selected (or opens the record page once it has the actions), and the copy states what is actually available; clicking a row in Focus mode visibly selects it.",
+      "acceptance": [
+        "Component test: the Focus drawer CTA selects the firearm and shows the Assign/Return/Status controls.",
+        "The string 'Use the full firearm workspace for custody actions…' is gone.",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working."
+      ],
+      "dependencies": [
+        "MOD-FA-001"
+      ],
+      "notes": "Superseded in R1 by the saved views and drawer; fix the copy and link now because the target page's only actions failed (C-63)."
+    },
+    {
+      "id": "MOD-FA-009",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Single-firearm read endpoint for the record page",
+      "screen": "API GET /api/armory/firearms/[firearmId]",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-14"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-25"
+        }
+      ],
+      "requirement": "A GET for one firearm (with assignment, physical custody, restriction and access flags) replaces the record page's load of the whole inventory.",
+      "acceptance": [
+        "Route test: returns one firearm in the caller's department; 404 for another department or no permission.",
+        "The record page makes no request to /api/armory/firearms?includeArchived=true."
+      ]
+    },
+    {
+      "id": "MOD-FA-010",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Record page becomes the canonical firearm record",
+      "screen": "/firearms/[firearmId]",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-14"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-25"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armory: Firearms, Inspections, Ammunition, Personally Owned Rifles"
+        }
+      ],
+      "requirement": "Issue/return, status change, edit and documents are available on /firearms/[firearmId] (Overview, Custody, Inspections, Docs, History tabs with `?tab=` URLs), using the same endpoints as the list page.",
+      "acceptance": [
+        "Every action available in the list panel is available on the record page, gated by the server's access flags.",
+        "Each tab has a URL; refresh and back keep the tab.",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "MOD-FA-009"
+      ]
+    },
+    {
+      "id": "MOD-FA-011",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Firearm record header: title once, status once, shared record layout",
+      "screen": "/firearms/[firearmId]",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-25"
+        },
+        {
+          "doc": "VR",
+          "ref": "Firearm record"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        }
+      ],
+      "requirement": "The record page uses the shared PageHeader/record layout (header with status chip, facts grid, tabs) shared with the vehicle record; the name appears once and status appears once.",
+      "acceptance": [
+        "Screenshot test at 1280/768/375: one title, one status chip.",
+        "Labelled section explanations (Assignment, Physical Custody) are kept verbatim."
+      ]
+    },
+    {
+      "id": "MOD-FA-012",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Chain-of-custody history data (assignments, status, inspections, edits, documents)",
+      "screen": "API (firearm history)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-07"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "An endpoint returns a firearm's full history: past assignments (returned ones included), status history, inspections, restriction and custody events, edits from audit_log and attachments; plus an assignment-history report.",
+      "acceptance": [
+        "Route test: a returned assignment appears with officer, issued and returned times and actor.",
+        "Department and permission scoping enforced server-side.",
+        "An assignment-history report lists all rows for a requested range."
+      ],
+      "notes": "OA defers this as a missing capability; custody events alone (028/031) do not cover assignments."
+    },
+    {
+      "id": "MOD-FA-013",
+      "status": "Blocked",
+      "module": "firearms",
+      "title": "History tab on the firearm record",
+      "screen": "/firearms/[firearmId]?tab=history",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-07"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "The record page has a History tab combining custody, assignment, inspection, restriction and document events with actor, time and reason, reachable from the drawer's Full record link.",
+      "acceptance": [
+        "Every event type returned by the history API renders with human labels, actor and time.",
+        "No existing history view is removed.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "MOD-FA-012",
+        "MOD-FA-010"
+      ]
+    },
+    {
+      "id": "MOD-FA-014",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Readable custody history list",
+      "screen": "/firearms/[firearmId] (Custody History)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-68"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-07"
+        }
+      ],
+      "requirement": "Custody events show human action labels, actor and location, never a dangling separator when reason is empty, and a 'View all' link to the History tab.",
+      "acceptance": [
+        "Unit test: an event with empty reason renders without a trailing '·'.",
+        "Actor and location names are shown, never IDs."
+      ],
+      "notes": "UX-RB-4 already shows the action with reason and notes; actor, location and View all remain."
+    },
+    {
+      "id": "MOD-FA-015",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Unknown firearm status shown as Unknown, not In Service",
+      "screen": "/firearms, /firearms/inspections, /firearms/[firearmId]",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-02"
+        },
+        {
+          "doc": "UX",
+          "ref": "CR-2"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        }
+      ],
+      "requirement": "An unrecognised condition_status displays as an amber 'Unknown' status, is excluded from In Service and Available counts, and is included in the inspection review queue, everywhere a firearm status is shown.",
+      "acceptance": [
+        "Unit test: normalizeStatus('in_service' | 'Lost' | '') → Unknown in every page's status helper (or the one shared helper).",
+        "Inspections queue includes an Unknown-status firearm.",
+        "Read-only staging query of distinct condition_status values recorded (remediation plan data check)."
+      ]
+    },
+    {
+      "id": "MOD-FA-016",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "'Available' counts only unassigned, In Service firearms",
+      "screen": "/firearms (counts)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-11"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F11"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        }
+      ],
+      "requirement": "Available = active, unassigned and In Service.",
+      "acceptance": [
+        "Unit test: 1 assigned, 1 Out of Service, 1 Retired, 1 In Service → Available = 1."
+      ]
+    },
+    {
+      "id": "MOD-FA-017",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Distinct names for 'unavailable' and 'incomplete record'",
+      "screen": "/firearms (tiles, badges, group summary)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-12"
+        }
+      ],
+      "requirement": "The 'Attention' tile is renamed 'Unavailable' and the 'Needs Attention' badge 'Incomplete record', consistent with the group summary.",
+      "acceptance": [
+        "Snapshot: no 'Attention'/'Needs Attention' label remains with a different meaning."
+      ]
+    },
+    {
+      "id": "MOD-FA-018",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Saved views with counts replace Standard/Focus and group selects",
+      "screen": "/firearms (list)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4"
+        },
+        {
+          "doc": "WR",
+          "ref": "Standard / Focus"
+        },
+        {
+          "doc": "WR",
+          "ref": "Dept Firearms"
+        },
+        {
+          "doc": "VR",
+          "ref": "Department Firearms"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-24"
+        }
+      ],
+      "requirement": "The list offers one-tap views with counts (All, Assigned, In storage, Restricted, Needs inspection, Custody not recorded) instead of the unexplained Standard/Focus toggle and sort/group selects; the chosen view is in the URL and remembered.",
+      "acceptance": [
+        "Each view's count equals the rows shown when it is selected.",
+        "The view is reflected in `?view=` and restored after reload.",
+        "No capability of Standard or Focus view is lost (parity inventory).",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working."
+      ]
+    },
+    {
+      "id": "MOD-FA-019",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Custody column and honest 'not recorded' presentation",
+      "screen": "/firearms (list, Custody card, Restricted tab)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-65"
+        }
+      ],
+      "requirement": "The list has a Custody column separate from Assigned to, and the instruction 'select Manage Custody' (a control that does not exist) is removed. How a firearm with no recorded physical custody is shown must follow the owner's decision.",
+      "acceptance": [
+        "The string 'Manage Custody' no longer appears.",
+        "Assignment and custody are separate columns/fields with their one-line definitions.",
+        "The 'not recorded' state matches the decision below in every place it appears."
+      ],
+      "notes": "OWNER DECISION NEEDED: the blueprint flags 'Not recorded' in amber so the gap gets fixed; UX C-65 says show 'Not tracked (with assignee)' when no restriction is active because physical custody is only initialised by a restriction. The answer depends on whether ordinary custody is restored (SV-28).",
+      "dependencies": [
+        "MOD-FA-003"
+      ]
+    },
+    {
+      "id": "MOD-FA-020",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Firearm drawer with assignment, custody and last inspection; row opens the record",
+      "screen": "/firearms (drawer)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-10"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-19"
+        },
+        {
+          "doc": "VR",
+          "ref": "Department Firearms"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armorer · find a firearm and move it to secure storage"
+        },
+        {
+          "doc": "WR",
+          "ref": "Dept Firearms"
+        }
+      ],
+      "requirement": "Selecting a row opens a right-side drawer (overlay below 1280px) showing assignment, physical custody and last inspection side by side with their one-line definitions and actions, plus Inspect, Custody… and a 'Full record ›' link; nothing is auto-selected on load and no custody fetch runs until a row is chosen.",
+      "acceptance": [
+        "The drawer has role=dialog, Escape and backdrop close, and a focus trap; focus returns to the row.",
+        "At 768px the drawer is visible without scrolling; no panel stacks under the table.",
+        "Selected firearm is in the URL (`?firearm=`).",
+        "Custody and inspection forms are linked as they are today (R1 changes no form).",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ]
+    },
+    {
+      "id": "MOD-FA-021",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Firearms list on the shared DataTable and phone CardList",
+      "screen": "/firearms (list)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#8"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "VR",
+          "ref": "Department Firearms"
+        },
+        {
+          "doc": "VR",
+          "ref": "Responsive"
+        }
+      ],
+      "requirement": "The inventory uses the shared DataTable (sortable headers, pinned first column, column chooser, dark scrollbar) with a CardList under 640px; serials and asset tags are in mono at full contrast; filters collapse to one 'Filters (n)' button on phones.",
+      "acceptance": [
+        "Visual regression at 1280/768/375 for loaded, empty, loading, error and many-rows states.",
+        "On a 375px phone the first row is visible without scrolling past filters.",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working."
+      ]
+    },
+    {
+      "id": "MOD-FA-022",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Armory colour and status consistency",
+      "screen": "/firearms, /firearms/[firearmId], /firearms/inspections",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-16"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-17"
+        },
+        {
+          "doc": "VR",
+          "ref": "Buttons"
+        },
+        {
+          "doc": "VR",
+          "ref": "Status"
+        },
+        {
+          "doc": "BP",
+          "ref": "#1"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        }
+      ],
+      "requirement": "Light-theme leftovers are replaced with dark-theme tokens, one StatusChip maps firearm statuses on every page, and the module uses the four Button variants (no rose/amber/violet primaries for non-destructive actions).",
+      "acceptance": [
+        "No `hover:bg-slate-200/70`, `border-slate-200` or `text-slate-600` on dark surfaces in Armory pages.",
+        "One status map used by list, record and inspections (unit test).",
+        "Contrast ≥ 4.5:1 (axe)."
+      ]
+    },
+    {
+      "id": "MOD-FA-023",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Keyboard-operable rows and real tablists",
+      "screen": "/firearms",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-18"
+        }
+      ],
+      "requirement": "Inventory rows are focusable and open with Enter/Space; the workspace tabs use role=tablist/tab with aria-selected.",
+      "acceptance": [
+        "Keyboard-only walkthrough selects a firearm and switches tabs.",
+        "axe shows no new violations."
+      ]
+    },
+    {
+      "id": "MOD-FA-024",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Status and Edit not hidden behind an unlabelled '…'",
+      "screen": "/firearms (workspace tabs) and record header",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-70"
+        },
+        {
+          "doc": "WR",
+          "ref": "Dept Firearms"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        }
+      ],
+      "requirement": "Status (safety-relevant) stays visible; Edit and Restriction move to the record header overflow and the custody sheet; any overflow menu shows the active item and closes on Escape and outside click with arrow-key support.",
+      "acceptance": [
+        "Status is reachable in one click from the drawer/record.",
+        "Menu keyboard test: arrows move, Escape closes, focus returns."
+      ]
+    },
+    {
+      "id": "MOD-FA-025",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Issue and return show a summary and an inline result",
+      "screen": "/firearms (Custody tab, assign/return)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-09"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Assign and Return show a before → after summary in the action card/sheet, a button that names the effect, and an inline result in the card (not the off-screen top banner).",
+      "acceptance": [
+        "Component test: after Return the card shows 'Return recorded' with the counts.",
+        "Success is shown only after the server confirms the write; a failure is shown in place, next to the action, with the next step.",
+        "No extra 'Are you sure?' on accountable state changes; ConfirmDialog only for destructive or broad-impact actions (blueprint §1b).",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export."
+      ]
+    },
+    {
+      "id": "MOD-FA-026",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Magazines returned is not prefilled",
+      "screen": "/firearms (Record Return)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-08"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U4"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-12"
+        }
+      ],
+      "requirement": "Magazines Returned starts empty and is required (or an explicit 'All N returned' choice), so the discrepancy check fires on an actual count.",
+      "acceptance": [
+        "Component test: Record Return is disabled until a count or 'all returned' is set.",
+        "The discrepancy reason is still required when counts differ.",
+        "Reason fields that are required today stay required; none becomes optional."
+      ],
+      "notes": "OWNER DECISION NEEDED (minor): empty-and-required field or an explicit 'All N returned' checkbox (register-C C-08)."
+    },
+    {
+      "id": "MOD-FA-027",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Cleared count fields are not saved as 0",
+      "screen": "/firearms (assign/return magazine inputs)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-23"
+        }
+      ],
+      "requirement": "Magazine count inputs keep a string value until submit and validate there.",
+      "acceptance": [
+        "Component test: clearing Issued blocks submit with 'Enter a count'; clearing Returned does not open the discrepancy box."
+      ]
+    },
+    {
+      "id": "MOD-FA-028",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Searchable, labelled officer picker for assignment",
+      "screen": "/firearms (Assign)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-15"
+        },
+        {
+          "doc": "UX",
+          "ref": "A-68"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1"
+        }
+      ],
+      "requirement": "The officer picker is the shared SearchablePicker with a visible label, searching name and badge.",
+      "acceptance": [
+        "Keyboard and screen-reader test of the picker.",
+        "Same assignment request payload as before."
+      ],
+      "notes": "Commit b87931b9 ('feat: add searchable officer assignment picker') exists in the user's working repo but is not in ec027f50 and not in any source doc; verify whether it satisfies this before starting."
+    },
+    {
+      "id": "MOD-FA-029",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Add Firearm as a labelled create dialog",
+      "screen": "/firearms (Add Firearm)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-14"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        }
+      ],
+      "requirement": "Add Firearm opens a dialog/drawer with visible labels, an explicit 'Add firearm' button, a toast on success and closes/resets after a successful create.",
+      "acceptance": [
+        "Inputs have accessible labels.",
+        "Form resets and closes after a 2xx; a server error stays inside the dialog.",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working."
+      ]
+    },
+    {
+      "id": "MOD-FA-030",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Remove developer and vendor copy from Firearms",
+      "screen": "/firearms (Add card)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-13"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "'Armory inventory is loading from Supabase.' and any other developer/vendor copy is removed from the firearms screens.",
+      "acceptance": [
+        "String scan: no 'Supabase' or build-step copy in src/app/firearms/**."
+      ]
+    },
+    {
+      "id": "MOD-FA-031",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Manager controls follow the server's access flags",
+      "screen": "/firearms",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-20"
+        }
+      ],
+      "requirement": "Add, Assign, Return, Edit, Status, Archive, attachment Archive and the Duty Only Check In / Return to Officer buttons are shown only when the corresponding access flag (canManage, canInspect, canManageRestrictedCustody, …) returned by the API is true.",
+      "acceptance": [
+        "Role test: an Officer sees no manager control; an Armorer sees them.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components).",
+        "Verified with Officer, Instructor, Armorer, Supervisor and Admin accounts; what each role sees matches the server's permissions."
+      ]
+    },
+    {
+      "id": "MOD-FA-032",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Status change sheet warns when the firearm is issued",
+      "screen": "/firearms and /firearms/[firearmId] (Status)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-11"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Status changes use a StatusChangeSheet showing before → after, the effect, a warning naming the officer when the firearm is assigned, and an explanation of Retired versus Archive.",
+      "acceptance": [
+        "Warning shown when active_assignment exists.",
+        "Same status endpoint and payload as today.",
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export.",
+        "No extra 'Are you sure?' on accountable state changes; ConfirmDialog only for destructive or broad-impact actions (blueprint §1b)."
+      ]
+    },
+    {
+      "id": "MOD-FA-033",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Note required when a firearm leaves In Service; recall for issued weapons",
+      "screen": "API PATCH /api/armory/firearms/[firearmId]/status",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-21"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-11"
+        }
+      ],
+      "requirement": "Decide and, if approved, enforce server-side that leaving In Service needs a note, and that Out of Service/Maintenance on an issued weapon prompts or creates a recall task.",
+      "acceptance": [
+        "Route test: status change from In Service without notes → 400 (if approved).",
+        "A recall notification/task is created for an issued weapon put out of service (if approved)."
+      ],
+      "notes": "OWNER DECISION NEEDED: whether out-of-service-while-issued is allowed and whether a note becomes mandatory (register-C C-21). Retired-while-issued is already refused (B8)."
+    },
+    {
+      "id": "MOD-FA-034",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Retired refused while the firearm is issued",
+      "screen": "API PATCH status",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-11"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-21"
+        }
+      ],
+      "requirement": "A status change to Retired is refused (409) while an assignment is open.",
+      "acceptance": [
+        "Route test: Retired on an issued firearm → 409 'Return it before retiring it.'",
+        "Staging S22 passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8 armory integrity (claude/fix-b8-armory-integrity), merged into integration; not validated in staging."
+    },
+    {
+      "id": "MOD-FA-035",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Archive an issued firearm without a fictitious return",
+      "screen": "API PATCH archive; /firearms Status",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-06"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-22"
+        }
+      ],
+      "requirement": "An issued firearm can be archived with a required Not Returned reason, closing the assignment as Not Returned instead of recording a return.",
+      "acceptance": [
+        "Route test: archive of an issued firearm with a reason closes the assignment as Not Returned and writes no returned_at.",
+        "Staging S22 passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8; B8a fixed archive ordering. Not validated in staging."
+    },
+    {
+      "id": "MOD-FA-036",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Restore keeps the archive disposition",
+      "screen": "API PATCH restore",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-13"
+        }
+      ],
+      "requirement": "Restoring a firearm keeps when and why it was archived.",
+      "acceptance": [
+        "Route test: after restore the archive reason/time remain readable in history."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8. Not validated in staging. Whether restore needs a reason was part of B8's scope; confirm in S22."
+    },
+    {
+      "id": "MOD-FA-037",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Empty caliber gives a validation message, not a database error",
+      "screen": "API PATCH /api/armory/firearms/[firearmId]",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-33"
+        }
+      ],
+      "requirement": "Clearing caliber on edit returns a friendly validation message (or defaults to 'TBD / Unknown').",
+      "acceptance": [
+        "Route test: empty caliber → 400 with a plain message, never 23502 text."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8. Not validated in staging."
+    },
+    {
+      "id": "MOD-FA-038",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Holder names visible to manage_firearms-only armorers",
+      "screen": "/firearms (Assigned to)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-08"
+        },
+        {
+          "doc": "REM",
+          "ref": "B8a"
+        }
+      ],
+      "requirement": "Armorers with only manage_firearms see holder names (including former members) through narrowly scoped identity fields instead of 'Unknown User'.",
+      "acceptance": [
+        "Staging S22a: a manage_firearms-only armorer sees the holder's name for an issued firearm, including a deactivated member."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "de82a0d"
+        ]
+      },
+      "notes": "B8a armory access (053) plus B9 separated-holder display (049). Not validated in staging."
+    },
+    {
+      "id": "MOD-FA-039",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Lost / stolen / transferred / destroyed dispositions",
+      "screen": "API firearm status/archive",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-05"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-22"
+        }
+      ],
+      "requirement": "Firearms support Lost/Stolen, Transferred, Destroyed and Pending Disposition with required report/incident number, date, NCIC flag, receiving agency/FFL and witness; command is notified on Lost/Stolen; the legacy status enum is synced or dropped and condition_status gets a CHECK constraint.",
+      "acceptance": [
+        "Route tests for each disposition and its required fields.",
+        "Notification created on Lost/Stolen.",
+        "Migration adds the CHECK constraint without rejecting existing data (pre-check query)."
+      ],
+      "notes": "OA: deferred missing capability."
+    },
+    {
+      "id": "MOD-FA-040",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Guide armorers to the right lost/stolen path",
+      "screen": "/firearms (Status / Archive)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-22"
+        }
+      ],
+      "requirement": "The archive form explains the SOP path for a lost or stolen weapon and, when the firearm is issued, presents the archive and Not Returned reasons as one coherent step using a ConfirmDialog instead of window.confirm.",
+      "acceptance": [
+        "Both reasons are still sent and still required.",
+        "No window.confirm remains in the archive flow.",
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export."
+      ],
+      "notes": "When the dispositions API exists, the UI adopts it (separate change)."
+    },
+    {
+      "id": "MOD-FA-041",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Return records observed condition and notes",
+      "screen": "API PATCH assignments",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-12"
+        }
+      ],
+      "requirement": "The return accepts an observed condition, return notes (and photos), instead of copying the current status into condition_at_return.",
+      "acceptance": [
+        "Route test: condition_at_return stores the submitted condition; omitted condition is not invented."
+      ],
+      "notes": "OA: deferred missing capability; the field currently asserts a condition nobody observed."
+    },
+    {
+      "id": "MOD-FA-042",
+      "status": "Blocked",
+      "module": "firearms",
+      "title": "Return form captures condition and offers a post-return inspection",
+      "screen": "/firearms (Record Return)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-12"
+        },
+        {
+          "doc": "UX",
+          "ref": "Workflow simplification opportunities"
+        }
+      ],
+      "requirement": "The return form asks for condition and notes and, when the condition is not serviceable, offers the existing status change and inspection steps.",
+      "acceptance": [
+        "The payload matches the new API exactly.",
+        "No condition is pre-selected.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export."
+      ],
+      "dependencies": [
+        "MOD-FA-041"
+      ]
+    },
+    {
+      "id": "MOD-FA-043",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Restricted tab: inline results, plain errors, neutral colours",
+      "screen": "/firearms (Restricted tab)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-67"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Set, Change, Clear, Check In and Return show success and errors inside the card; known RPC errors are shown as plain sentences; Save restriction is not a destructive-coloured button; an unassigned firearm explains 'Restrictions apply to issued firearms'; Clear restriction is an accountable state change with its reason.",
+      "acceptance": [
+        "Component test: each action shows an inline result after the server reply.",
+        "No raw text such as 'active assigned firearm restriction required' is shown.",
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Custody, assignment and Duty Only / No Carry restriction semantics, eligibility and approval rules are unchanged; the UI uses the frozen custody contract (UX-RB-4) and the server-returned eligibility, never its own rules.",
+        "Success is shown only after the server confirms the write; a failure is shown in place, next to the action, with the next step."
+      ],
+      "notes": "Mapping raw database exception text to stable error codes in the route would be deployment work; the UI maps known messages until then."
+    },
+    {
+      "id": "MOD-FA-044",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "One restriction label and custody-holder helper",
+      "screen": "/firearms and /firearms/[firearmId]",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-66"
+        },
+        {
+          "doc": "OA",
+          "ref": "Terminology inconsistencies"
+        }
+      ],
+      "requirement": "Both pages use one helper for restriction labels and one for the custody holder, naming the officer and the storage location.",
+      "acceptance": [
+        "Unit test: the same restriction renders the same words on both pages.",
+        "Holder shows 'Officer — <name>' and the location name, never just 'Officer'."
+      ]
+    },
+    {
+      "id": "MOD-FA-045",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Armory glossary applied (assignment, custody, duty restrictions)",
+      "screen": "Armory screens",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-62"
+        },
+        {
+          "doc": "WR",
+          "ref": "Restricted (custody tab)"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Terminology"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "OA",
+          "ref": "Terminology inconsistencies"
+        }
+      ],
+      "requirement": "A short Armory glossary (issue/assign, assignment, physical custody, check in/out, Duty restrictions) is published and applied; the 'Restricted' tab becomes 'Duty restrictions'; the record page's assignment/custody explanations are reused wherever custody appears.",
+      "acceptance": [
+        "String scan against the glossary for Armory pages.",
+        "Labels only; no API field or enum value changes."
+      ]
+    },
+    {
+      "id": "MOD-FA-046",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Remove armory backup files and dead Armory components",
+      "screen": "src/app/firearms/**, src/app/api/armory/**",
+      "category": "infrastructure",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-61"
+        },
+        {
+          "doc": "REM",
+          "ref": "B11"
+        }
+      ],
+      "requirement": "The 33 armory/firearm backup files and the unused ArmoryWorkspaceNav/ArmoryPageHeader are removed (or the header becomes the shared PageHeader), and duplicate local helpers (readError ×4) are consolidated.",
+      "acceptance": [
+        "No *.backup-* files under src.",
+        "scripts/repository-hygiene.test.mjs no longer needs its armory exclusion.",
+        "tsc and the full test suite pass."
+      ],
+      "notes": "B11 left the backups 'for after B8'. A-62 (shell group) tracks the platform-wide part; coordinate the hygiene-test change with deployment."
+    },
+    {
+      "id": "MOD-FA-047",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Shared page frame and header on all Armory pages",
+      "screen": "/firearms, /firearms/[firearmId], /firearms/inspections/new",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-30"
+        },
+        {
+          "doc": "VR",
+          "ref": "Department Firearms"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        }
+      ],
+      "requirement": "Every Armory page uses the shared page frame and PageHeader (breadcrumb Armory › …, one primary action, quiet secondaries such as Export and Storage locations).",
+      "acceptance": [
+        "Screenshot tests show one header pattern across Armory pages.",
+        "Export is shown only if an export already exists on the baseline."
+      ]
+    },
+    {
+      "id": "MOD-FA-048",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Role-scoped 'firearms issued to me' data",
+      "screen": "API (My work / my firearms)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-42"
+        },
+        {
+          "doc": "BP",
+          "ref": "#4"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        },
+        {
+          "doc": "WR",
+          "ref": "Officer · find my firearms and equipment"
+        }
+      ],
+      "requirement": "An endpoint returns the signed-in officer's issued firearms with custody, restriction and permitted operations, without department-wide listing rights.",
+      "acceptance": [
+        "Route test: an officer gets only their own firearms; another officer's are not returned."
+      ]
+    },
+    {
+      "id": "MOD-FA-049",
+      "status": "Blocked",
+      "module": "firearms",
+      "title": "'Issued to me' card for officers",
+      "screen": "Home (My work) / Firearms",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-42"
+        },
+        {
+          "doc": "BP",
+          "ref": "#4"
+        }
+      ],
+      "requirement": "Officers see a read-only card of firearms issued to them, with Duty Only check in/out where the server allows it.",
+      "acceptance": [
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components).",
+        "Custody, assignment and Duty Only / No Carry restriction semantics, eligibility and approval rules are unchanged; the UI uses the frozen custody contract (UX-RB-4) and the server-returned eligibility, never its own rules.",
+        "Verified with Officer, Instructor, Armorer, Supervisor and Admin accounts; what each role sees matches the server's permissions."
+      ],
+      "dependencies": [
+        "MOD-FA-048",
+        "track C: My work API (platform)"
+      ]
+    },
+    {
+      "id": "MOD-FA-050",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Bearer-accessible firearm custody endpoint for the native app",
+      "screen": "API /api/mobile/** (firearm custody)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ARM-D"
+        }
+      ],
+      "requirement": "Confirm whether the native app can act on a resolved firearm (workflow 'firearm_custody'); if not, add a /api/mobile firearm custody route with the same rules as the web route.",
+      "acceptance": [
+        "Runtime verification recorded.",
+        "If added: native contract row and route tests mirroring the web custody route."
+      ],
+      "notes": "OA: requires runtime verification."
+    },
+    {
+      "id": "MOD-FA-051",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "QR resolver accepts printed labels and non-UUID identifiers",
+      "screen": "API /api/mobile/qr/resolve",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-01"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-ARM-B"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-ARM-E"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-59"
+        }
+      ],
+      "requirement": "Printed tracepoint:// and HTTPS labels, asset numbers, serials, unit numbers and VINs resolve; id is compared only for UUID input; unauthorized and absent items get a uniform response.",
+      "acceptance": [
+        "Staging S4 passes.",
+        "Route tests for UUID, serial and printed-label input."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "df849ed"
+        ]
+      },
+      "notes": "B5 (server side of ARM-01/FLT-04) plus F4/F6b disclosure fixes. Not validated in staging. Likely also registered by the assets group under FLT-04/NEW-02."
+    },
+    {
+      "id": "MOD-FA-052",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Decide unknown vs denied for an unauthorized in-agency firearm scan",
+      "screen": "API /api/mobile/qr/resolve",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ARM-E"
+        },
+        {
+          "doc": "REM",
+          "ref": "B5"
+        }
+      ],
+      "requirement": "Settle whether an unauthorized firearm scan inside the agency returns 'unknown' instead of 'denied', and align the native client's 409 'ambiguous' handling.",
+      "acceptance": [
+        "Owner decision recorded and reflected in route tests and a native contract row."
+      ],
+      "notes": "OWNER DECISION NEEDED (remediation-status B5)."
+    },
+    {
+      "id": "MOD-FA-053",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Firearm QR labels",
+      "screen": "/firearms/[firearmId] (label)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-59"
+        }
+      ],
+      "requirement": "Add a 'firearm' QR kind and printable label on the firearm record, resolving through the existing resolver.",
+      "acceptance": [
+        "Unit test: firearm labels encode a value the resolver accepts.",
+        "Label renders only for users allowed to print it."
+      ],
+      "notes": "OWNER DECISION NEEDED: firearm labels are a separate capability decision (register-C C-59)."
+    },
+    {
+      "id": "MOD-FA-054",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "QR label copy does not claim verification and matches the kind",
+      "screen": "TracePointQrLabel (shared)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-59"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-60"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F15"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "Printed labels drop 'Verified.', say 'Scan in the TracePoint app', and all copy (dialog text, copy-link errors, custody caption) depends on the label kind.",
+      "acceptance": [
+        "Snapshot: no 'Verified.'; vehicle copy never appears on equipment or firearm labels."
+      ],
+      "notes": "Shared component used by equipment and fleet; coordinate with the assets group (D-01) to avoid a duplicate."
+    },
+    {
+      "id": "MOD-FA-055",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Close update_firearm_with_audit exposure on Supabase lineage",
+      "screen": "Database (supabase/migrations)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-04"
+        }
+      ],
+      "requirement": "Confirm both Supabase projects are retired or restricted, or add a Supabase-lineage migration revoking EXECUTE from public/anon/authenticated.",
+      "acceptance": [
+        "Evidence that izlkwggluhlhzlumtzes and wztqqqashilusoppddxi serve no requests, or the revoke migration with a test.",
+        "AWS-native remains as fixed by database/aws/017."
+      ],
+      "notes": "Corrected on AWS-native (017); Critical only where a Supabase project still serves traffic."
+    },
+    {
+      "id": "MOD-FA-056",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Deactivation checks issued firearms, authorizations and rifles",
+      "screen": "Settings / personnel import ↔ Armory",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-08"
+        }
+      ],
+      "requirement": "Deactivating a member (UI or import) blocks or requires acknowledgement while firearms, off-duty authorizations or personal rifles are active, and creates a separation-recovery task for armorers.",
+      "acceptance": [
+        "Route tests for UI and import deactivation with an open assignment.",
+        "Recovery task/notification created."
+      ],
+      "notes": "Display part (former holder name) fixed by B9/B8a. Remainder deferred as missing capability. The administration group may also track this."
+    },
+    {
+      "id": "MOD-FA-057",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Qualification failure lockout at issue",
+      "screen": "API POST assignments",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-09"
+        }
+      ],
+      "requirement": "Either enforce the configured qualification failure lockout when issuing (warn/block, 'Qualification Restricted' badge, supervisor release) or hide the inert setting.",
+      "acceptance": [
+        "Route test per the decided behaviour.",
+        "Settings no longer show an unenforced lockout as active."
+      ],
+      "notes": "OWNER DECISION NEEDED: enforce or hide (OA plan §6, ARM-09/RNG-17; the range group owns RNG-17)."
+    },
+    {
+      "id": "MOD-FA-058",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Range malfunctions reach the firearm record",
+      "screen": "Range ↔ Armory",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-10"
+        }
+      ],
+      "requirement": "Range malfunctions are written to firearm_malfunctions with firearm_id, shown in the firearm history, and the threshold sets Inspection Required and notifies armorers.",
+      "acceptance": [
+        "Route test: a logged malfunction appears on the firearm.",
+        "Threshold test sets Inspection Required with a status-history row."
+      ]
+    },
+    {
+      "id": "MOD-FA-059",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Firearm attachment visibility and archive scoped by module",
+      "screen": "API firearm attachments",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-32"
+        }
+      ],
+      "requirement": "Listing firearm attachments follows the download rule, archive permission is scoped by entity_type, and iPhone HEIC photos are accepted or converted.",
+      "acceptance": [
+        "Route tests: an officer without access cannot list; manage_range_days cannot archive a firearm document.",
+        "HEIC upload test."
+      ],
+      "notes": "OWNER DECISION NEEDED: data-visibility rule per module (OA plan §6, security-backlog ARM-32)."
+    },
+    {
+      "id": "MOD-FA-060",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Firearm documents: sensible default, labels, feedback",
+      "screen": "FirearmAttachments",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-58"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-32"
+        }
+      ],
+      "requirement": "Default category 'Other', labelled select, upload success feedback, aria-labels on icon buttons, Archive shown only when the server allows it and confirmed with a ConfirmDialog.",
+      "acceptance": [
+        "Component test for default, labels and success message.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ]
+    },
+    {
+      "id": "MOD-FA-061",
+      "status": "Implemented",
+      "module": "firearms",
+      "title": "Armory tables created by tracked migrations; bootstrap validator current",
+      "screen": "Database migrations / CI",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "NEW-ARM-C"
+        }
+      ],
+      "requirement": "Clean bootstrap creates firearm_status_history, ammunition_* , attachments and pilot_ammunition_workspaces, and the validator counts the right migrations.",
+      "acceptance": [
+        "npm run db:validate-bootstrap passes in CI (integration CI run 1)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "a39d263"
+        ]
+      },
+      "notes": "B0 proof foundation (038). CI green on the integration branch; not deployed. May overlap the platform group."
+    },
+    {
+      "id": "MOD-FA-062",
+      "status": "Not Started",
+      "module": "firearms",
+      "title": "Armory handler and page-route contract tests",
+      "screen": "Tests",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-36"
+        },
+        {
+          "doc": "UX",
+          "ref": "§7 Page ↔ route contract"
+        }
+      ],
+      "requirement": "Handler tests cover status, archive/restore, ammunition, reconciliation, rifle and off-duty transitions, double-issue and inactive-member issue; every page that builds a request body for an armory route has a contract test against the route validator.",
+      "acceptance": [
+        "CI runs the new tests; a reintroduced C-63-style mismatch fails CI."
+      ],
+      "notes": "B8 and UX-RB added tests for their rules; coverage of the rest is still missing."
+    },
+    {
+      "id": "MOD-INSP-001",
+      "status": "Implemented",
+      "module": "armory-inspections",
+      "title": "Firearm inspection starts unanswered; Save blocked until answered",
+      "screen": "/firearms/inspections/new",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-2"
+        },
+        {
+          "doc": "UX",
+          "ref": "CR-6"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-15"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-2"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        },
+        {
+          "doc": "BP",
+          "ref": "§0"
+        }
+      ],
+      "requirement": "Every checklist item, Weapon Cleared, Ammunition Removed and the result start unanswered; Save is disabled and lists what is missing; an explicit 'Mark remaining N as Pass' fills only unanswered items; unanswered items are never sent.",
+      "acceptance": [
+        "Every checklist item, Weapon cleared and Ammunition removed start unanswered; nothing is pre-set to Pass; Weapon cleared and Ammunition removed are answered individually and are never filled by 'Mark remaining as Pass'; Submit stays disabled and lists what is missing until required items are answered; the result and its status effect are shown before Submit.",
+        "Staging S26: after a failed inspection, opening New Inspection and pressing Save without choosing anything is blocked and status stays Inspection Required.",
+        "Unit tests armory/inspection-form.test.ts pass."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety"
+      },
+      "notes": "Owner decision applied 2026-10-22 (checklists 'Not inspected' with optional Mark remaining as Pass). Not merged into ec027f50; not validated in staging. Verify that 'Mark remaining' excludes Weapon cleared and Ammunition removed as §1b requires; if it does not, reopen."
+    },
+    {
+      "id": "MOD-INSP-002",
+      "status": "Implemented",
+      "module": "armory-inspections",
+      "title": "Inspection form states the real status effect",
+      "screen": "/firearms/inspections/new (sidebar)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-06"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-2"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F10"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-2"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "The sidebar replaces the stale developer copy with the status the selected result will apply (e.g. Failed → Inspection Required; Passed after a failed inspection → In Service).",
+      "acceptance": [
+        "Component test: selecting Failed shows 'will set Inspection Required'; the old copy string is absent."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety"
+      },
+      "notes": "UX-RB-2. Not merged into ec027f50; not validated in staging."
+    },
+    {
+      "id": "MOD-INSP-003",
+      "status": "Implemented",
+      "module": "armory-inspections",
+      "title": "Save Inspection has a busy state (no double submit)",
+      "screen": "/firearms/inspections/new",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-07"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F4"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-2"
+        }
+      ],
+      "requirement": "Save is disabled while saving so one tap creates one inspection.",
+      "acceptance": [
+        "Component test: two rapid clicks → one request."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety"
+      },
+      "notes": "UX-RB-2 busy state. The server-side idempotency and partial-failure parts are a separate deployment requirement."
+    },
+    {
+      "id": "MOD-INSP-004",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Inspection save is atomic and idempotent",
+      "screen": "API POST /api/armory/inspections",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-07"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-17"
+        }
+      ],
+      "requirement": "The inspection, its items and the status-history row are written in one transaction, and an idempotency key returns the existing record on replay; partial-failure messages say not to resubmit.",
+      "acceptance": [
+        "Route test: the same idempotency key twice → one inspection row.",
+        "Injected item-insert failure leaves no orphan inspection."
+      ],
+      "notes": "B8 routed status through history; atomic insert was 'Deferred' (UX C-07)."
+    },
+    {
+      "id": "MOD-INSP-005",
+      "status": "Implemented",
+      "module": "armory-inspections",
+      "title": "Inspection result rules enforced on the server",
+      "screen": "API POST /api/armory/inspections",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-16"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-2"
+        }
+      ],
+      "requirement": "Result values are validated server-side and Passed is refused when a critical item failed.",
+      "acceptance": [
+        "Route tests: result 'Pass' → 400; Passed with a failed critical item → 400; missing result → 400.",
+        "Staging S22 passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8. Confirm the 400-on-missing-result from RB-2 is covered; the staging acceptance script that posts result 'Pass' must be updated."
+    },
+    {
+      "id": "MOD-INSP-006",
+      "status": "Implemented",
+      "module": "armory-inspections",
+      "title": "Inspection status changes go through status history; Pass restores service",
+      "screen": "API POST /api/armory/inspections",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-17"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-06"
+        }
+      ],
+      "requirement": "A Failed result writes a status-history row, and a Passed result restores In Service only when the inspection had set it out of service.",
+      "acceptance": [
+        "Route test: Failed → Inspection Required with a history row; explicit Passed → In Service with a history row."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8; B8a made firearm status/history atomic. Not validated in staging."
+    },
+    {
+      "id": "MOD-INSP-007",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Inspection history listed; developer copy removed",
+      "screen": "/firearms/inspections",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-04"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F10"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-6"
+        },
+        {
+          "doc": "WR",
+          "ref": "Maint. & Inspections"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armorer · inspect a firearm"
+        },
+        {
+          "doc": "VR",
+          "ref": "Copy"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "The page lists inspections (date, firearm, result, inspector) from the existing GET /api/armory/inspections and the developer copy is removed.",
+      "acceptance": [
+        "Component test: mocked GET with 2 inspections → 2 rows; the developer copy string is absent.",
+        "Each row opens the inspection or the firearm's Inspections tab."
+      ]
+    },
+    {
+      "id": "MOD-INSP-008",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "After saving, land on the saved inspection",
+      "screen": "/firearms/inspections/new → /firearms/inspections",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-05"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F10"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        }
+      ],
+      "requirement": "After a successful save the user lands on the history with 'Inspection saved' and the new row highlighted.",
+      "acceptance": [
+        "E2E/component: after save the history shows 'Inspection saved' and the new row."
+      ],
+      "dependencies": [
+        "MOD-INSP-007"
+      ]
+    },
+    {
+      "id": "MOD-INSP-009",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Inspection history and report not capped at 100 rows",
+      "screen": "API GET /api/armory/inspections",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-20"
+        }
+      ],
+      "requirement": "Inspection (and ammunition transaction) reads support pagination and date filters; reports return every row in range.",
+      "acceptance": [
+        "Route test with 150 inspections returns all pages; report includes row 101+."
+      ]
+    },
+    {
+      "id": "MOD-INSP-010",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Load failure never shows the 'nothing requires review' all-clear",
+      "screen": "/firearms/inspections",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-26"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-2"
+        }
+      ],
+      "requirement": "On a load error the stats and queue are hidden and a 'Couldn't load · Retry' state is shown; loading shows a skeleton.",
+      "acceptance": [
+        "Component test: fetch rejects → the green all-clear text is absent and Retry is present."
+      ]
+    },
+    {
+      "id": "MOD-INSP-011",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Inspection queue excludes Retired and starts inspections",
+      "screen": "/firearms/inspections (queue)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-27"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-18"
+        }
+      ],
+      "requirement": "Retired firearms are excluded from the work queue and each row has 'Start inspection' linking to /firearms/inspections/new?firearmId=.",
+      "acceptance": [
+        "Component test: a Retired firearm is not listed; Start inspection pre-selects the firearm."
+      ]
+    },
+    {
+      "id": "MOD-INSP-012",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "'Inspect' from the firearm drawer, record and after a return",
+      "screen": "/firearms drawer, record, Record Return",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Armorer · inspect a firearm"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        },
+        {
+          "doc": "UX",
+          "ref": "Workflow simplification opportunities"
+        }
+      ],
+      "requirement": "An 'Inspect' action on the drawer and record, and a 'Start post-return inspection' link after Record Return, open the inspection form with the firearm pre-selected.",
+      "acceptance": [
+        "Each entry opens /firearms/inspections/new?firearmId=<id> with the firearm selected.",
+        "Every checklist item, Weapon cleared and Ammunition removed start unanswered; nothing is pre-set to Pass; Weapon cleared and Ammunition removed are answered individually and are never filled by 'Mark remaining as Pass'; Submit stays disabled and lists what is missing until required items are answered; the result and its status effect are shown before Submit."
+      ]
+    },
+    {
+      "id": "MOD-INSP-013",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Searchable firearm picker on New Inspection",
+      "screen": "/firearms/inspections/new",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-28"
+        },
+        {
+          "doc": "UX",
+          "ref": "A-68"
+        }
+      ],
+      "requirement": "The firearm select is the shared SearchablePicker (serial, make, model, asset).",
+      "acceptance": [
+        "Keyboard test of the picker; same payload as before."
+      ]
+    },
+    {
+      "id": "MOD-INSP-014",
+      "status": "Blocked",
+      "module": "armory-inspections",
+      "title": "Field-grade firearm inspection checklist",
+      "screen": "/firearms/inspections/new",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#9"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-29"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U1"
+        },
+        {
+          "doc": "VR",
+          "ref": "Inspection form"
+        },
+        {
+          "doc": "WR",
+          "ref": "Maint. & Inspections"
+        }
+      ],
+      "requirement": "The checklist uses the shared Checklist: compact rows, ≥44px Pass/Fail/N/A segmented controls with no default, the note field only on Fail, a sticky summary with result and status effect, and Submit in a sticky footer on phones.",
+      "acceptance": [
+        "Every checklist item, Weapon cleared and Ammunition removed start unanswered; nothing is pre-set to Pass; Weapon cleared and Ammunition removed are answered individually and are never filled by 'Mark remaining as Pass'; Submit stays disabled and lists what is missing until required items are answered; the result and its status effect are shown before Submit.",
+        "Same request payload as UX-RB-2 (network-log comparison).",
+        "390×844 walkthrough: no target under 44px; the form is no longer ~4,000px tall.",
+        "Explicit per-item answers stay required even though WR suggests 'marks failures only' (§1b wins)."
+      ],
+      "dependencies": [
+        "MOD-INSP-001",
+        "UX-RB-2"
+      ],
+      "notes": "Blueprint §4: R2, built on UX-RB-2 behaviour, which is not yet merged into the baseline."
+    },
+    {
+      "id": "MOD-INSP-015",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Inspection due dates and overdue tracking",
+      "screen": "API / rules / notifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-18"
+        }
+      ],
+      "requirement": "Department rules carry an inspection interval; last and next due dates are computed per firearm; due-soon and overdue notifications and a command-dashboard tile exist.",
+      "acceptance": [
+        "Route test computes next due from the last Passed inspection and interval.",
+        "Notification generated for an overdue firearm."
+      ],
+      "notes": "OA: deferred missing capability."
+    },
+    {
+      "id": "MOD-INSP-016",
+      "status": "Blocked",
+      "module": "armory-inspections",
+      "title": "Last/next inspection columns and a Needs-inspection view",
+      "screen": "/firearms, /firearms/inspections",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-18"
+        },
+        {
+          "doc": "BP",
+          "ref": "§3D"
+        }
+      ],
+      "requirement": "Inventory and queue show last and next due dates, and the 'Needs inspection' view includes overdue firearms.",
+      "acceptance": [
+        "Values come from the API; no client-side due-date computation."
+      ],
+      "dependencies": [
+        "MOD-INSP-015"
+      ]
+    },
+    {
+      "id": "MOD-INSP-017",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Armorer certification required for duty-weapon inspections",
+      "screen": "API POST /api/armory/inspections; rifle armorer_approve",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-19"
+        }
+      ],
+      "requirement": "The perform_firearm_inspections capability check used for off-duty inspections also applies to duty-weapon inspections and personal-rifle armorer approval.",
+      "acceptance": [
+        "Route test: an uncertified inspector is refused on all three paths."
+      ]
+    },
+    {
+      "id": "MOD-INSP-018",
+      "status": "Not Started",
+      "module": "armory-inspections",
+      "title": "Clarify inspection result and service-recommendation vocabulary",
+      "screen": "Inspection results",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "Terminology inconsistencies"
+        }
+      ],
+      "requirement": "Decide what 'Remove from Service' (recommendation) and 'Removed from Service' (result) do, align duty and off-duty result vocabularies, then update labels.",
+      "acceptance": [
+        "Documented mapping of each result/recommendation to its status effect, covered by route tests."
+      ],
+      "notes": "OWNER DECISION NEEDED: today the 'Remove from Service' recommendation changes nothing, while the result maps to Out of Service."
+    },
+    {
+      "id": "MOD-AMMO-001",
+      "status": "Implemented",
+      "module": "ammunition",
+      "title": "Ammunition API and reconciliation load on AWS-native",
+      "screen": "/firearms/ammunition/reconciliation; API /api/armory/ammunition",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "NEW-ARM-A"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-35"
+        }
+      ],
+      "requirement": "The ammunition and reconciliation routes resolve names from profiles instead of admin.auth.listUsers and return data in aws-native mode.",
+      "acceptance": [
+        "Staging S8: Ammunition and Reconciliation return 200 with data."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "b5976f4"
+        ]
+      },
+      "notes": "B2 field-write authorization. Not validated in staging."
+    },
+    {
+      "id": "MOD-AMMO-002",
+      "status": "Implemented",
+      "module": "ammunition",
+      "title": "Each ammunition activity records its actor",
+      "screen": "/firearms/ammunition (History)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-32"
+        }
+      ],
+      "requirement": "Every ammunition activity is server-stamped with the actor and History shows 'by <name>'.",
+      "acceptance": [
+        "Staging S22: a recorded activity shows the actor."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8 (actor only); 042/052 edited for actor preservation."
+    },
+    {
+      "id": "MOD-AMMO-003",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Ammunition workspace saves cannot silently overwrite each other",
+      "screen": "API PUT /api/pilot/ammunition",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-32"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-6"
+        }
+      ],
+      "requirement": "Workspace PUTs use optimistic concurrency (revision/updated_at) and return 409 on a stale base; history is validated as append-only; the ammunition feature gate is applied.",
+      "acceptance": [
+        "Route test: two PUTs from the same base revision → the second gets 409 and the first's activity survives.",
+        "Route test: a PUT that removes a historical activity is refused."
+      ],
+      "notes": "Accepted residual in the release candidate (last-writer-wins row loss). Stale-count 409 already exists for counts only."
+    },
+    {
+      "id": "MOD-AMMO-004",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Do not label ammunition history 'Immutable' while it can be lost",
+      "screen": "/firearms/ammunition (History)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-32"
+        }
+      ],
+      "requirement": "Remove 'Immutable operational history' until the concurrency fix ships; after a 409, reload and tell the user what changed.",
+      "acceptance": [
+        "String absent; a simulated 409 shows a reload prompt that keeps the user's unsent input visible."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-005",
+      "status": "Implemented",
+      "module": "ammunition",
+      "title": "Physical count variance needs a reason; stale count refused",
+      "screen": "/firearms/ammunition (Physical Count)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-22"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-34"
+        }
+      ],
+      "requirement": "A count that differs from on-hand requires a note (client and server) and a stale expected quantity returns 409.",
+      "acceptance": [
+        "Route test: variance without note → 400; stale expected → 409."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8."
+    },
+    {
+      "id": "MOD-AMMO-006",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Confirm Count shows the variance",
+      "screen": "/firearms/ammunition (Physical Count)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-34"
+        }
+      ],
+      "requirement": "The button reads 'Confirm count (−N)' when the count differs, with a before → after summary.",
+      "acceptance": [
+        "Component test: count differs → label shows the signed variance.",
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-007",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Signed adjustments at lot level; variance review threshold",
+      "screen": "API /api/armory/ammunition",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-22"
+        }
+      ],
+      "requirement": "Adjustments can increase or decrease, are posted at lot level so type and lot totals agree, and variances above a threshold may route to supervisor review.",
+      "acceptance": [
+        "Route test: a positive adjustment is accepted and posted to the lot."
+      ],
+      "notes": "OWNER DECISION NEEDED: whether variances above a threshold need supervisor approval (adds an approval requirement; deployment-owned)."
+    },
+    {
+      "id": "MOD-AMMO-008",
+      "status": "Implemented",
+      "module": "ammunition",
+      "title": "Reconciliation: server expected quantities and a different certifier",
+      "screen": "API /api/armory/ammunition/reconciliations",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-23"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-38"
+        }
+      ],
+      "requirement": "Expected quantities come from the server and the certifier must differ from the submitter.",
+      "acceptance": [
+        "Route test: submitter certifies → refused; client-supplied expected values are ignored.",
+        "Staging S22 passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8 (second-person certification). OA's other ARM-23 items (lot_id ownership validation, certify read-only over submitted items, posting certified variances) should be re-checked in S22."
+    },
+    {
+      "id": "MOD-AMMO-009",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Save Draft cannot silently withdraw a submitted reconciliation",
+      "screen": "API POST /api/armory/ammunition/reconciliations",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-R1"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-38"
+        }
+      ],
+      "requirement": "The server refuses 'save' on a Submitted reconciliation unless an explicit withdraw is requested.",
+      "acceptance": [
+        "Route test: save on Submitted → 409 (or requires withdraw:true)."
+      ],
+      "notes": "OWNER DECISION NEEDED: is withdrawing a submitted reconciliation allowed?"
+    },
+    {
+      "id": "MOD-AMMO-010",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Reconciliation actions match the cycle state",
+      "screen": "/firearms/ammunition/reconciliation",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-38"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U3"
+        }
+      ],
+      "requirement": "Save Draft is hidden once submitted (or shown as 'Withdraw to draft' with a ConfirmDialog if allowed), Certify uses a ConfirmDialog naming the cycle, and history rows expand.",
+      "acceptance": [
+        "Component test: no Save Draft button when Submitted.",
+        "Certify → dialog → Cancel sends nothing."
+      ],
+      "dependencies": [
+        "MOD-AMMO-009"
+      ]
+    },
+    {
+      "id": "MOD-AMMO-011",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Reconciliation shows errors, empty state and Retry",
+      "screen": "/firearms/ammunition/reconciliation",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-37"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F11"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-2"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armorer · reconcile ammunition"
+        },
+        {
+          "doc": "BP",
+          "ref": "#15"
+        }
+      ],
+      "requirement": "A failed first load shows the error with Retry; an empty state says what to do next; loading is a skeleton.",
+      "acceptance": [
+        "Component test: GET 500 → error and Retry visible.",
+        "Empty state names the next step."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-012",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "One authoritative ammunition ledger",
+      "screen": "Ammunition data model",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "C-31"
+        }
+      ],
+      "requirement": "The JSON workspace and relational lots/transactions converge on one relational ledger used by the UI, reconciliation, notifications and reports.",
+      "acceptance": [
+        "Migration of the JSON workspace with a reconciliation check of totals.",
+        "Report and reconciliation totals equal the UI's on-hand."
+      ],
+      "notes": "OA: deferred missing capability (L)."
+    },
+    {
+      "id": "MOD-AMMO-013",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Ammunition and Reconciliation linked, each with a purpose line",
+      "screen": "/firearms/ammunition, /firearms/ammunition/reconciliation",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-31"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U15"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-03"
+        }
+      ],
+      "requirement": "Each page links to the other and states in one line which count it records and which is authoritative.",
+      "acceptance": [
+        "Both links present; copy reviewed against the glossary."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-014",
+      "status": "Blocked",
+      "module": "ammunition",
+      "title": "One 'Count & reconcile' view inside Ammunition",
+      "screen": "/firearms/ammunition",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Armorer · reconcile ammunition"
+        },
+        {
+          "doc": "WR",
+          "ref": "Ammunition"
+        }
+      ],
+      "requirement": "Counting and seasonal reconciliation live in one view of Ammunition once there is one ledger.",
+      "acceptance": [
+        "Parity inventory: every reconciliation action (count, submit, certify) remains.",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working."
+      ],
+      "dependencies": [
+        "MOD-AMMO-012"
+      ]
+    },
+    {
+      "id": "MOD-AMMO-015",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Correction direction is explicit with a preview",
+      "screen": "/firearms/ammunition (Correction)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-33"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-22"
+        }
+      ],
+      "requirement": "Corrections use an Increase/Decrease toggle with an 'X → Y' preview instead of a typed leading '+'.",
+      "acceptance": [
+        "Component test: Decrease 10 from 100 previews 100 → 90 and sends the same payload as today's '-10'."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-016",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Ammunition type Archive confirmed and busy",
+      "screen": "/firearms/ammunition (types)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-35"
+        }
+      ],
+      "requirement": "Archiving a type uses a ConfirmDialog and is disabled while saving.",
+      "acceptance": [
+        "Archive → dialog → Cancel sends nothing; double click sends one request."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-017",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Ammunition tabs URL-synced and scrollable",
+      "screen": "/firearms/ammunition",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-36"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armory: Firearms, Inspections, Ammunition, Personally Owned Rifles"
+        }
+      ],
+      "requirement": "The tabs use the shared Tabs (role=tab, `?tab=`, horizontal scroll on phones).",
+      "acceptance": [
+        "Reload keeps the tab; no overflow at 375px; axe clean."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-018",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Reconciliation table usable on phones and labelled",
+      "screen": "/firearms/ammunition/reconciliation",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-39"
+        }
+      ],
+      "requirement": "Rows stack as cards below 640px and every input has an aria-label naming the lot.",
+      "acceptance": [
+        "375px walkthrough without horizontal scroll; axe shows labelled inputs."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-019",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Ammunition defaults have one home in Settings",
+      "screen": "/firearms/ammunition (Agency Defaults) → Settings",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "WR",
+          "ref": "Admin · change a module rule"
+        },
+        {
+          "doc": "WR",
+          "ref": "Ammunition"
+        }
+      ],
+      "requirement": "Verification-schedule defaults move to Settings ▸ Armory with a 'Manage' link from Ammunition; the same endpoint saves them.",
+      "acceptance": [
+        "Same settings payload; the module shows a link, not a second editor."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-020",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Guided first run for receiving ammunition",
+      "screen": "/firearms/ammunition",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#15"
+        },
+        {
+          "doc": "WR",
+          "ref": "Armory: Firearms, Inspections, Ammunition, Personally Owned Rifles"
+        }
+      ],
+      "requirement": "When no ammunition type exists, Receive Lot shows an empty state that leads to creating a type first; the 13-field receive form groups what is known at receipt.",
+      "acceptance": [
+        "With no types, the empty state links to type creation; no silent disabled button."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-021",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Command staff can read ammunition reports and alerts",
+      "screen": "API /api/armory/ammunition, /api/pilot/ammunition (GET)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-34"
+        }
+      ],
+      "requirement": "view_command_dashboard gets read-only GET for ammunition, so the Ammunition Inventory report and inbox source work for command; armory tiles feed the command dashboard.",
+      "acceptance": [
+        "Route test: view_command_dashboard GET → 200; PUT → 403."
+      ]
+    },
+    {
+      "id": "MOD-AMMO-022",
+      "status": "Not Started",
+      "module": "ammunition",
+      "title": "Ammunition vocabulary aligned",
+      "screen": "/firearms/ammunition",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "Terminology inconsistencies"
+        },
+        {
+          "doc": "WR",
+          "ref": "Pooled stock · Standing total"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Terminology"
+        }
+      ],
+      "requirement": "Labels use the glossary (On hand, not Standing total; 'Reconciliation' only for the certified cycle) without changing stored activity kinds.",
+      "acceptance": [
+        "String scan; no enum or payload change."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-001",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Officers can reach their rifle submissions",
+      "screen": "Navigation → /firearms/personal-rifles",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-41"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U7"
+        }
+      ],
+      "requirement": "A 'My rifle submissions' entry is visible to users who may submit, independent of the Armory manager group.",
+      "acceptance": [
+        "Role test: an officer with submit permission reaches the page from the nav.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "shell: A-18 / ADM-34 nav regrouping"
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-002",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Deep-link params read once",
+      "screen": "/firearms/personal-rifles",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-43"
+        }
+      ],
+      "requirement": "record/edit/view params are consumed once and cleared with router.replace.",
+      "acceptance": [
+        "Component test: with ?record=x&edit=1, after an action edit mode is not re-entered."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-003",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Revoke, Suspend and Deny confirmed with specific results",
+      "screen": "/firearms/personal-rifles (command actions)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-44"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U3"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "Revoke, Suspend and Deny open a ConfirmDialog naming the rifle and officer, and each action reports its own result ('Rifle authorization revoked').",
+      "acceptance": [
+        "Revoke → confirm → Cancel sends nothing.",
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export.",
+        "Success is shown only after the server confirms the write; a failure is shown in place, next to the action, with the next step."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-004",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Review queue shows the stages the viewer can act on",
+      "screen": "/firearms/personal-rifles (Review Queue)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-45"
+        }
+      ],
+      "requirement": "The queue defaults to the stages the viewer may act on (from server access flags), has search/filter, and remembers the choice.",
+      "acceptance": [
+        "Armorer sees armorer-stage items by default; chief sees chief-stage items.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-005",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "One editor for the rifle program settings",
+      "screen": "/firearms/personal-rifles (Program Settings) ↔ Settings",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-46"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        },
+        {
+          "doc": "WR",
+          "ref": "Personal Rifles"
+        },
+        {
+          "doc": "WR",
+          "ref": "Settings, Rules Engine & Import"
+        }
+      ],
+      "requirement": "Program settings are edited only in Settings ▸ Armory; the module shows a 'Manage' link.",
+      "acceptance": [
+        "Only one editor remains; same rules endpoint and payload."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-006",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "No review controls on one's own rifle",
+      "screen": "/firearms/personal-rifles",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-69"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-29"
+        }
+      ],
+      "requirement": "Armorer and Chief review controls are hidden or disabled on the viewer's own rifle with 'Another reviewer must decide this'.",
+      "acceptance": [
+        "Component test: owner = viewer → no actionable review controls.",
+        "The server still refuses self-review (403)."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-007",
+      "status": "Implemented",
+      "module": "personal-rifles",
+      "title": "Self-review blocked; status and history written atomically",
+      "screen": "API /api/armory/personal-rifles/[rifleId]",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-29"
+        }
+      ],
+      "requirement": "Owners cannot review their own rifle, and the status update and history row are one guarded operation.",
+      "acceptance": [
+        "Route test: owner review → 403; history failure leaves status unchanged.",
+        "Staging S22/S22a pass."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d",
+          "de82a0d"
+        ]
+      },
+      "notes": "B8 + B8a (052/053). Accepted residual: during a rollback the previous app's rifle actions return 500."
+    },
+    {
+      "id": "MOD-RIFLE-008",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Rifle approval shows the officer's actual rifle qualification",
+      "screen": "API rifle armorer_approve",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-30"
+        }
+      ],
+      "requirement": "The armorer step shows the officer's current rifle qualification from range data; a manual override needs a reason.",
+      "acceptance": [
+        "Route test returns qualification status with the rifle."
+      ],
+      "notes": "OA: enhancement, deferred."
+    },
+    {
+      "id": "MOD-RIFLE-009",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Rifle approvals expire, alert after expiry, and can be renewed or resubmitted",
+      "screen": "API personal rifles / inbox",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-31"
+        }
+      ],
+      "requirement": "Expired is derived or set after the expiration date, alerts continue past it, and Renew/Reinspect and Resubmit-after-denial work despite the serial check.",
+      "acceptance": [
+        "Route tests for expiry, overdue alert and resubmission of a denied rifle."
+      ],
+      "notes": "OWNER DECISION NEEDED: is renewal intended, and should uniqueness apply to active records only (OA plan §6, ARM-25/ARM-31)."
+    },
+    {
+      "id": "MOD-RIFLE-010",
+      "status": "Blocked",
+      "module": "personal-rifles",
+      "title": "Renew and resubmit actions on rifle records",
+      "screen": "/firearms/personal-rifles",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-31"
+        }
+      ],
+      "requirement": "Expired rifles show Renew/Reinspect and denied rifles show Resubmit, when the server allows them.",
+      "acceptance": [
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components).",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export."
+      ],
+      "dependencies": [
+        "MOD-RIFLE-009"
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-011",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Personal rifles and off-duty use one pattern and vocabulary",
+      "screen": "/firearms/personal-rifles, /off-duty-firearms",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-40"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-U15"
+        },
+        {
+          "doc": "OA",
+          "ref": "Terminology inconsistencies"
+        }
+      ],
+      "requirement": "Both officer-owned firearm workflows use the same request drawer/record pattern, the same status words for equivalent states (e.g. 'Denied'), and link to each other.",
+      "acceptance": [
+        "Glossary mapping of both status sets reviewed; labels only, stored statuses unchanged.",
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working."
+      ],
+      "notes": "Rated High in the UX audit; lowered to P1 here because it is consistency work with no record risk."
+    },
+    {
+      "id": "MOD-RIFLE-012",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Hide rifle actions while the program is disabled",
+      "screen": "/firearms/personal-rifles",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Personal Rifles"
+        }
+      ],
+      "requirement": "When the program is disabled, submit and review actions are hidden and the page says why.",
+      "acceptance": [
+        "Program disabled → no actionable buttons, explanatory text shown."
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-013",
+      "status": "Blocked",
+      "module": "personal-rifles",
+      "title": "Rifle reviews in the unified approvals queue",
+      "screen": "Approvals (track C)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "C",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#5"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        },
+        {
+          "doc": "WR",
+          "ref": "Chief · find pending approvals"
+        }
+      ],
+      "requirement": "Pending rifle reviews appear in the single Approvals queue and open the rifle record.",
+      "acceptance": [
+        "Items open the exact record; review rules and permissions unchanged.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "track C: unified approvals queue (platform)"
+      ]
+    },
+    {
+      "id": "MOD-RIFLE-014",
+      "status": "Not Started",
+      "module": "personal-rifles",
+      "title": "Rifle-review permission resolution and history INSERT grant",
+      "screen": "Database 052",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "REM",
+          "ref": "B8"
+        }
+      ],
+      "requirement": "Resolve rifle-review permission for non-administrators and review the narrow personal-rifle history INSERT grant in 052.",
+      "acceptance": [
+        "Decision recorded; DB test covers a non-administrator reviewer."
+      ],
+      "notes": "OWNER DECISION NEEDED (remediation-status, open B8 decisions)."
+    },
+    {
+      "id": "MOD-OFFD-001",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty submit and decisions: busy state, toast, errors in the drawer",
+      "screen": "/off-duty-firearms (RequestDrawer, ReviewDrawer)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-48"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F2"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F4"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-1"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1"
+        }
+      ],
+      "requirement": "Submit and decision buttons are disabled while saving, success shows a toast, and errors (including the 403 self-decision) appear inside the drawer instead of window.alert or a banner behind it.",
+      "acceptance": [
+        "Double-click Submit → one POST.",
+        "A 403 decision shows text inside the drawer; no window.alert.",
+        "Success is shown only after the server confirms the write; a failure is shown in place, next to the action, with the next step."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-002",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "No decision buttons on one's own off-duty request",
+      "screen": "/off-duty-firearms (ReviewDrawer)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-69"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-26"
+        }
+      ],
+      "requirement": "Approve/Deny/Return are hidden or disabled on the reviewer's own request with 'Another reviewer must decide this'.",
+      "acceptance": [
+        "Component test: requester = viewer → no decision controls.",
+        "Server still returns 403."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-003",
+      "status": "Implemented",
+      "module": "off-duty",
+      "title": "Reviewers cannot decide their own off-duty request",
+      "screen": "API PATCH /api/off-duty-firearms/[requestId]",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-26"
+        }
+      ],
+      "requirement": "A decision where the actor is the requester is refused in the API and database.",
+      "acceptance": [
+        "Route test: self-decision → 403.",
+        "Staging S22 passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8."
+    },
+    {
+      "id": "MOD-OFFD-004",
+      "status": "Implemented",
+      "module": "off-duty",
+      "title": "A failed off-duty inspection makes the authorization non-compliant",
+      "screen": "API off-duty inspections",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-28"
+        }
+      ],
+      "requirement": "A Fail marks the authorization not compliant using existing status values.",
+      "acceptance": [
+        "Route test: Fail → compliance Non-Compliant.",
+        "Staging S22 passes."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "06d397d"
+        ]
+      },
+      "notes": "B8. Auto-suspension and officer/reviewer notification (OA correction) were not in scope; they depend on revoke/suspend (ARM-24)."
+    },
+    {
+      "id": "MOD-OFFD-005",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "One primary status per card; failed inspection reads 'Failed'",
+      "screen": "/off-duty-firearms (cards)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-54"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-28"
+        },
+        {
+          "doc": "OA",
+          "ref": "Terminology inconsistencies"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        }
+      ],
+      "requirement": "Cards show one primary StatusChip (12px minimum) with secondary detail on the record; a failed inspection is labelled 'Failed', not 'Not Inspected', using the value the server returns.",
+      "acceptance": [
+        "Snapshot: no text under 12px on cards.",
+        "Failed inspection fixture renders 'Failed'."
+      ],
+      "notes": "If the list API still returns 'Not Inspected' for a Fail, the label fix needs a deployment change first (OA: RPC/list vocabulary)."
+    },
+    {
+      "id": "MOD-OFFD-006",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Reviewers land on Department Review",
+      "screen": "/off-duty-firearms",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-49"
+        }
+      ],
+      "requirement": "Users with review permission open in Department Review; the last choice is remembered.",
+      "acceptance": [
+        "Reviewer default mode test; officer still opens My Requests.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-007",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty KPIs use one definition and filter the list",
+      "screen": "/off-duty-firearms (KPIs, tabs)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-50"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-28"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        },
+        {
+          "doc": "VR",
+          "ref": "One KpiTile"
+        }
+      ],
+      "requirement": "'Needs Action' and the other buckets are defined once, the KPI tiles use the shared KpiTile (neutral at zero) and each tile filters the list.",
+      "acceptance": [
+        "Unit test: each bucket count equals the filtered list length."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-008",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Request drawer: labels, the user's name, approver title from settings",
+      "screen": "/off-duty-firearms (RequestDrawer)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-51"
+        },
+        {
+          "doc": "WR",
+          "ref": "Off-Duty Firearms"
+        }
+      ],
+      "requirement": "Fields have visible labels, the header shows the signed-in officer's name, and the approver title comes from settings rather than a hard-coded 'Chief of Police'.",
+      "acceptance": [
+        "Inputs have labels that persist after typing; no 'Current Officer' string."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-009",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty drawers on the shared Drawer",
+      "screen": "/off-duty-firearms",
+      "category": "accessibility",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-52"
+        }
+      ],
+      "requirement": "Both drawers use the shared Drawer (Escape, focus trap, labelled fields).",
+      "acceptance": [
+        "Keyboard test: Escape closes, focus returns; axe clean."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-010",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty loading is a skeleton, not zeros",
+      "screen": "/off-duty-firearms",
+      "category": "functional",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-53"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-2"
+        }
+      ],
+      "requirement": "While loading, a single skeleton replaces the banner, empty text and zero KPIs.",
+      "acceptance": [
+        "Component test: pending fetch shows no '0' tiles and no empty-state text."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-011",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Default expiry follows the configured renewal period",
+      "screen": "/off-duty-firearms (ReviewDrawer)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-55"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-3"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARM-25"
+        }
+      ],
+      "requirement": "The default expiry is the effective date plus renewalDays instead of one year.",
+      "acceptance": [
+        "Unit test: renewalDays=90 → default expiry +90 days."
+      ],
+      "notes": "OWNER DECISION NEEDED: whether the server should also reject expiries beyond the policy (deployment change if yes)."
+    },
+    {
+      "id": "MOD-OFFD-012",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Remove the system-description banner",
+      "screen": "/off-duty-firearms",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-56"
+        },
+        {
+          "doc": "WR",
+          "ref": "Off-Duty Firearms"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "The internal system-description paragraph is removed.",
+      "acceptance": [
+        "String absent."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-013",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Replace literal '?' separators",
+      "screen": "/off-duty-firearms",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-47"
+        },
+        {
+          "doc": "BP",
+          "ref": "#18"
+        }
+      ],
+      "requirement": "'officer ? unit', 'actor ? role', 'badge ? unit' and 'caliber ? type' use '·'.",
+      "acceptance": [
+        "String scan: no ' ? ' separators in the page."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-014",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty rules panel cannot save defaults over real policy",
+      "screen": "Settings → Rules → Off-Duty (OffDutyRulesPanel)",
+      "category": "functional",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-57"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-2"
+        },
+        {
+          "doc": "UX",
+          "ref": "WP-8"
+        },
+        {
+          "doc": "UX",
+          "ref": "H-F6"
+        },
+        {
+          "doc": "SV",
+          "ref": "SV-29"
+        }
+      ],
+      "requirement": "Save is disabled until the rules load successfully; numeric inputs stay strings and are range-validated client-side (due-soon 0 is not saved by accident).",
+      "acceptance": [
+        "Component test: GET fails → Save unavailable; clearing due-soon shows a validation message and sends no PATCH.",
+        "The panel's save persists and confirms in place (with the settings save-lifecycle work)."
+      ],
+      "notes": "Overlaps the administration group's settings save-lifecycle work (E-04, SV-29); coordinate."
+    },
+    {
+      "id": "MOD-OFFD-015",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Suspend, Reinstate and Revoke off-duty authorizations",
+      "screen": "API /api/off-duty-firearms/[requestId]",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-24"
+        }
+      ],
+      "requirement": "Command can suspend, reinstate and revoke an authorization with a required reason, history row and officer notification.",
+      "acceptance": [
+        "Route tests for each action, reason required, history row written."
+      ],
+      "notes": "OA: deferred missing capability."
+    },
+    {
+      "id": "MOD-OFFD-016",
+      "status": "Blocked",
+      "module": "off-duty",
+      "title": "Suspend / Reinstate / Revoke in the review drawer",
+      "screen": "/off-duty-firearms",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-24"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b"
+        }
+      ],
+      "requirement": "The review drawer offers the new actions with a ReasonDialog naming the officer and firearm.",
+      "acceptance": [
+        "Reason fields that are required today stay required; none becomes optional.",
+        "Every action that writes an audit or history entry today still writes it with the same fields (actor, time, reason, before/after), compared against a baseline audit export.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "MOD-OFFD-015"
+      ]
+    },
+    {
+      "id": "MOD-OFFD-017",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty renewal and expiry notifications",
+      "screen": "API off-duty / notifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-25"
+        }
+      ],
+      "requirement": "Approved or Expired requests can be renewed (re-entering review with inspection and qualification checks), the serial uniqueness applies to active records only, and 60/30/0-day expiry notifications exist.",
+      "acceptance": [
+        "Route tests for renewal and for registering a previously denied serial."
+      ],
+      "notes": "OWNER DECISION NEEDED: is renewal intended; relax uniqueness to active records (OA plan §6)."
+    },
+    {
+      "id": "MOD-OFFD-018",
+      "status": "Blocked",
+      "module": "off-duty",
+      "title": "Renew action for expiring off-duty authorizations",
+      "screen": "/off-duty-firearms",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-25"
+        }
+      ],
+      "requirement": "Officers see Renew on approved/expiring requests when the server allows it.",
+      "acceptance": [
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "MOD-OFFD-017"
+      ]
+    },
+    {
+      "id": "MOD-OFFD-019",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Qualification override respects department policy",
+      "screen": "API/UI off-duty decision",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-27"
+        }
+      ],
+      "requirement": "The 'qualification not required' override is offered and accepted only when policy permits exceptions (or with a higher permission), and the agency decides whether qualification must match the specific weapon.",
+      "acceptance": [
+        "Route test: override refused when require_off_duty_qualification=true and exceptions are not allowed.",
+        "UI shows the override only when the server says it is allowed."
+      ],
+      "notes": "OWNER DECISION NEEDED: OA classes this as requiring runtime/agency verification."
+    },
+    {
+      "id": "MOD-OFFD-020",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty list computes qualification readiness once per officer",
+      "screen": "API GET /api/off-duty-firearms",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARM-35"
+        }
+      ],
+      "requirement": "Readiness is computed once per officer or batch instead of reloading the range workspace per row.",
+      "acceptance": [
+        "Route test with 200 requests performs one workspace read per officer."
+      ],
+      "notes": "The armory inventory and ammunition parts of ARM-35 are fixed (aws-native profiles lookup, B2)."
+    },
+    {
+      "id": "MOD-OFFD-021",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty page header and menu label match",
+      "screen": "/off-duty-firearms (header, nav)",
+      "category": "visual",
+      "owner": "claude",
+      "track": "A",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "C-40"
+        },
+        {
+          "doc": "WR",
+          "ref": "Menu labels and page titles disagree"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        }
+      ],
+      "requirement": "Off-duty uses the shared PageHeader instead of its own header, and its page title matches its menu label.",
+      "acceptance": [
+        "Title equals menu label; one header pattern."
+      ],
+      "dependencies": [
+        "shell: A-15 nav taxonomy"
+      ]
+    },
+    {
+      "id": "MOD-OFFD-022",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty requests in a list + detail split view",
+      "screen": "/off-duty-firearms",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "B",
+      "priority": "P2",
+      "release": "R5",
+      "sources": [
+        {
+          "doc": "VR",
+          "ref": "Qualifications split view"
+        }
+      ],
+      "requirement": "Requests use the list-left / detail-right pattern from Qualifications on desktop.",
+      "acceptance": [
+        "Same endpoints and request payloads before and after (network-log comparison); old URLs and deep links keep working.",
+        "Every drawer action remains reachable."
+      ]
+    },
+    {
+      "id": "MOD-OFFD-023",
+      "status": "Blocked",
+      "module": "off-duty",
+      "title": "Off-duty decisions in the unified approvals queue",
+      "screen": "Approvals (track C)",
+      "category": "workflow",
+      "owner": "claude",
+      "track": "C",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#5"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        },
+        {
+          "doc": "WR",
+          "ref": "Chief · find pending approvals"
+        }
+      ],
+      "requirement": "Pending off-duty requests appear in the single Approvals queue and open the request.",
+      "acceptance": [
+        "Decision rules, permissions and self-review blocking unchanged.",
+        "Control visibility comes only from access flags or operations the server returns; the server stays the authority and still refuses unauthorized requests (no permission logic moves into components)."
+      ],
+      "dependencies": [
+        "track C: unified approvals queue (platform)"
+      ]
+    },
+    {
+      "id": "MOD-OFFD-024",
+      "status": "Not Started",
+      "module": "off-duty",
+      "title": "Off-duty inspection read without review permission",
+      "screen": "Database read policy",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "REM",
+          "ref": "B8"
+        }
+      ],
+      "requirement": "Decide and apply the read policy for off-duty inspections by users without review permission.",
+      "acceptance": [
+        "Decision recorded; DB test covers the chosen rule."
+      ],
+      "notes": "OWNER DECISION NEEDED (open B8 read-policy gap; B8a addressed the inspector 404)."
+    },
+    {
+      "id": "MOD-OFFD-025",
+      "title": "Off-duty re-notification no longer fails silently",
+      "module": "off-duty",
+      "screen": "/api/off-duty-firearms, /api/off-duty-firearms/[requestId]",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-19"
+        },
+        {
+          "doc": "REM",
+          "ref": "B6"
+        }
+      ],
+      "requirement": "Off-duty notification upserts use onConflict department_id,user_id,notification_key, so a resubmitted or re-decided request notifies reviewers and the officer instead of erroring into console.error.",
+      "acceptance": [
+        "Route test: resubmitting a returned request creates or refreshes the reviewer notification without error.",
+        "Route test: Returned then Approved delivers an approval notice to the officer."
+      ],
+      "implementation": {
+        "branch": "claude/fix-b6-notification-delivery",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B6 covers the TRN-19 silent-failure part only. Fixed in code on claude/fix-b6-notification-delivery (not merged; waits for B6 infrastructure authorization). Email and inbox source are MOD-OFFD-026."
+    },
+    {
+      "id": "MOD-OFFD-026",
+      "title": "Off-duty approval notifications are emailed and filterable as an Off-Duty source",
+      "module": "off-duty",
+      "screen": "Off-duty notifications; /notifications sources and preferences",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-19"
+        },
+        {
+          "doc": "OA",
+          "ref": "README §8 M-6"
+        }
+      ],
+      "requirement": "Off-duty notifications go through the shared notification writer, including email queuing, and 'Off-Duty' is a source in the inbox payload and in notification preferences, so reviewers are emailed about pending approvals and users can filter and mute the source.",
+      "acceptance": [
+        "Submitting an off-duty request queues an email to each reviewer (notification_email_queue row).",
+        "The inbox payload labels these items with source Off-Duty, and the source appears in the filter and preferences.",
+        "Reviewer permissions stay server-side; no change to who may approve (§1b)."
+      ],
+      "dependencies": [
+        "MOD-OFFD-025",
+        "MOD-OPS-023"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "The UI source filter built from the payload is MOD-NOTIF-003."
+    }
+  ]
+}

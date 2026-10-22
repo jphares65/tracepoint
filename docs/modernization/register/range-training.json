@@ -1,0 +1,4983 @@
+{
+  "requirements": [
+    {
+      "id": "MOD-RNG-001",
+      "title": "Score corrections and same-day re-shoots save with a revision trail; save failures are visible",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-01"
+        }
+      ],
+      "requirement": "Re-saving a scored line (score correction or same-day re-shoot) keeps stable result IDs, is accepted by the server as a correction with an appended revision, and any server refusal is shown to the instructor instead of being swallowed.",
+      "acceptance": [
+        "Staging S5: save two scores, correct one, save again; both saves succeed with no 409 and a revision is recorded in resultRevisions.",
+        "The 25 verify-range harness scenarios for RNG-01 (1b–1f) flip to accepted for instructor, Range Master and administrator.",
+        "A refused save shows the server message in the save status instead of only console.warn.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3 range save integrity (claude/fix-b3-range-save-integrity @ 6ff687f, merged into integration). Migration 042. Not validated in staging. The per-row 'Saved' pill remainder is MOD-RNG UX-RB-6 requirement."
+    },
+    {
+      "id": "MOD-RNG-002",
+      "title": "Packet status Ready no longer locks the range day",
+      "module": "range-days",
+      "screen": "/range-days (Overview → Packet status)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-06"
+        }
+      ],
+      "requirement": "Only Completed, Locked or Archived finalize a range day, in the page, the workspace authorizer, the drills route and the database trigger; packet status Ready is a planning milestone only.",
+      "acceptance": [
+        "Staging S5: set Packet Ready on a Planned day, then enter the first score; the score is accepted (no 409).",
+        "Harness scenarios 3b–3f return ok for instructor and administrator.",
+        "Migration 042 trigger rule matches the TypeScript rule."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3 (migration 042). UX audit marks B-06 Fixed in RC. Not validated in staging."
+    },
+    {
+      "id": "MOD-RNG-003",
+      "title": "Finalizing a range day asks for confirmation",
+      "module": "range-days",
+      "screen": "/range-days (Overview → Status select / Archive)",
+      "category": "workflow",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-04"
+        }
+      ],
+      "requirement": "Moving a range day to Completed, Locked or Archived requires an explicit confirmation that states the lock applies to everyone.",
+      "acceptance": [
+        "Choosing Completed, Locked or Archived from the Status select or the list Archive action shows a confirmation; cancelling leaves the status unchanged.",
+        "Confirming writes the status change exactly as before (same endpoint and payload)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3 fixed the confirmation part of RNG-04 only (native window.confirm). The in-app 'Close range day' summary step, lock banner and reopen/amend path remain open as separate requirements."
+    },
+    {
+      "id": "MOD-RNG-004",
+      "title": "Roster or workspace changes no longer wipe typed scores",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-08"
+        }
+      ],
+      "requirement": "Adding a walk-up, changing the roster or receiving a workspace update keeps scores the instructor has typed but not yet saved.",
+      "acceptance": [
+        "Type scores for two officers, add a walk-up officer, and the typed scores are still present.",
+        "A workspace reload from autosave does not clear unsavedBatchOfficerIds rows."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3 (preserveUnsavedBatchRows). Drill/run/day switch and reload still discard typed scores: see the switch-guard requirement (B-04)."
+    },
+    {
+      "id": "MOD-RNG-005",
+      "title": "Load-time normalization no longer makes every autosave fail",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-11"
+        }
+      ],
+      "requirement": "Normalizing legacy range days and drill-library entries on load does not create a diff that the authorizer refuses (finalized-day change or scorer planning change).",
+      "acceptance": [
+        "Harness 11a (attendanceMode added to a legacy Completed day) and 11b (scorer sends normalized defaultRunCount) are accepted or not sent.",
+        "Opening a department with legacy data and making one score edit autosaves successfully."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3. Not validated in staging. Native client round-trip behaviour is covered by the native-client requirement."
+    },
+    {
+      "id": "MOD-RNG-006",
+      "title": "Stale whole-workspace writes are refused instead of overwriting another device",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-13"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-02"
+        }
+      ],
+      "requirement": "The range workspace PUT carries baseUpdatedAt, and a write based on an older version returns 409 stale_workspace instead of silently overwriting another manager's change.",
+      "acceptance": [
+        "Harness 13d: a stale planning write by manager B after manager A's edit returns 409 stale_workspace.",
+        "A PUT without baseUpdatedAt from an older client still behaves as before (backward compatible)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3 added detection only; multi-device merge was deferred (B3 owner decision). Client-side recovery is UX-RB-5; server-side merge is a separate owner-decision requirement. UX B-02 is Partly fixed."
+    },
+    {
+      "id": "MOD-RNG-007",
+      "title": "Roster removal confirms and keeps saved results",
+      "module": "range-days",
+      "screen": "/range-days (Roster → Remove)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-22"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-10"
+        }
+      ],
+      "requirement": "Removing an officer from the roster asks for confirmation with the officer's result count and never deletes that officer's saved results.",
+      "acceptance": [
+        "Remove an officer with two saved results: a confirmation names the count; after confirming, the results remain in the workspace and the server accepts the save (harness 22a no longer 409)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3; UX audit B-10 Fixed in RC. Residual native confirm is covered by the shared-dialogs requirement (B-35)."
+    },
+    {
+      "id": "MOD-RNG-008",
+      "title": "Re-saving a line keeps malfunction type and notes",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-23"
+        }
+      ],
+      "requirement": "Re-saving a run keeps each logged malfunction's ID, type and notes instead of resetting them to 'Failure to Feed' and blank.",
+      "acceptance": [
+        "Log a Catastrophic Failure with notes, re-save the run, reload: type and notes are unchanged and the malfunction ID is the same."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6ff687f"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B3. Not validated in staging."
+    },
+    {
+      "id": "MOD-RNG-009",
+      "title": "Instructors (score_range_days) can take attendance, add walk-ups and upload evidence",
+      "module": "range-days",
+      "screen": "/range-days (Roster, Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-07"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-22"
+        }
+      ],
+      "requirement": "The default Instructor role can mark attendance, add walk-up officers and upload target evidence, consistently in the UI gate, the workspace API and the evidence route; planning stays restricted to range managers.",
+      "acceptance": [
+        "Staging S21: an Instructor-only account marks an officer present, adds a walk-up and uploads a target photo; all succeed.",
+        "The same account cannot change drills, library or day planning (403 unchanged).",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6e43ab4"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B10 qualification and range roles (claude/fix-b10-qualification-range-roles @ 6e43ab4, migration 051). Not validated in staging. Scorer-facing explanation of disabled roster controls is B-73."
+    },
+    {
+      "id": "MOD-RNG-010",
+      "title": "Target-photo evidence is keyed to stable result IDs and works for imports and instructors",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-12"
+        }
+      ],
+      "requirement": "Evidence attaches to the stable result ID (kept by B3), the evidence route resolves imported results, and instructors may upload.",
+      "acceptance": [
+        "Upload a photo, correct the score and re-save: the photo stays attached.",
+        "Upload evidence against an imported qualification result succeeds."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6e43ab4"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B10. Residual: camera enabled before the server acknowledges the result (B-21), tracked separately."
+    },
+    {
+      "id": "MOD-RNG-011",
+      "title": "Server rejects impossible score, time and hit values",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-14"
+        }
+      ],
+      "requirement": "Both range workspace PUTs reject new or changed results whose score exceeds maxScore, or whose time or hit values are impossible, with a 400 and a message.",
+      "acceptance": [
+        "PUT a result with score 61 on a 60-point drill: 400 with a message naming the value.",
+        "Existing valid results are unaffected."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6e43ab4"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B10. The client-side counterpart (row validation naming the officer) is UX-RB-6."
+    },
+    {
+      "id": "MOD-RNG-012",
+      "title": "Completion toggle shows exactly what will be saved; no false Fail or remediation flags",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring) (Complete / Incomplete)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-15"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-05"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-R5"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-1"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-1"
+        }
+      ],
+      "requirement": "Completion drills start 'Not recorded' and cannot be saved with an entry until Complete or Incomplete is chosen; the control highlights the value that will be stored; Notes Only drills never pass or fail; an incomplete run is a standard failure only when the drill has a standard.",
+      "acceptance": [
+        "Staging S25: Completion drill, toggle untouched, note typed, Save → blocked with 'Choose Complete or Incomplete…'; choose Complete and Save → stored completed:true with no deficiency or remediation flag.",
+        "Table test over 6 scoring formats × {untouched, 1 tap, 2 taps, note only, Result=Pass}: displayed completion equals persisted completed.",
+        "Notes Only or no-standard drill marked Incomplete does not set departmentStandardPassed:false, deficiencyObserved or remedialTrainingRecommended.",
+        "Explicit Incomplete on a scored drill keeps B10 semantics."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [
+          "578ef82d",
+          "44785dd3"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B10 made the toggle apply to every format (RNG-15) but introduced Fail-forcing; UX-RB-1 fixes the display/save mismatch. Owner decision applied 2026-10-22: default 'Not recorded'. UX-RB is NOT merged into ec027f50; not deployed or staging-verified."
+    },
+    {
+      "id": "MOD-RNG-013",
+      "title": "Conflict recovery merges this device's unsynced range work instead of discarding it",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-70"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-R2"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-03"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-5"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-5"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-13"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b Reliable range autosave"
+        }
+      ],
+      "requirement": "On a stale_workspace refusal the page loads the server copy and replays this device's changes record by record; different records from both devices are kept; a record changed on both is a persisted, visible conflict the instructor resolves; the device copy (per user and agency) keeps its merge base so a reload replays unsynced work; a copy with an unknown server version is never saved until merged; no page reload is required.",
+      "acceptance": [
+        "Staging S29: two instructor devices score different officers → both kept; then the same officer → a conflict is shown and resolved with no loss.",
+        "S29a–S29d (manual): day completed elsewhere, drill removed elsewhere, shared tablet user switch, two tabs — each behaves as specified in UX-RB §4.",
+        "A failed workspace GET followed by local edits never sends a PUT without a known base (B-03).",
+        "workspaceStale no longer blocks later saves after one conflict (B-R2).",
+        "No control on the screen discards unsynced work; unsynced scores survive a reload (§1b, UX-RB-5 design)."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [
+          "65e1cd97",
+          "f85ba7aa",
+          "3177a83d",
+          "ba6bccf0",
+          "2c073aed",
+          "4372945d"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB-5 plus five independent review rounds (UX-RB §3.4–3.8). Owner decision applied: range concurrency must never discard or overwrite unsaved scores. Not merged into ec027f50; not deployed. Server-side merge stays a separate owner decision."
+    },
+    {
+      "id": "MOD-RNG-014",
+      "title": "Row-level score validation and per-row server sync state",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-69"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-17"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "RB-6"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-6"
+        }
+      ],
+      "requirement": "The server's RNG-14 rule is checked on the officer's row before saving and blocks that row naming the officer; score inputs are labelled per officer with inputMode; a row reads 'Saved' only when the server holds exactly that result, otherwise 'Not synced' (or 'Conflict').",
+      "acceptance": [
+        "Staging S30: enter 55 on a maximum-50 drill → row marked invalid, officer named, nothing sent; enter 48 → saves.",
+        "Shared validator unit test returns the same decision as the server rule.",
+        "Desktop and phone score inputs have aria-label naming the officer and inputMode=decimal.",
+        "Every row and page save status is derived only from the server reply (Saved / Saving / Not synced / Conflict); nothing is shown as Saved optimistically (§1b)."
+      ],
+      "implementation": {
+        "branch": "claude/fix-uxrb-release-safety",
+        "commits": [
+          "65e1cd97"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB-6. Not merged into ec027f50. Remaining UI gaps: failure prominence/red banner (B-01b, B-69 banner) and camera gating (B-21) are separate requirements."
+    },
+    {
+      "id": "MOD-RNG-015",
+      "title": "Range sync residuals recorded by the UX-RB reviews",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "REM",
+          "ref": "UX-RB-5"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-72"
+        }
+      ],
+      "requirement": "Resolve the low-severity residuals left for WP-4: a load always sends a PUT (L2 / B-72) and the status says 'Saved' during the debounce of a new edit; two unsynced tabs replace each other's backup (L3); hold-back cost on very large offline sessions (L4); a score on a drill another device removed (L7); two records with one id (L8); a re-refused conflict retry needs a reload; non-score conflicts show no values.",
+      "acceptance": [
+        "Opening a range day with no change sends no PUT and the status does not flip to Saving/Saved.",
+        "An edit scheduled but not yet sent shows 'Unsaved changes' (not 'Saved').",
+        "Each listed residual has a regression test or an explicit owner-approved won't-fix note.",
+        "No control on the screen discards unsynced work; unsynced scores survive a reload (§1b, UX-RB-5 design)."
+      ],
+      "dependencies": [
+        "UX-RB-5"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "From UX-RB §3.5 (L2–L8) and §3.8 lows, plus UX audit B-72."
+    },
+    {
+      "id": "MOD-RNG-016",
+      "title": "Native range client handles stale_workspace and the B3/B10 contract without losing scores",
+      "module": "range-days",
+      "screen": "Native app range scoring (/api/mobile/range-workspace)",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "REM",
+          "ref": "UX-RB-5"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-11"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-13"
+        }
+      ],
+      "requirement": "The native range client sends baseUpdatedAt, ignores resultRevisions, keeps stable result IDs, and on stale_workspace (contract row C10) or a 400 from the B10 validator neither loses nor overwrites scores.",
+      "acceptance": [
+        "Native contract rows C9–C11 and C25–C27 pass against the baseline API.",
+        "Two devices (native + web) scoring the same day keep both officers' results.",
+        "A native round-trip of a legacy workspace does not trigger 409/403 from normalization."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX-RB §2 flags 'Native review needed (plan §10)'. Native code is not in this repository; verification needs the native team."
+    },
+    {
+      "id": "MOD-RNG-017",
+      "title": "Server-side merge or per-result writes for multi-device range scoring",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-13"
+        },
+        {
+          "doc": "REM",
+          "ref": "UX-RB-5"
+        }
+      ],
+      "requirement": "Concurrent instructors scoring the same department workspace are merged per result/run on the server (or saved through per-result writes) instead of whole-workspace compare-and-swap.",
+      "acceptance": [
+        "Route test: two PUTs from the same base, each with a different officer's new result → both stored without client recovery.",
+        "Same officer/run edited on two devices yields a recorded conflict, never a silent overwrite.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: concurrency model for multi-device range scoring (server merge vs per-result writes) — UX remediation plan decision 5; B3 recorded merge as deferred. UX-RB-5 client merge covers the immediate loss risk."
+    },
+    {
+      "id": "MOD-RNG-018",
+      "title": "Reliable offline scoring with an idempotent server contract",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-02"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-71"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b Reliable range autosave"
+        }
+      ],
+      "requirement": "Scoring keeps working through connectivity loss: unsynced work is queued and replayed safely, with idempotency keys or per-result upserts on the server so a replayed outbox never duplicates or overwrites results.",
+      "acceptance": [
+        "Score with the network disabled, close and reopen the page, restore the network: every result is stored exactly once.",
+        "A replayed request with the same idempotency key is a no-op.",
+        "No control on the screen discards unsynced work; unsynced scores survive a reload (§1b, UX-RB-5 design)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition: Defer (missing capability). UX-RB-5 already keeps unsynced work across reloads on the web; the server has no idempotency key or outbox semantics."
+    },
+    {
+      "id": "MOD-RNG-019",
+      "title": "Score corrections carry a required reason recorded in history",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§1b Reliable range autosave"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-27"
+        }
+      ],
+      "requirement": "The range workspace API accepts a correction reason for a change to an already-saved result and stores it with the revision (actor, time, before, after, reason).",
+      "acceptance": [
+        "Route test: correcting a saved result with a reason stores a revision containing actor, ISO time, before, after and reason.",
+        "Correcting without a reason is refused once the contract is adopted; existing clients without the field keep working until the contract version switches."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blueprint §1b: 'Corrections to saved scores use an explicit Correct result with a reason, recorded in history.' B3 already appends resultRevisions without a reason field."
+    },
+    {
+      "id": "MOD-RNG-020",
+      "title": "Explicit 'Correct result' action with a reason on saved scores",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§1b Reliable range autosave"
+        }
+      ],
+      "requirement": "Changing a score the server has already saved goes through an explicit 'Correct result' sheet that requires a reason and states that the correction is recorded in history; first-time score entry stays plain autosave.",
+      "acceptance": [
+        "Editing a Saved row opens the Correct result sheet; Submit is disabled until a reason is entered.",
+        "A first-time score on an unsaved row autosaves without the sheet.",
+        "Routine score entry keeps autosaving with no extra per-officer or per-run confirmation (§1b).",
+        "Reason fields that are required today stay required (§1b).",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "dependencies": [
+        "MOD-RNG-019",
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-021",
+      "title": "Controlled reopen / amendment of a finalized range day",
+      "module": "range-days",
+      "screen": "/range-days (finalized day)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-04"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-08"
+        }
+      ],
+      "requirement": "A permitted role can reopen or amend a Completed/Locked day with a required reason; the change is audited and all other edits to finalized days stay refused.",
+      "acceptance": [
+        "Harness 4d/4f: reopen with a reason by the permitted role succeeds and writes an audit entry; without the permission it is still 409/403.",
+        "Score edits on a finalized day without reopening remain refused."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: who may reopen or amend a finalized range day. B3 deferred the amendment/unlock path."
+    },
+    {
+      "id": "MOD-RNG-022",
+      "title": "Reopen-with-reason action and 'Request correction' on finalized days",
+      "module": "range-days",
+      "screen": "/range-days (finalized day)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-08"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-04"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b When to ask for confirmation"
+        }
+      ],
+      "requirement": "A finalized day offers 'Reopen range day' (permitted roles) through a sheet with a required reason and a before → after summary, and 'Request correction' for others.",
+      "acceptance": [
+        "Permitted role sees Reopen; others see Request correction or nothing; the server remains the authority.",
+        "Reason fields that are required today stay required (§1b).",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b).",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "dependencies": [
+        "MOD-RNG-021",
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-023",
+      "title": "After-action report stays editable after close-out",
+      "module": "range-days",
+      "screen": "/range-days (AAR)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-09"
+        }
+      ],
+      "requirement": "The AAR is stored so it can be written or amended after the day is Completed without unlocking scores.",
+      "acceptance": [
+        "Harness 4c: adding AAR text on a Completed day succeeds and is audited; score edits on that day are still refused."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: separate AAR record that stays editable after close (UX register B-09 'owner decision; migration only for the full fix'). OA disposition Defer (missing capability)."
+    },
+    {
+      "id": "MOD-RNG-024",
+      "title": "'Close range day' step with a summary before finalizing",
+      "module": "range-days",
+      "screen": "/range-days (Overview)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-07"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-09"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements — Instructor close out a range day"
+        },
+        {
+          "doc": "WR",
+          "ref": "Range Days & Qualifications"
+        },
+        {
+          "doc": "BP",
+          "ref": "#10"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b When to ask for confirmation"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Terminology"
+        }
+      ],
+      "requirement": "Finalizing is a dedicated 'Close range day' action that opens an in-app summary (unscored officers, open drills, failures and remediation, missing photos, AAR not yet written) before Confirm; Completed/Locked/Archived are removed from the plain Status select.",
+      "acceptance": [
+        "Clicking 'Close range day' shows the summary with counts drawn from the workspace; Confirm writes the same status change as today.",
+        "An empty AAR is flagged in the summary before confirmation (B-09 interim).",
+        "The Status select offers only Planned and In Progress.",
+        "No native window.confirm is used.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity).",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-025",
+      "title": "Finalized-day lock banner",
+      "module": "range-days",
+      "screen": "/range-days (finalized day)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-08"
+        }
+      ],
+      "requirement": "A Completed/Locked/Archived day shows 'Finalized on <date> by <actor>' with what the lock means; edit controls are aria-disabled rather than only dimmed.",
+      "acceptance": [
+        "Component test: a Completed day renders the banner with date and actor; edit controls have aria-disabled=true."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-026",
+      "title": "Prominent save-failure and offline status for range syncing",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-01"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-69"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-71"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1b Reliable range autosave"
+        }
+      ],
+      "requirement": "A failed or refused sync is shown as a red banner that stays until resolved and scrolls to the affected row; network errors read 'Offline – N changes not yet saved; will retry' instead of raw browser text; status text is at least 12px.",
+      "acceptance": [
+        "Mock a PUT network failure: banner reads the offline wording with the pending count, not 'Failed to fetch'.",
+        "Mock a 400 on one row: a red banner names the officer and links to the row; it clears when the next save succeeds.",
+        "Every row and page save status is derived only from the server reply (Saved / Saving / Not synced / Conflict); nothing is shown as Saved optimistically (§1b).",
+        "No control on the screen discards unsynced work; unsynced scores survive a reload (§1b, UX-RB-5 design)."
+      ],
+      "dependencies": [
+        "MOD-RNG-014",
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. UX-RB-6 already supplies per-row state; this is the remaining prominence/offline wording."
+    },
+    {
+      "id": "MOD-RNG-027",
+      "title": "Guard drill, run and day switches against discarding typed scores",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-04"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-08"
+        }
+      ],
+      "requirement": "Changing the Drill, Run or day while typed-but-unsaved scores exist keeps them (persisted per day/drill/run) or asks before discarding; reloading does not lose typed rows.",
+      "acceptance": [
+        "Type a score, change the Run select: the score is kept per context or a confirm appears; on cancel the score is still there.",
+        "Typed rows survive a page reload.",
+        "No control on the screen discards unsynced work; unsynced scores survive a reload (§1b, UX-RB-5 design)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. B3 fixed the roster-rebuild case only."
+    },
+    {
+      "id": "MOD-RNG-028",
+      "title": "One save-feedback channel next to the button the user pressed",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-11"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-12"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-13"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-30"
+        }
+      ],
+      "requirement": "Validation and result messages render next to the sticky and footer save buttons (not in the header button label); the header Save button keeps a fixed label; both save buttons share the same disabled rule and reason; blocking officer cards are highlighted; a blocked tap never leaves a stale 'Saved'.",
+      "acceptance": [
+        "Mobile viewport: a row with no firearm and a sticky Save tap shows 'Select a firearm…' next to the sticky button and no 'Saved'.",
+        "After a batch save the header button still reads 'Save Range Day'.",
+        "With missing firearms both save buttons are disabled with the same reason.",
+        "Every row and page save status is derived only from the server reply (Saved / Saving / Not synced / Conflict); nothing is shown as Saved optimistically (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-029",
+      "title": "Store the manual Pass/Fail override separately from the computed result",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring) (Result select)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-16"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-R1"
+        }
+      ],
+      "requirement": "The automatic result is recomputed at save from the score and the firearm used; a manual override is stored separately and survives score edits; clearing the score clears the result; finalPassed always agrees with departmentStandardPassed for the firearm used.",
+      "acceptance": [
+        "Override Fail, edit the score, save → Fail persisted.",
+        "Type a passing score, clear it, save → no Pass result written.",
+        "Type a score, switch firearm to one with a different standard, save → finalPassed equals departmentStandardPassed.",
+        "Saved passed/finalPassed shape unchanged (no migration)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX audit S2, RC-worsened by B10's firearm-dependent standards. Changes what is persisted, so it belongs to the development conversation; UI label follows."
+    },
+    {
+      "id": "MOD-RNG-030",
+      "title": "Show 'Auto: Pass' versus 'Override: Fail' on the Result control",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring) (Result select)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-16"
+        }
+      ],
+      "requirement": "The Result control distinguishes the computed result from a manual override and shows that Incomplete forces Fail.",
+      "acceptance": [
+        "Row with an automatic result shows 'Auto: Pass'; after choosing Fail it shows 'Override: Fail'.",
+        "Incomplete on a scored drill shows 'Incomplete → Fail' in the Result column."
+      ],
+      "dependencies": [
+        "MOD-RNG-029",
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-031",
+      "title": "Enable target-photo capture only after the result is saved on the server",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-21"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-12"
+        }
+      ],
+      "requirement": "The camera for a result is enabled only when that row's state is server-acknowledged 'Saved'; before that it shows 'Wait for Saved'.",
+      "acceptance": [
+        "Before the PUT resolves the camera is disabled with the hint; after a 200 it is enabled.",
+        "Every row and page save status is derived only from the server reply (Saved / Saving / Not synced / Conflict); nothing is shown as Saved optimistically (§1b)."
+      ],
+      "dependencies": [
+        "MOD-RNG-014",
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-032",
+      "title": "One target-photo flow per scoring card with field-size targets",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-20"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-12"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-30"
+        }
+      ],
+      "requirement": "Merge QuickQualificationCamera and QualificationEvidence into one capture flow per card, hide the camera on non-qualification drills, replace window.alert with inline messages, and use 44px targets.",
+      "acceptance": [
+        "Each scoring card has exactly one photo entry point; non-qualification drills show none.",
+        "No window.alert in the capture flow; touch targets ≥ 44px at 375px width.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-033",
+      "title": "Loading, error and offline-copy states on the range day list",
+      "module": "range-days",
+      "screen": "/range-days (list)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-24"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-03"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Dashboards & data"
+        }
+      ],
+      "requirement": "The list shows a skeleton while loading, 'Couldn't load · Retry' on failure, an 'Offline copy from <time>, not saved to server' banner when working from the device copy, and the empty state only after a successful load.",
+      "acceptance": [
+        "Before the GET resolves: skeleton, no 'No range days match…'.",
+        "GET 500: error banner with Retry; with a device copy present, the offline-copy banner is shown."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-034",
+      "title": "Create range day through a dialog; nothing saved until Create",
+      "module": "range-days",
+      "screen": "/range-days (New Range Day)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-25"
+        },
+        {
+          "doc": "BP",
+          "ref": "#11"
+        },
+        {
+          "doc": "WR",
+          "ref": "Range Days & Qualifications"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — Create flows don't save until confirmed"
+        }
+      ],
+      "requirement": "'New Range Day' opens a Create dialog (Agency Training event pattern) and no record is written until 'Create range day' is pressed; a toast confirms.",
+      "acceptance": [
+        "Clicking New Range Day sends no PUT until the form is submitted; cancelling leaves no record.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. OWNER DECISION NEEDED: delete versus archive for existing junk 'New Range Day' records (UX register B-25)."
+    },
+    {
+      "id": "MOD-RNG-035",
+      "title": "Archive and Restore actions outside the clickable card, with confirmation",
+      "module": "range-days",
+      "screen": "/range-days (list card)",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-26"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review — Range Days"
+        }
+      ],
+      "requirement": "Archive is no longer nested inside a role=button card; Restore asks for confirmation naming the record (ConfirmDialog).",
+      "acceptance": [
+        "Keyboard and screen-reader users can reach Open and Archive as separate controls.",
+        "Restore shows a ConfirmDialog naming the range day."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-036",
+      "title": "Compact range-day list (6–8 days per screen)",
+      "module": "range-days",
+      "screen": "/range-days (list)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-27"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review — Range Days"
+        },
+        {
+          "doc": "VR",
+          "ref": "Tablet and phone — Phone (375px)"
+        },
+        {
+          "doc": "VR",
+          "ref": "Top 15 visual changes — Compact range-day list"
+        },
+        {
+          "doc": "BP",
+          "ref": "#7"
+        }
+      ],
+      "requirement": "Each range day is a compact row/card: date block, title, type and status chips, lead (once), roster count and readiness meter, one Open action; no repeated 'Day outline' boilerplate, no nested boxes, no empty location pin.",
+      "acceptance": [
+        "At 1280px at least 6 range days are visible; at 375px a card is under 200px tall.",
+        "'Lead:' appears once per card; no bare pin icon when location is empty.",
+        "Visual regression at 1280/768/375 approved."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-037",
+      "title": "Structured start/end time inputs and a filtered Lead picker",
+      "module": "range-days",
+      "screen": "/range-days (Overview)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-28"
+        }
+      ],
+      "requirement": "Start/End use a time control instead of free text ('0800'); the Lead select is a searchable picker of eligible personnel.",
+      "acceptance": [
+        "Entering a time produces the same stored value format as today.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-038",
+      "title": "Programmatic labels and pressed state on range forms",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-29"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 5 accessibility pass"
+        }
+      ],
+      "requirement": "Every range-day form input has an associated label and flip-text toggles expose aria-pressed.",
+      "acceptance": [
+        "axe shows no label or toggle violations on the Overview, Roster, Drills and AAR tabs."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-039",
+      "title": "Phone tab strip with Score first while a day is In Progress",
+      "module": "range-days",
+      "screen": "/range-days (selected day, phone)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-14"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-30"
+        },
+        {
+          "doc": "VR",
+          "ref": "Tablet and phone — Phone (375px)"
+        }
+      ],
+      "requirement": "Below md, the 8 tabs become a horizontal strip (not stacked rows under 6 stat cards), with Scoring first while the day is In Progress.",
+      "acceptance": [
+        "At 390×844 the Scoring tab is reachable without scrolling past stat cards.",
+        "Touch targets ≥ 44px."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-040",
+      "title": "Tablet-width scoring grid with readable firearm select and 44px targets",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring) (lg tablets)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-18"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-30"
+        }
+      ],
+      "requirement": "The desktop scoring grid fits 1024px tablets without a 1040px minimum width; the firearm select is at least 12px text; targets are 44px.",
+      "acceptance": [
+        "At 1024×768 the grid has no horizontal scroll and all controls are ≥ 44px."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-041",
+      "title": "'Save & next run', completion counts and unscored filter on the scoring board",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-15"
+        }
+      ],
+      "requirement": "Drill/run options show completion counts; an 'Unscored only' filter and name search narrow the cards; a 'Save & next run' action advances after a successful save.",
+      "acceptance": [
+        "Run select shows 'Run 2 · 3/5 scored'.",
+        "'Unscored only' hides rows with a saved result.",
+        "Routine score entry keeps autosaving with no extra per-officer or per-run confirmation (§1b).",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-042",
+      "title": "Show the pass standard where scoring happens, on phone and desktop",
+      "module": "range-days",
+      "screen": "/range-days (selected day → Scoring)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-19"
+        },
+        {
+          "doc": "WR",
+          "ref": "Range Days & Qualifications"
+        }
+      ],
+      "requirement": "The scoring board shows the drill's pass threshold, and each phone card shows the department standard chip (Met / Failed / Pending) as the desktop grid does.",
+      "acceptance": [
+        "At 375px each scored card shows the standard chip.",
+        "The board header shows the passing score for the selected drill."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-043",
+      "title": "Multi-select roster add and 'Mark all present'",
+      "module": "range-days",
+      "screen": "/range-days (Roster)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-23"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-29"
+        },
+        {
+          "doc": "BP",
+          "ref": "#10"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b B"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 4"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements — Instructor create a range day"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — Range day setup accelerators"
+        }
+      ],
+      "requirement": "Range managers add several officers at once from a searchable multi-select and mark all rostered officers present in one action, batched client-side over the existing roster save.",
+      "acceptance": [
+        "Adding 3 officers takes one picker interaction; 'Mark all present' marks every rostered officer.",
+        "The resulting workspace PUT is identical in shape to adding them one at a time.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity).",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b).",
+        "Routine score entry keeps autosaving with no extra per-officer or per-run confirmation (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. Blueprint §2b lists it as track B 'after UX-RB-5'."
+    },
+    {
+      "id": "MOD-RNG-044",
+      "title": "Loaner or shared firearm option for scheduled-mode rosters",
+      "module": "range-days",
+      "screen": "/range-days (Roster firearms)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-38"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-29"
+        }
+      ],
+      "requirement": "An officer without an assigned weapon in scheduled mode can be given a loaner/department firearm, as open mode already allows.",
+      "acceptance": [
+        "A scheduled-mode officer with no assigned firearm can select a loaner and be scored.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity).",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. If the authorizer refuses non-assigned firearms in scheduled mode this needs a backend change first."
+    },
+    {
+      "id": "MOD-RNG-045",
+      "title": "Range day templates and duty-firearm prefill API",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        },
+        {
+          "doc": "BP",
+          "ref": "#10"
+        },
+        {
+          "doc": "WR",
+          "ref": "Range Days & Qualifications"
+        }
+      ],
+      "requirement": "Provide template storage for range days (standard drills and runs) and an assignment lookup that returns each rostered officer's duty firearm.",
+      "acceptance": [
+        "API returns templates scoped to the agency and duty-firearm assignments for a list of officers.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b).",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-046",
+      "title": "'Use template' for range days and duty firearms filled in",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "C",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#10"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — Range day setup accelerators"
+        }
+      ],
+      "requirement": "Creating a range day can start from a template that brings its standard drills; rostered officers get their assigned duty firearm pre-selected, editable before scoring.",
+      "acceptance": [
+        "Create from template adds the template's drills; each officer's duty firearm is preselected.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "MOD-RNG-045",
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-047",
+      "title": "Searchable drill picker that hides archived templates",
+      "module": "range-days",
+      "screen": "/range-days (Drills → Library)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-30"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-31"
+        }
+      ],
+      "requirement": "Adding drills uses a searchable picker that hides archived templates and marks drills already on the day.",
+      "acceptance": [
+        "Archived templates are not listed by default; drills already added show 'Added'.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-048",
+      "title": "Drill library outside a range day with versioned, attributed template edits",
+      "module": "range-days",
+      "screen": "/range-days (drill library)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-31"
+        }
+      ],
+      "requirement": "Drill templates can be managed outside a specific range day, and template edits keep authorship and version history instead of overwriting.",
+      "acceptance": [
+        "Editing a template records a new version with the editor and time; earlier versions remain readable.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer."
+    },
+    {
+      "id": "MOD-RNG-049",
+      "title": "Show the effective scoring format when a drill name forces Qualification",
+      "module": "range-days",
+      "screen": "/range-days (Drill template editor)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-31"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-25"
+        }
+      ],
+      "requirement": "The drill editor shows 'Scored as Qualification (from name)' when the name override applies.",
+      "acceptance": [
+        "A drill named 'Pre-qualification warm-up' with format Time shows the warning in the editor."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-050",
+      "title": "Explicit qualification flag instead of name matching",
+      "module": "range-days",
+      "screen": "/range-days, /qualifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-25"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-31"
+        }
+      ],
+      "requirement": "Whether a drill counts as a qualification is an explicit field, not `name.includes('qualification')`, for scoring and qualification history.",
+      "acceptance": [
+        "A practice drill whose name contains 'qualification' is not counted in qualification history unless flagged.",
+        "Backfill report lists drills whose classification changes."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: explicit flag and data backfill (UX register B-31 'owner decision; full fix may need a data backfill'). OA disposition Defer (missing capability)."
+    },
+    {
+      "id": "MOD-RNG-051",
+      "title": "Library cards use current scoring-format labels",
+      "module": "range-days",
+      "screen": "/range-days (Library card)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-32"
+        }
+      ],
+      "requirement": "Library cards show the same scoring-format names as the drill editor, not legacy defaultScoringMode labels.",
+      "acceptance": [
+        "Every library card label matches the editor's format list."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-052",
+      "title": "Results tab officer picker and per-result standard labels",
+      "module": "range-days",
+      "screen": "/range-days (Results)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-33"
+        }
+      ],
+      "requirement": "The Results tab has its own officer picker built from results (including officers removed from the roster), and each result's standard label comes from that result's drill.",
+      "acceptance": [
+        "With Roster selection A, picking B on Results shows B.",
+        "A removed officer with retained results can be selected.",
+        "Pass/Met labels follow each result's own drill."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-053",
+      "title": "Remove roadmap and developer copy from Range Days",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-34"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-39"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        }
+      ],
+      "requirement": "Remove the AAR roadmap placeholder ('Later, TracePoint can mine AARs…') and the blue 'N department personnel records available.' status line.",
+      "acceptance": [
+        "Neither string renders on any tab."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-054",
+      "title": "Replace native dialogs on Range Days with shared ConfirmDialog/Sheet",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-35"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Buttons, forms & dialogs"
+        }
+      ],
+      "requirement": "Firearm mismatch, drill removal, finalize and roster removal use the shared in-app ConfirmDialog naming the record and impact; no window.confirm/alert/prompt remain.",
+      "acceptance": [
+        "grep finds no window.confirm/alert/prompt in range-days.",
+        "Each dialog names the record and its effect; cancel is the default focus."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-055",
+      "title": "Range terminology: Range Days, Roster, Range packet",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-36"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Terminology inconsistencies"
+        },
+        {
+          "doc": "WR",
+          "ref": "Terminology"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Terminology"
+        }
+      ],
+      "requirement": "The page title matches the menu ('Range Days', not 'Range & Training'); one term for roster/attendance and for attending officers; 'Range packet ready' instead of 'Packet status'; one term for Run/Course/Component; the score_range_days permission description matches what scorers can do.",
+      "acceptance": [
+        "Title and nav label are identical.",
+        "Glossary check passes for the listed terms on every range tab and the printed packet."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-056",
+      "title": "Printed range packet without console logging",
+      "module": "range-days",
+      "screen": "/range-days (Print Packet)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-37"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-33"
+        }
+      ],
+      "requirement": "Print Packet no longer logs the packet object to the console.",
+      "acceptance": [
+        "Printing a packet writes nothing to the browser console."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. Recording that a packet was printed, and re-entry of paper results (RNG-33), are enhancements not in scope here."
+    },
+    {
+      "id": "MOD-RNG-057",
+      "title": "Explain or hide manager-only roster controls for scorers",
+      "module": "range-days",
+      "screen": "/range-days (Roster, scorer role)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-73"
+        }
+      ],
+      "requirement": "For scorers, Add Officer, firearm chips and Remove are hidden or carry 'Only the range manager can change the roster'.",
+      "acceptance": [
+        "Instructor-only account sees the explanation or no manager controls.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-058",
+      "title": "'Showing your records only' on Range Days for own-scope users",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-78"
+        }
+      ],
+      "requirement": "When the workspace is own-scoped, Range Days says so and does not present own-only roster/result counts as department totals.",
+      "acceptance": [
+        "Officer account sees 'Showing your records only'; card counts are labelled as own records.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b).",
+        "Verified with Officer, Instructor, Supervisor and Admin accounts; what each role sees matches the baseline (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. recordScope is not read by range-days/page.tsx today; if the workspace GET does not expose it, a small API addition is needed first."
+    },
+    {
+      "id": "MOD-RNG-059",
+      "title": "Firearm serials on range roster and scoring labels",
+      "module": "range-days",
+      "screen": "/range-days (Roster, Scoring)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-19"
+        }
+      ],
+      "requirement": "Wherever a firearm is identified on range screens, its label includes the serial number (EntityLabel), not only type/make/model.",
+      "acceptance": [
+        "Roster chips and scoring selects show make, model and serial."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline. OA disposition Defer (missing capability); the mobile roster payload gives only assignedFirearmIds."
+    },
+    {
+      "id": "MOD-RNG-060",
+      "title": "Range attendance states consistent with Agency Training",
+      "module": "range-days",
+      "screen": "/range-days (Roster)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-48"
+        }
+      ],
+      "requirement": "Range attendance supports the same states as Agency Training (assigned, present, absent, excused) instead of a boolean.",
+      "acceptance": [
+        "Workspace schema and API accept the four states; existing boolean data maps to present/assigned.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Cross-module consistency; the UI change follows once the workspace contract supports it."
+    },
+    {
+      "id": "MOD-RNG-061",
+      "title": "Drill documents: one fetch, no layout shift, accessible modal, 44px targets, no stuck upload",
+      "module": "range-days",
+      "screen": "/range-days (Drills → DrillDocuments)",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-68"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-32"
+        }
+      ],
+      "requirement": "DrillDocuments loads documents without a fetch per card, reserves space, closes its modal with Escape with a focus trap, uses 44px icon targets, and always clears the busy state after an upload error (try/finally).",
+      "acceptance": [
+        "A failed upload re-enables the controls and shows the error.",
+        "Modal closes on Escape; axe shows no new violations."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-062",
+      "title": "Drill documents archived or versioned instead of hard-deleted",
+      "module": "range-days",
+      "screen": "/api/pilot drill-documents",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-32"
+        }
+      ],
+      "requirement": "Deleting a drill document archives it (or keeps a version) instead of `.delete()` on drill_documents.",
+      "acceptance": [
+        "Route test: delete marks the document archived and it can be restored by a manager.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-063",
+      "title": "Feature gate on drill library and drill-document routes",
+      "module": "range-days",
+      "screen": "/api drill-library and drill-documents",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-28"
+        }
+      ],
+      "requirement": "Decide and apply whether drill library and drill-document routes require the range feature, matching the TV visibility work.",
+      "acceptance": [
+        "Route tests encode the decided gate."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: whether the feature gate should apply to drill library and drill documents (security-backlog.md 'RNG-28 residual')."
+    },
+    {
+      "id": "MOD-RNG-064",
+      "title": "Range malfunctions reach the armory; catastrophic failures take the weapon out of service",
+      "module": "range-days",
+      "screen": "/range-days → armory",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-05"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Integration gaps"
+        }
+      ],
+      "requirement": "A malfunction logged at the range is recorded against the firearm in the armory, and a Catastrophic Failure sets the firearm out of service / inspection required with status history and armorer notification.",
+      "acceptance": [
+        "Log a catastrophic failure: firearm status changes with a history entry naming the range day and actor.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition Defer (missing capability). Cross-group with Armory (firearms)."
+    },
+    {
+      "id": "MOD-RNG-065",
+      "title": "Range results projected to relational qualification records",
+      "module": "range-days",
+      "screen": "/range-days → command dashboard, analytics",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-06"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Integration gaps"
+        }
+      ],
+      "requirement": "Closing a range day writes official qualification_results (with expires_on, firearm and range day) so the dashboard and analytics read real data.",
+      "acceptance": [
+        "Close a day with 3 results: 3 qualification_results rows exist and dashboard drill trends show them."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition Defer (missing capability). Feeds Platform (command dashboard, analytics)."
+    },
+    {
+      "id": "MOD-RNG-066",
+      "title": "Range ammunition use updates ammunition inventory",
+      "module": "range-days",
+      "screen": "/range-days → ammunition",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-20"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Integration gaps"
+        }
+      ],
+      "requirement": "Ammunition staged or consumed at a range day is recorded as an ammunition consumption transaction.",
+      "acceptance": [
+        "Recording rounds used on a day creates a consumption transaction with actor and day.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer. Cross-group with Armory (ammunition)."
+    },
+    {
+      "id": "MOD-RNG-067",
+      "title": "Instructor certification or assignment check for running and scoring a range",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-18"
+        }
+      ],
+      "requirement": "Optionally require a current instructor certification or assignment to lead or score a range day, per agency policy.",
+      "acceptance": [
+        "With the policy on, an uncertified user cannot be set as lead or score; with it off, behaviour is unchanged."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer; policy-dependent."
+    },
+    {
+      "id": "MOD-RNG-068",
+      "title": "Per-result audit trail instead of whole-document snapshots",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-27"
+        }
+      ],
+      "requirement": "Range writes are audited per result (who recorded or changed which score, when) rather than one whole-workspace snapshot every ~650 ms; results carry recordedAt and the scoring instructor.",
+      "acceptance": [
+        "Audit query returns per-result entries with actor, time, before and after."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition Defer (missing capability)."
+    },
+    {
+      "id": "MOD-RNG-069",
+      "title": "One copy of the range write rules",
+      "module": "range-days",
+      "screen": "lib/range",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-34"
+        }
+      ],
+      "requirement": "Remove the dead workspace-write-policy.ts or make it the single rule source shared by the TS authorizer, drills route, trigger and client predicates.",
+      "acceptance": [
+        "Rules are defined once; tests exercise the shared rule from each caller."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-070",
+      "title": "Remove stale page copies from the repository root",
+      "module": "range-days",
+      "screen": "repository root",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-35"
+        }
+      ],
+      "requirement": "Delete range-days-page.txt, qualifications-page.txt, training-alerts-client.txt and the other stale page copies.",
+      "acceptance": [
+        "No *-page.txt or *.before-* copies remain at the root or under src/app/settings/import-export."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-071",
+      "title": "Tests for the high-risk range and qualification paths",
+      "module": "range-days",
+      "screen": "lib/range, range-days",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-36"
+        }
+      ],
+      "requirement": "Cover handleSaveBatchResults, the lockout evaluator, 'Any' firearm type, same-day fail→pass, and the mobile range PUT with automated tests.",
+      "acceptance": [
+        "Each listed path has at least one test in CI."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Partly addressed: B0 added the PR quality gate, B10 added readiness tests, UX-RB added range sync/merge tests. Mobile PUT and lockout evaluator remain."
+    },
+    {
+      "id": "MOD-RNG-072",
+      "title": "Range Days on the design system: 12px floor, sentence case, KpiTile, StatusChip",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#7"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        },
+        {
+          "doc": "VR",
+          "ref": "Measured evidence"
+        },
+        {
+          "doc": "VR",
+          "ref": "Cross-cutting issues — Micro-type and uppercase labels"
+        },
+        {
+          "doc": "VR",
+          "ref": "Cross-cutting issues — KPI tiles"
+        }
+      ],
+      "requirement": "Range Days uses the token type scale (no text under 12px, uppercase only for table headers), the shared KpiTile (neutral at zero, linked) and StatusChip instead of local StatusPill/StatCard, and no card-in-card framing.",
+      "acceptance": [
+        "Uppercase share of visible text < 10% (was 41%).",
+        "No local StatusPill/StatCard remain.",
+        "Visual regression at 1280/768/375 approved.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-073",
+      "title": "Range day and tab URLs; list rows open the record",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 3"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — Every list row and dashboard item opens its record"
+        }
+      ],
+      "requirement": "Each range day and its tab has a URL; list rows and dashboard items open the record; back, refresh and sharing work; old URLs keep working.",
+      "acceptance": [
+        "/range-days/<id>?tab=scoring opens directly to Scoring.",
+        "Browser back returns to the filtered list.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity).",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-074",
+      "title": "Split range-days/page.tsx into composable sections without behaviour change",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "infrastructure",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 4"
+        },
+        {
+          "doc": "VR",
+          "ref": "Measured evidence"
+        }
+      ],
+      "requirement": "Split the 324 KB range-days page into tab/section components with no change to behaviour, payloads or save semantics.",
+      "acceptance": [
+        "All existing range page tests (including UX-RB sync and completion contracts) pass unchanged.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity).",
+        "No control on the screen discards unsynced work; unsynced scores survive a reload (§1b, UX-RB-5 design)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "merge of claude/fix-uxrb-release-safety into the baseline"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Blocked: blueprint §4/§5 Stage 4 says no UI work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety, not merged into ec027f50) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-QUA-001",
+      "title": "'Any' firearm drills count toward handgun currency",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-09"
+        }
+      ],
+      "requirement": "A qualification drill with firearm type 'Any' counts toward the qualification's firearm class.",
+      "acceptance": [
+        "Readiness unit test: a passing 'Any' qualification makes handgun currency Current.",
+        "Staging S21 after the qualification-status diff report."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6e43ab4"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B10. Data-impact step required before staging apply: run scripts/qualification-status-snapshot.sql and qualification-status-diff.mjs; announce status changes to agencies."
+    },
+    {
+      "id": "MOD-QUA-002",
+      "title": "Same-day re-shoot clears Failed",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-10"
+        }
+      ],
+      "requirement": "Attempts are ordered by save sequence or revision, so a same-day passing re-shoot clears an earlier Failed.",
+      "acceptance": [
+        "Readiness unit test: fail then pass on the same date → Current."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6e43ab4"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B10. Not validated in staging."
+    },
+    {
+      "id": "MOD-QUA-003",
+      "title": "Only closed range days count toward qualification status",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-24"
+        }
+      ],
+      "requirement": "Qualification readiness counts results only from Completed/Locked days.",
+      "acceptance": [
+        "Readiness unit test: a pass on an In Progress day does not count; after Completed it does."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "6e43ab4"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B10. Before staging apply, close out completed range days, because passes on open days stop counting."
+    },
+    {
+      "id": "MOD-QUA-004",
+      "title": "Range and qualification results visible only to the officer or permitted roles",
+      "module": "qualifications",
+      "screen": "/qualifications, /api/qualifications, range workspace",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-28"
+        }
+      ],
+      "requirement": "Users without a range-record permission receive only their own range and qualification rows from the web routes.",
+      "acceptance": [
+        "Staging S18/S9: a plain officer requesting another officer's qualification data is denied or gets only own rows.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "3f8f5e2"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "TV training visibility batch (migration 048). README §6 listed visibility as an owner decision; TV encodes own-rows-only — confirm the decision at staging sign-off. Drill library/document gate residual is a separate range-days requirement."
+    },
+    {
+      "id": "MOD-QUA-005",
+      "title": "Qualification failure lockout policy: enforce or hide",
+      "module": "qualifications",
+      "screen": "/qualifications; Settings → Range & Qualifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-17"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Integration gaps"
+        }
+      ],
+      "requirement": "The configured firearm failure-lockout policy is either enforced at issue (evaluateFirearmQualificationAuthorization wired in) or the setting is hidden/labelled inactive.",
+      "acceptance": [
+        "With the policy on and the threshold reached, issuing the firearm is refused with a reason; or the setting no longer appears as active.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: enforce the lockout or hide the setting (OA README §6, ARM-09/RNG-17). Cross-group with Armory."
+    },
+    {
+      "id": "MOD-QUA-006",
+      "title": "Verify drill-level components versus agency qualification standards",
+      "module": "qualifications",
+      "screen": "/qualifications, /range-days",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-26"
+        }
+      ],
+      "requirement": "Confirm on staging data whether drill-level components overriding department_qualification_standards produce wrong pass results, and make the agency standard the single source if so.",
+      "acceptance": [
+        "Staging comparison of drill-level vs agency standard outcomes is recorded; any mismatch has a fix or an owner-approved rule."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Unverified – requires testing. OWNER DECISION NEEDED: which standard is authoritative when they differ."
+    },
+    {
+      "id": "MOD-QUA-007",
+      "title": "Qualifications loading, error and empty states",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-40"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Dashboards & data"
+        }
+      ],
+      "requirement": "Qualifications shows a skeleton while loading, an error with Retry when any load fails, and the 'No qualification history' banner only when every load succeeded and returned nothing.",
+      "acceptance": [
+        "/api/qualifications 500 → error banner, not 'No qualification history'.",
+        "Pending → skeleton.",
+        "Personnel loaded but results failed → error, not partial data as fact."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-QUA-008",
+      "title": "Qualifications master/detail on phone",
+      "module": "qualifications",
+      "screen": "/qualifications (phone)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-41"
+        }
+      ],
+      "requirement": "Below xl, tapping an officer opens or scrolls to the detail; no auto-selection of the first officer on phone.",
+      "acceptance": [
+        "At 390px tapping an officer shows the detail in view; back returns to the list position."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-QUA-009",
+      "title": "'My qualifications' personal view and self default",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-42"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-78"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements — Officer check my qualifications and training"
+        },
+        {
+          "doc": "BP",
+          "ref": "#4"
+        }
+      ],
+      "requirement": "Own-scope users get a single-person view labelled 'Showing your records only' (no search, status filter or department counts); users with department-wide permission default to themselves with an 'All personnel' switch.",
+      "acceptance": [
+        "Officer account sees only the personal view and the label.",
+        "Instructor/Supervisor lands on self; 'All personnel' shows the department list.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b).",
+        "Verified with Officer, Instructor, Supervisor and Admin accounts; what each role sees matches the baseline (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Home 'My work' readiness cards (BP #4) belong to the Platform group; this is the Qualifications-page part."
+    },
+    {
+      "id": "MOD-QUA-010",
+      "title": "Consistent qualification status chips",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-43"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review — Qualifications"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        }
+      ],
+      "requirement": "Missing Night, Missing Day and No Record use the same warning StatusChip role as other 'Needs Action' states; 'No record' is not muted gray.",
+      "acceptance": [
+        "Every status counted as Needs Action renders with the warning or danger role."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-QUA-011",
+      "title": "Show configured rifle familiarization and Qualification Restricted, or stop offering them",
+      "module": "qualifications",
+      "screen": "/qualifications, /range-days",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-44"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-17"
+        }
+      ],
+      "requirement": "Rifle familiarization and 'Qualification Restricted' configured in Settings appear on Qualifications (the Rifle card shows real status), or the settings are hidden until supported.",
+      "acceptance": [
+        "With rifle familiarization configured and a passing rifle result, the Rifle card is not 'No record'."
+      ],
+      "dependencies": [
+        "MOD-QUA-005"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: show these settings' effects or hide the settings (tied to the RNG-17 lockout decision). UX finding labelled Suspected; confirm with staging data."
+    },
+    {
+      "id": "MOD-QUA-012",
+      "title": "Read-only evidence widget for users who cannot manage evidence",
+      "module": "qualifications",
+      "screen": "/qualifications (timeline)",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-45"
+        }
+      ],
+      "requirement": "QualificationEvidence renders read-only (no upload/Archive) unless the user can manage evidence; the Archive icon button has an aria-label.",
+      "acceptance": [
+        "Officer account sees evidence without upload/Archive controls.",
+        "axe shows no unlabeled buttons.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-QUA-013",
+      "title": "Firearm labels with serials instead of raw IDs on Qualifications",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-19"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review — Qualifications"
+        },
+        {
+          "doc": "VR",
+          "ref": "Cross-cutting issues — Unfinished seams"
+        }
+      ],
+      "requirement": "Qualification entries identify firearms with an EntityLabel (make, model, serial) instead of 'Firearm <id>'.",
+      "acceptance": [
+        "No raw firearm UUID renders on /qualifications for any role."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "If own-scope users cannot read firearm details through the existing API, a read-only label lookup is needed from the development conversation."
+    },
+    {
+      "id": "MOD-QUA-014",
+      "title": "Custom qualification component names and one status vocabulary",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Terminology inconsistencies"
+        }
+      ],
+      "requirement": "Qualifications shows custom component names instead of only Day/Night Qualification, and uses one term for an expired qualification ('Overdue' vs 'Expired') consistently with the dashboard.",
+      "acceptance": [
+        "A drill with component 'Low light' shows that name in the officer detail.",
+        "The same status label appears on Qualifications and the performance summary."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-QUA-015",
+      "title": "Qualifications on the design system: legible text, no stray status line",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "VR",
+          "ref": "Module review — Qualifications"
+        },
+        {
+          "doc": "VR",
+          "ref": "Measured evidence"
+        },
+        {
+          "doc": "BP",
+          "ref": "#7"
+        }
+      ],
+      "requirement": "Replace the 59 faint small-text blocks with the token type scale (≥12px, ≥4.5:1), drop most uppercase, and remove the stray 'Qualification records loaded' line; keep the split view.",
+      "acceptance": [
+        "No text under 12px; contrast ≥ 4.5:1 (axe).",
+        "'Qualification records loaded' does not render.",
+        "Split view layout unchanged at ≥1280px."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-QUA-016",
+      "title": "Qualifications page title matches the menu",
+      "module": "qualifications",
+      "screen": "/qualifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-47"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review — Qualifications"
+        },
+        {
+          "doc": "WR",
+          "ref": "Primary navigation"
+        }
+      ],
+      "requirement": "The page title reads 'Qualifications' (menu label), not 'Qualification History'.",
+      "acceptance": [
+        "Title, browser tab and nav label are identical."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-001",
+      "title": "Training event times stored and shown in the department time zone",
+      "module": "training",
+      "screen": "/agency-training (event editor, list, detail)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-02"
+        }
+      ],
+      "requirement": "datetime-local values are interpreted and displayed in departments.timezone, so saving an event never shifts its time.",
+      "acceptance": [
+        "Staging S20: save an 18:00 local event three times; it stays 18:00."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7 training records (claude/fix-b7-training-records @ 15867d0, migration 050). Editor label residual is B-76."
+    },
+    {
+      "id": "MOD-TRN-002",
+      "title": "Closeout issues certifications for events created in the UI",
+      "module": "training",
+      "screen": "/agency-training (event editor, closeout)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-03"
+        }
+      ],
+      "requirement": "The event editor sends the course's certification type so closeout issues certifications.",
+      "acceptance": [
+        "Staging S20: closeout of a UI-created event with a certification type issues certifications to passing attendees."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7. Select residual (placeholder, validity days) is B-77."
+    },
+    {
+      "id": "MOD-TRN-003",
+      "title": "Outcome no longer forces attendance to Present; inconsistent pairs refused",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-04"
+        }
+      ],
+      "requirement": "Choosing an outcome keeps attendance as entered; the server rejects Completed/Passed without Present.",
+      "acceptance": [
+        "A no-show stays Absent after choosing an outcome; Absent + Passed returns 400."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7. UX residual (two selects per officer, whole-roster failure) is B-74."
+    },
+    {
+      "id": "MOD-TRN-004",
+      "title": "Rosters with deactivated officers save; recorded attendees are never hard-deleted",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-11"
+        }
+      ],
+      "requirement": "A roster containing an inactive attendee can be saved, and removing an attendee with recorded attendance or outcome is refused (409) instead of deleting the record.",
+      "acceptance": [
+        "Save a roster containing a deactivated officer: succeeds.",
+        "Remove an Attended row: 409 and the row persists on the server."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7. The board's handling of that 409 is B-75/B-R4."
+    },
+    {
+      "id": "MOD-TRN-005",
+      "title": "Roster saves keep recorded-by/at and created-by for unchanged rows",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-12"
+        }
+      ],
+      "requirement": "Only rows that changed get new recorded_by/recorded_at; created_by is never rewritten.",
+      "acceptance": [
+        "Edit one of three rows and save: the other two keep their original recorded_by/at.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7."
+    },
+    {
+      "id": "MOD-TRN-006",
+      "title": "Complete Event is blocked while roster edits are unsaved",
+      "module": "training",
+      "screen": "/agency-training (closeout)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-18"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-54"
+        }
+      ],
+      "requirement": "Closeout refuses to run while the roster has unsaved edits and tells the user to Save All first.",
+      "acceptance": [
+        "Edit hours, press Complete Event: refused with 'Save All before completing this event.'"
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7; UX B-54 Fixed in RC. Residual window.alert and optional 'Save & Complete' are in the training dialogs requirement."
+    },
+    {
+      "id": "MOD-TRN-007",
+      "title": "Event and requirement APIs reject invalid state",
+      "module": "training",
+      "screen": "/api/agency-training",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-30"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-30f"
+        }
+      ],
+      "requirement": "Event status cannot be set to completed outside closeout, roster PUT errors return 4xx instead of 500, requirements are not hard-deleted, and incomplete interval settings are rejected.",
+      "acceptance": [
+        "Route tests for each case return the documented 4xx."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7 (TRN-29/TRN-30 group)."
+    },
+    {
+      "id": "MOD-TRN-008",
+      "title": "Instructors with manage_training can roster active members",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "remediation-status — new pre-existing defect (instructor rostering refused)"
+        }
+      ],
+      "requirement": "Rostering by an instructor holding manage_training is not refused with 'not active department members' for active members.",
+      "acceptance": [
+        "Instructor with manage_training adds an active officer to an event roster: saved."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Logged for the backlog in OA remediation-status (2026-10-21); pre-existing, not caused by the release."
+    },
+    {
+      "id": "MOD-TRN-009",
+      "title": "Training roster results and certifications visible only to the officer or permitted roles",
+      "module": "training",
+      "screen": "/agency-training roster, /training/certifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-26"
+        }
+      ],
+      "requirement": "Roster GET and certifications GET return department-wide scores, remedial notes and credentials only to users with the matching permission; others get their own rows.",
+      "acceptance": [
+        "Staging S18/S9: plain officer cannot read another officer's roster score, remedial notes or certifications.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "3f8f5e2"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "TV batch (migration 048). README §6 listed visibility as an owner decision; TV encodes own-rows-only — confirm at staging sign-off. report/route.ts gate consistency to be re-checked."
+    },
+    {
+      "id": "MOD-TRN-010",
+      "title": "Event editor labels times as department time with the zone abbreviation",
+      "module": "training",
+      "screen": "/agency-training (event editor)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-76"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-02"
+        }
+      ],
+      "requirement": "Starts/Ends labels read 'Starts (department time, EDT)' instead of the raw IANA zone ID, matching the list and detail format.",
+      "acceptance": [
+        "Editor, list and detail show the same zone abbreviation."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-011",
+      "title": "Certification-at-closeout select shows the type name and validity",
+      "module": "training",
+      "screen": "/agency-training (event editor)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-77"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-03"
+        }
+      ],
+      "requirement": "When the linked certification type is not in the loaded list, the select shows its name (fetched by id) rather than the placeholder; the validity ('valid 730 days') is visible, and changing the type does not silently clear certificationValidDays.",
+      "acceptance": [
+        "With the Certifications feature off or the list fetch failed, an event's linked type still shows by name.",
+        "Changing the type shows the new validity before Save."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "An editable validity override needs the API to accept certificationValidDays from the editor; confirm with the development conversation before adding the field."
+    },
+    {
+      "id": "MOD-TRN-012",
+      "title": "Roster blocks invalid attendance/outcome pairs per row",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-74"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-04"
+        }
+      ],
+      "requirement": "Completed/Passed are disabled until attendance is Present (or picking them asks 'Also mark Present?'); when Save All fails, the offending rows are highlighted.",
+      "acceptance": [
+        "With attendance Assigned, Completed is disabled or prompts.",
+        "A 400 from Save All highlights the specific rows."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-013",
+      "title": "Agency Training roster recovers from the recorded-attendee 409",
+      "module": "training",
+      "screen": "/agency-training (roster trash, Refresh)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-75"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-R4"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-11"
+        }
+      ],
+      "requirement": "Trash is disabled for rows with recorded attendance or outcome ('Mark Excused instead'); on a 409 the board re-fetches the roster and merges local edits back; the page Refresh reloads the board.",
+      "acceptance": [
+        "A row with status Attended has trash disabled with the tooltip.",
+        "Mocked 409: the row is restored and a second Save All succeeds.",
+        "Page Refresh reloads the roster board without discarding unsaved edits silently."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX remediation plan lists B-75/B-R4 in the 'before production promotion' set; UX-RB §5 says it was not in UX-RB and is proposed for the next small batch."
+    },
+    {
+      "id": "MOD-TRN-014",
+      "title": "Guard event switch and route leave when the roster has unsaved edits",
+      "module": "training",
+      "screen": "/agency-training",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-55"
+        }
+      ],
+      "requirement": "The roster board's dirty flag is lifted to the page; switching events or leaving the route with unsaved edits asks first (beforeunload included).",
+      "acceptance": [
+        "Edit hours, click another event: a confirm appears; on cancel the edits remain."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-015",
+      "title": "Remove duplicate and dead detail tiles",
+      "module": "training",
+      "screen": "/agency-training (event detail)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-56"
+        }
+      ],
+      "requirement": "Merge Roster and 'Attendance & Results' into one tile; hide the unbuilt 'Files & Certificates' tile or show it as 'Planned' without button semantics.",
+      "acceptance": [
+        "No button without an action; no two tiles share a target."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-016",
+      "title": "Editable remedial notes when outcome is Remedial Required",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-57"
+        }
+      ],
+      "requirement": "A remedial-notes field appears on a roster row when the outcome is Remedial Required, writing the remedialNotes field the save already sends.",
+      "acceptance": [
+        "Enter notes, Save All, reload: notes persist.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-017",
+      "title": "Bulk roster actions: mark all present, assign by unit",
+      "module": "training",
+      "screen": "/agency-training (roster)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-17"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-57"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-74"
+        }
+      ],
+      "requirement": "Coordinators can select all or filter by unit and apply 'Mark all present' or an outcome to many rows at once, over the existing roster save.",
+      "acceptance": [
+        "'Mark all present' on 30 attendees takes one action and Save All persists all 30.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA classes TRN-17 as Enhancement – defer; 'assign everyone required' by unit/rank needs the organization model (see requirement-scope work)."
+    },
+    {
+      "id": "MOD-TRN-018",
+      "title": "Agency Training roster as cards on phone and tablet",
+      "module": "training",
+      "screen": "/agency-training (roster, phone/tablet)",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-36"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-57"
+        }
+      ],
+      "requirement": "Below 640px the roster renders as CardList rows instead of a 1050px table.",
+      "acceptance": [
+        "At 390px no horizontal scroll; attendance and outcome are editable per card."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-019",
+      "title": "Shared dialogs and toasts on Agency Training",
+      "module": "training",
+      "screen": "/agency-training (closeout, roster)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-58"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-54"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Buttons, forms & dialogs"
+        }
+      ],
+      "requirement": "Replace window.prompt (file removal reason), window.confirm and window.alert (dirty guard) with ReasonDialog/ConfirmDialog; the persistent 'Saved' banner becomes a toast; optionally offer 'Save & Complete'.",
+      "acceptance": [
+        "grep finds no window.prompt/confirm/alert in Agency Training components.",
+        "Reason fields that are required today stay required (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-020",
+      "title": "Agency Training on the shared PageHeader, Alert and type scale",
+      "module": "training",
+      "screen": "/agency-training",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-59"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        },
+        {
+          "doc": "BP",
+          "ref": "#7"
+        },
+        {
+          "doc": "VR",
+          "ref": "Measured evidence"
+        }
+      ],
+      "requirement": "Use the shared PageHeader and Alert (one danger colour instead of rose-* vs red-*) and the token type scale; uppercase share under 10%.",
+      "acceptance": [
+        "Uppercase share < 10% (was 40%).",
+        "No rose-* classes remain."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-021",
+      "title": "Training hub card set: no duplicate links, Agency Training present",
+      "module": "training",
+      "screen": "/training",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-46"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-21"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-31"
+        }
+      ],
+      "requirement": "Each hub card links to a distinct destination; add an Agency Training card; 'Training History' no longer points at /qualifications; 'Training Requirements – Coming next' is replaced by a real link once requirement access exists or removed.",
+      "acceptance": [
+        "Every card href is unique and /agency-training is present.",
+        "No 'Coming next' card."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-022",
+      "title": "Training terminology and Agency Training versus Training-type range days",
+      "module": "training",
+      "screen": "/training, /agency-training",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-47"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. C §4 Terminology inconsistencies"
+        },
+        {
+          "doc": "WR",
+          "ref": "Range Days & Qualifications"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard — Agency Training"
+        }
+      ],
+      "requirement": "One name per concept (Agency Training / training event; Certifications vs certificates; training requirements), menu labels equal page titles, and the screens explain when to use an Agency Training event versus a Training-type range day.",
+      "acceptance": [
+        "Glossary check passes on /training, /agency-training and the closeout panel.",
+        "Both create flows show a one-line explanation of which to use."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-023",
+      "title": "Training requirement configuration reachable with manage_training",
+      "module": "training",
+      "screen": "Settings → Agency Training Rules",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-31"
+        }
+      ],
+      "requirement": "A training coordinator with manage_training can read and edit training requirements without Settings-level permissions.",
+      "acceptance": [
+        "Coordinator without manage_users/administer_department edits a requirement: allowed and audited.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition Defer (missing capability). Permission gate change belongs to the development conversation."
+    },
+    {
+      "id": "MOD-TRN-024",
+      "title": "Training Requirements page linked from the Training hub",
+      "module": "training",
+      "screen": "/training",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-31"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-46"
+        }
+      ],
+      "requirement": "Expose training requirements from the Training hub for coordinators, with a 'Manage' link from Settings (one home per setting).",
+      "acceptance": [
+        "Coordinator reaches requirements from /training in one click.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "MOD-TRN-023"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-025",
+      "title": "Requirement scope linked to units, ranks and groups",
+      "module": "training",
+      "screen": "Settings → Agency Training Rules",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-32"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. C §4 Integration gaps"
+        }
+      ],
+      "requirement": "Requirement scope values reference organization records (units, ranks, groups) instead of free text, so a typo cannot drop members.",
+      "acceptance": [
+        "Scope saved by id; renaming a unit keeps members in scope.",
+        "Existing free-text scopes are migrated or flagged."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition Defer (missing capability)."
+    },
+    {
+      "id": "MOD-TRN-026",
+      "title": "Pick requirement scope from units, ranks and groups",
+      "module": "training",
+      "screen": "Settings → Agency Training Rules",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-32"
+        }
+      ],
+      "requirement": "Requirement scope uses a multi-select picker of organization values instead of a comma-separated text field.",
+      "acceptance": [
+        "No free-text scope input remains; the picker shows member counts."
+      ],
+      "dependencies": [
+        "MOD-TRN-025"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-027",
+      "title": "Per-officer training hours and transcript API",
+      "module": "training",
+      "screen": "/training",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-21"
+        }
+      ],
+      "requirement": "Provide a per-officer transcript (events attended, hours, outcomes, certifications) scoped by role.",
+      "acceptance": [
+        "API returns an officer's transcript; own-scope users get only their own.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer (High)."
+    },
+    {
+      "id": "MOD-TRN-028",
+      "title": "Training History shows the officer transcript",
+      "module": "training",
+      "screen": "/training",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-21"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-46"
+        }
+      ],
+      "requirement": "'Training History' opens the officer's transcript (hours and events), not range qualification history.",
+      "acceptance": [
+        "Officer opens Training History and sees agency training hours by period."
+      ],
+      "dependencies": [
+        "MOD-TRN-027"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-029",
+      "title": "Outside training submission and verification",
+      "module": "training",
+      "screen": "/training",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-09"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. C §4 Integration gaps"
+        }
+      ],
+      "requirement": "Officers can submit outside training with evidence, a coordinator verifies it, and verified records can satisfy agency training requirements.",
+      "acceptance": [
+        "Submitted training is pending until verified; verified training satisfies the matching requirement.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer (new workflow)."
+    },
+    {
+      "id": "MOD-TRN-030",
+      "title": "Leave, light-duty and waiver handling for training requirements",
+      "module": "training",
+      "screen": "/training",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-15"
+        }
+      ],
+      "requirement": "Requirements support exemptions (leave, light duty, waiver with reason and expiry) that pause due/overdue status.",
+      "acceptance": [
+        "An officer on leave with a waiver is not shown Overdue for the waived requirement.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA: Enhancement – defer."
+    },
+    {
+      "id": "MOD-TRN-031",
+      "title": "Separation of duties for closeout-issued certifications",
+      "module": "training",
+      "screen": "/agency-training (closeout)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-28"
+        }
+      ],
+      "requirement": "Decide whether manage_training alone may issue and deactivate certifications at closeout, or manage_certifications is also required.",
+      "acceptance": [
+        "Closeout authorization matches the decision in both the route and database/aws/008."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: separation-of-duties policy (AWS 008 deliberately encodes manage_training only)."
+    },
+    {
+      "id": "MOD-TRN-032",
+      "title": "Tests for certification readiness, training notifications and closeout/reopen SQL",
+      "module": "training",
+      "screen": "lib/training, agency-training",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-37"
+        }
+      ],
+      "requirement": "Add tests for certification-readiness.ts, agency-training-notifications.ts, closeout and reopen SQL.",
+      "acceptance": [
+        "Each listed module has tests running in CI."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "B7 added tests for its own fixes; the listed modules remain thin."
+    },
+    {
+      "id": "MOD-TRN-033",
+      "title": "Remove the dead quick-create event modal",
+      "module": "training",
+      "screen": "/agency-training",
+      "category": "infrastructure",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-38"
+        }
+      ],
+      "requirement": "Remove the unreachable showCreate modal (it builds browser-local times) from agency-training/page.tsx.",
+      "acceptance": [
+        "showCreate and its modal are gone; the live editor flow is unchanged."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-034",
+      "title": "Own-scope label on the Agency Training roster",
+      "module": "training",
+      "screen": "/agency-training (roster, own scope)",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-78"
+        }
+      ],
+      "requirement": "When the roster is own-scoped, show 'Showing your records only' and avoid presenting '0 or 1 assigned' as the event total.",
+      "acceptance": [
+        "Officer account sees the label; event counts are labelled as own.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "MOD-TRN-009"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TALR-001",
+      "title": "Server-side training alert dispositions and remediation records",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-20"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-60"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        },
+        {
+          "doc": "OA",
+          "ref": "RNG-16"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARC-77"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARC-83"
+        }
+      ],
+      "requirement": "Alert acknowledgement, resolution, dismissal and escalation are stored server-side per alert (with actor, time, reason), and remediations are individual records instead of one last-writer-wins JSON array.",
+      "acceptance": [
+        "Resolving an alert in one browser shows it Resolved in a second browser context.",
+        "Two coordinators editing different remediations do not overwrite each other.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Needs a migration (disposition table). UX plan WP-8 assigns it to the operational remediation (B7 follow-on), not UI work."
+    },
+    {
+      "id": "MOD-TALR-002",
+      "title": "Interim 'Saved on this device only' label on alert status",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P0",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-60"
+        }
+      ],
+      "requirement": "Until server persistence exists, acknowledge/resolve status is labelled 'Saved on this device only'.",
+      "acceptance": [
+        "Every alert status control shows the device-only label."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TALR-003",
+      "title": "Training Alerts reads and writes server-side dispositions",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "functional",
+      "owner": "codex",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-60"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-20"
+        }
+      ],
+      "requirement": "Training Alerts stops using localStorage for alert status and audit, using the new disposition API; the interim label is removed.",
+      "acceptance": [
+        "No TRAINING_ALERTS_STORAGE_KEY read/write remains.",
+        "Every row and page save status is derived only from the server reply (Saved / Saving / Not synced / Conflict); nothing is shown as Saved optimistically (§1b)."
+      ],
+      "dependencies": [
+        "MOD-TALR-001"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TALR-004",
+      "title": "Reason required to resolve or dismiss; audit entries with actor and time",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-61"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-20"
+        }
+      ],
+      "requirement": "Resolve, Complete and Escalate open a reason prompt; a Dismiss-with-reason action exists; audit entries show actor, time, action and reason.",
+      "acceptance": [
+        "Resolve opens a reason dialog; the saved audit entry includes actorId and an ISO timestamp.",
+        "'Dismissed with Reason' is reachable.",
+        "Reason fields that are required today stay required (§1b)."
+      ],
+      "dependencies": [
+        "MOD-TALR-001"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: reason policy (which actions require a reason) — UX register B-61."
+    },
+    {
+      "id": "MOD-TALR-005",
+      "title": "Remediation assignment with a real instructor and due date",
+      "module": "training-alerts",
+      "screen": "/training-alerts (Remediation → Assign)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-62"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-20"
+        }
+      ],
+      "requirement": "Assign requires picking an instructor from personnel and a due date; 'Scheduled' is blocked without both; no hard-coded 'Range Master' / 'Next scheduled range block'.",
+      "acceptance": [
+        "The PUT body carries the chosen user ID and an ISO date.",
+        "Assign is disabled until both are chosen.",
+        "Remediation blob shape unchanged (no migration)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Persisted today through /api/pilot/remediations, so current records carry a fictitious assignee and due date."
+    },
+    {
+      "id": "MOD-TALR-006",
+      "title": "Failed qualifications and remedial outcomes create linked remediations",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "RNG-16"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. B §4 Integration gaps"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. C §4 Integration gaps"
+        }
+      ],
+      "requirement": "A failed qualification (per remediation_due_days / qualification_failure_requires_remediation) or an Agency Training 'remedial_required' outcome creates a linked remediation that a passing re-qualification closes.",
+      "acceptance": [
+        "Fail a qualification with the policy on: a remediation with due date exists; a later pass closes it.",
+        "Audit writes are unchanged: the same entries with actor, time, reason, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition Defer (missing capability)."
+    },
+    {
+      "id": "MOD-TALR-007",
+      "title": "Training Alerts loading state",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-63"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Dashboards & data"
+        }
+      ],
+      "requirement": "Show a skeleton while alerts load and an error with Retry on failure, not an empty inbox.",
+      "acceptance": [
+        "Pending → skeleton; failure → 'Couldn't load · Retry'."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TALR-008",
+      "title": "Training Alerts as a dense list with a detail drawer and one Review action",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "visual",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-63"
+        },
+        {
+          "doc": "VR",
+          "ref": "Module review — Training Alerts"
+        },
+        {
+          "doc": "VR",
+          "ref": "Top 15 visual changes — Inventory and Training Alerts onto the list template"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard — Training Alerts"
+        }
+      ],
+      "requirement": "Alerts render as list rows (severity bar, officer, issue, age, status) with filter and sort and a detail drawer, one primary 'Review' action, and the shared button kit instead of three action styles.",
+      "acceptance": [
+        "Three alerts fit on one 1280px screen.",
+        "Filter by status and sort by age work client-side.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TALR-009",
+      "title": "Remove developer copy and name the right permission on Training Alerts",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-64"
+        },
+        {
+          "doc": "BP",
+          "ref": "#16"
+        },
+        {
+          "doc": "WR",
+          "ref": "Training, Certifications & Training Alerts"
+        }
+      ],
+      "requirement": "Remove 'per-alert role routing is not currently implemented' and similar status copy; read-only copy names the permission actually required.",
+      "acceptance": [
+        "No developer/status copy renders; permission name matches permissions.ts."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TALR-010",
+      "title": "Training Alerts merged into the single attention inbox",
+      "module": "training-alerts",
+      "screen": "/training-alerts → inbox",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "C",
+      "priority": "P0",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "#5"
+        },
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 4"
+        },
+        {
+          "doc": "BP",
+          "ref": "§2b C"
+        },
+        {
+          "doc": "WR",
+          "ref": "Workflow measurements — Supervisor find what needs attention"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — One attention inbox"
+        }
+      ],
+      "requirement": "Training alert items appear in the single inbox (bell and Home) and open the officer record; /training-alerts becomes a filtered view of the inbox.",
+      "acceptance": [
+        "A qualification failure alert appears once in the inbox and opens the officer's qualification record.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b)."
+      ],
+      "dependencies": [
+        "MOD-TALR-001",
+        "track C: single attention inbox (Platform, SV-05)"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "The inbox itself is owned by the Platform group (notifications)."
+    },
+    {
+      "id": "MOD-TALR-011",
+      "title": "Alert rows link to the officer's qualification record",
+      "module": "training-alerts",
+      "screen": "/training-alerts",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-67"
+        },
+        {
+          "doc": "BP",
+          "ref": "#3"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — Every list row and dashboard item opens its record"
+        }
+      ],
+      "requirement": "Each alert opens the related officer record (e.g. /qualifications?officer=<id>) instead of a module root.",
+      "acceptance": [
+        "Clicking an alert opens the officer's qualification detail."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Analytics-side links (B-65/B-67) belong to the Platform group."
+    },
+    {
+      "id": "MOD-CERT-001",
+      "title": "Valid certifications no longer evaluate as expired on AWS-native",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "DC"
+        }
+      ],
+      "requirement": "Date columns returned by the AWS-native data client are normalized so certification expiry is evaluated correctly and shown formatted.",
+      "acceptance": [
+        "A certification expiring next year shows as current with a formatted date on AWS-native."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "DC date-contract fix (and DC2 timestamp contract) merged into integration; 'likely live in production if production is AWS-native'. Not validated in staging."
+    },
+    {
+      "id": "MOD-CERT-002",
+      "title": "Reopening an event restores credentials it superseded",
+      "module": "certifications",
+      "screen": "/training/certifications, /agency-training (reopen)",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-27"
+        }
+      ],
+      "requirement": "Reopen reactivates the credentials closeout deactivated (recorded link).",
+      "acceptance": [
+        "Close an event that supersedes a credential, reopen it: the prior credential is active again."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7."
+    },
+    {
+      "id": "MOD-CERT-003",
+      "title": "Certification API validates dates and protects history fields",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "functional",
+      "owner": "deployment",
+      "track": "ops",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-29"
+        }
+      ],
+      "requirement": "Invalid dates, expiry before issue and non-http document URLs are refused; the officer cannot be changed on edit; closeout-issued fields are locked.",
+      "acceptance": [
+        "Route tests return 400 for each invalid case and 409 for closeout-locked fields."
+      ],
+      "implementation": {
+        "branch": "claude/integration-defects-rebased-20261021",
+        "commits": [
+          "15867d0"
+        ],
+        "pr": ""
+      },
+      "status": "Implemented",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Batch B7. These new 400/409 responses land behind the modal (B-49), tracked separately."
+    },
+    {
+      "id": "MOD-CERT-004",
+      "title": "Certification save errors shown inside the dialog; Save never stuck",
+      "module": "certifications",
+      "screen": "/training/certifications (credential and type modals)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-49"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-R3"
+        },
+        {
+          "doc": "BP",
+          "ref": "§1 Status & notifications"
+        }
+      ],
+      "requirement": "saveCredential/saveType errors render in the open dialog's footer; closeout-issued locked fields are explained before Save; fetch is wrapped in try/finally so a network error re-enables Save with a message.",
+      "acceptance": [
+        "PATCH 400 → error text visible inside the open dialog.",
+        "Rejected fetch → Save re-enabled and an error shown.",
+        "Closeout-issued credential shows which fields are locked and why."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "UX plan lists B-49 in the 'before production promotion' set; not in UX-RB (UX-RB §5)."
+    },
+    {
+      "id": "MOD-CERT-005",
+      "title": "Certifications card list with search, filter, sort and 'Expiring soon'",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-50"
+        },
+        {
+          "doc": "OA",
+          "ref": "TRN-36"
+        },
+        {
+          "doc": "BP",
+          "ref": "#8"
+        }
+      ],
+      "requirement": "Replace the 980px table with DataTable plus CardList under 640px, with client-side search, status filter, sort and an 'Expiring soon' filter.",
+      "acceptance": [
+        "At 390px no horizontal scroll.",
+        "'Expiring soon' shows only credentials expiring within the warning window.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-CERT-006",
+      "title": "'My certifications' view for own-scope users",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R3",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-51"
+        },
+        {
+          "doc": "UX",
+          "ref": "B-78"
+        }
+      ],
+      "requirement": "Users without manage_certifications see a personal card view labelled 'Showing your records only' without the Officer column or 'Officer Certifications' framing.",
+      "acceptance": [
+        "Officer account sees the personal view and label.",
+        "Permissions stay server-side: the UI only hides or disables controls, and the API decision for each role is unchanged (§1b).",
+        "Verified with Officer, Instructor, Supervisor and Admin accounts; what each role sees matches the baseline (§1b)."
+      ],
+      "dependencies": [
+        "MOD-TRN-009"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-CERT-007",
+      "title": "One home for certification requirements",
+      "module": "certifications",
+      "screen": "/training/certifications; Settings → Certification rules",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "B",
+      "priority": "P1",
+      "release": "R4",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-52"
+        },
+        {
+          "doc": "BP",
+          "ref": "#14"
+        }
+      ],
+      "requirement": "Certification requirements are edited in one place, with a 'Manage' link from the other.",
+      "acceptance": [
+        "Only one screen has editable requirement controls; the other links to it.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "Coordinate with the Administration group's Settings left rail (BP #14)."
+    },
+    {
+      "id": "MOD-CERT-008",
+      "title": "Certifications accessibility: labels, Archive icon, modal keyboard support",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "accessibility",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-53"
+        }
+      ],
+      "requirement": "Icon-only buttons get aria-labels; Archive uses an archive icon (not Trash); modals close on Escape with a focus trap; the disabled officer select explains why; the document field is labelled as a link.",
+      "acceptance": [
+        "axe shows no new violations; Escape closes each modal and focus returns to the trigger."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-CERT-009",
+      "title": "Certifications first-run guidance and empty states",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "WR",
+          "ref": "Training, Certifications & Training Alerts"
+        },
+        {
+          "doc": "WR",
+          "ref": "Module scorecard — Certifications"
+        },
+        {
+          "doc": "WR",
+          "ref": "Prioritized usability fixes — Guided first-run setup"
+        },
+        {
+          "doc": "BP",
+          "ref": "#15"
+        },
+        {
+          "doc": "BP",
+          "ref": "§4 Representative screens"
+        }
+      ],
+      "requirement": "With no certification types, 'Add Certification' does not silently do nothing: an EmptyState explains the next step (type → requirement → credential) with links.",
+      "acceptance": [
+        "Agency with no types: Add Certification shows the setup EmptyState.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-CERT-010",
+      "title": "Per-credential reminder schedule: apply, hide or label",
+      "module": "certifications",
+      "screen": "/training/certifications (reminder chips)",
+      "category": "functional",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-07"
+        }
+      ],
+      "requirement": "The per-credential 'Reminder schedule' chips either drive reminders or are hidden/labelled 'not yet active'.",
+      "acceptance": [
+        "The chips are either absent, labelled inactive, or a reminder is generated on the configured day."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OWNER DECISION NEEDED: hide/label or implement (OA README §6, TRN-07). Implementing it is notification work owned by the Platform group."
+    },
+    {
+      "id": "MOD-CERT-011",
+      "title": "Certifications on the shared components",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "release": "R2",
+      "sources": [
+        {
+          "doc": "BP",
+          "ref": "§5 Stage 2"
+        },
+        {
+          "doc": "BP",
+          "ref": "#6"
+        },
+        {
+          "doc": "BP",
+          "ref": "#12"
+        }
+      ],
+      "requirement": "Certifications adopts PageHeader, Button, StatusChip, Dialog and AsyncState (Stage 2 low-risk rollout).",
+      "acceptance": [
+        "No local status spans remain; visual regression at 1280/768/375 approved.",
+        "Network-log comparison before and after shows the same endpoints and payloads for every action (§4 feature parity)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-CERT-012",
+      "title": "Certifications title, eyebrow and credential terminology",
+      "module": "certifications",
+      "screen": "/training/certifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "release": "R1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "B-47"
+        },
+        {
+          "doc": "VR",
+          "ref": "Cross-cutting issues — Four different page headers"
+        },
+        {
+          "doc": "OA",
+          "ref": "App. C §4 Terminology inconsistencies"
+        }
+      ],
+      "requirement": "The page title matches the menu ('Certifications', not 'Certification Readiness'); the eyebrow does not contradict the menu group; one term each for certifications, certificates (closeout PDFs) and credentials.",
+      "acceptance": [
+        "Title equals nav label; glossary check passes."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-RNG-075",
+      "title": "Server is the only source of truth for Range Days; no localStorage data fallback",
+      "module": "range-days",
+      "screen": "/range-days",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P0",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARC-01"
+        }
+      ],
+      "requirement": "Range Days stops reading a full workspace from browser localStorage when the server is unavailable and stops writing the workspace there; the only browser-held range data is the unsynced-work outbox (UX-RB-5 design), which is replayed to the server and never resurrects a stale workspace.",
+      "acceptance": [
+        "With the server unreachable, the page shows a 'Couldn't load · Retry' state instead of a locally cached workspace.",
+        "No code path writes tracepoint.rangeDays.workspace.v1; unsynced scores survive a reload through the outbox (§1b reliable range autosave).",
+        "Audit writes are unchanged (§1b)."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6",
+        "MOD-RNG-018"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "R1: Partially resolved — off-duty and inbox are server-side; Range still uses localStorage (range-days/page.tsx:424,441). Blocked: no work on range-days/page.tsx until UX-RB-5/6 (claude/fix-uxrb-release-safety) settles on the verified baseline."
+    },
+    {
+      "id": "MOD-RNG-076",
+      "title": "Range rosters, results and malfunctions written to the normalized tables",
+      "module": "range-days",
+      "screen": "/api/pilot/range-workspace, /api/mobile/range-workspace",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARC-05"
+        }
+      ],
+      "requirement": "Live range writes (web and mobile) go to the normalized roster, result and malfunction tables instead of one JSON workspace column per department.",
+      "acceptance": [
+        "Route tests: saving a result on web and on mobile writes rows to the normalized tables.",
+        "Read repositories return the same data as the baseline for a migrated department (parity test).",
+        "Audit writes are unchanged: same entries with actor, time, before and after as the baseline audit export (§1b)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "R1: Still open; the mobile PUT widens it. Related to the concurrency choice in MOD-RNG-017 (per-result writes)."
+    },
+    {
+      "id": "MOD-RNG-077",
+      "title": "One Range Day type model aligned with the database, including all seven scoring formats",
+      "module": "range-days",
+      "screen": "lib/tracepoint/types.ts, range-day-types.ts",
+      "category": "infrastructure",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "ARC-02"
+        },
+        {
+          "doc": "OA",
+          "ref": "ARC-04"
+        }
+      ],
+      "requirement": "Collapse the duplicate RangeDay definitions into one type aligned with the database schema, and replace the four-value UI ScoringMode with the database scoring_format enum (seven modes).",
+      "acceptance": [
+        "Only one RangeDay type is exported; tsc passes.",
+        "The UI scoring type has exactly the scoring_format enum values; a test fails if they diverge."
+      ],
+      "dependencies": [
+        "UX-RB-5",
+        "UX-RB-6"
+      ],
+      "status": "Blocked",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "R1: Still open. Blocked: touches range-days/page.tsx, which waits for UX-RB-5/6 to settle on the verified baseline."
+    },
+    {
+      "id": "MOD-TRN-035",
+      "title": "Certifications back-link and the /training hub match the navigation",
+      "module": "training",
+      "screen": "/training, /training/certifications",
+      "category": "workflow",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-20"
+        }
+      ],
+      "requirement": "Certifications sits under Readiness in the nav, so its back-link and breadcrumb follow the nav (not a 'Training' link to a hub that is not in the nav); the /training hub is either removed or added to the nav consistently.",
+      "acceptance": [
+        "Every link on /training/certifications points to a page reachable from the nav, labelled as in the nav.",
+        "/training is either in the nav or no longer linked."
+      ],
+      "dependencies": [
+        "MOD-SHELL-011"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "The hub's 'Coming next' card is MOD-TRN-021."
+    },
+    {
+      "id": "MOD-TRN-036",
+      "title": "Training hub and Certifications let the shell own page padding",
+      "module": "training",
+      "screen": "/training, /training/certifications",
+      "category": "visual",
+      "owner": "codex",
+      "track": "A",
+      "priority": "P2",
+      "sources": [
+        {
+          "doc": "UX",
+          "ref": "A-21"
+        }
+      ],
+      "requirement": "Remove the page-level px-6 py-8 wrapper so the shell's padding applies once and phone gutters match other pages.",
+      "acceptance": [
+        "At 375px the content gutter on /training and /training/certifications equals the other shell pages (about 12px, not 36px)."
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released"
+    },
+    {
+      "id": "MOD-TRN-037",
+      "title": "Officers are notified when rostered, and when a training event is rescheduled or cancelled",
+      "module": "training",
+      "screen": "agency-training notifications",
+      "category": "infrastructure",
+      "owner": "deployment",
+      "track": "C",
+      "priority": "P1",
+      "sources": [
+        {
+          "doc": "OA",
+          "ref": "TRN-33"
+        }
+      ],
+      "requirement": "Add agency_training_assignment, agency_training_changed and agency_training_cancelled notifications (with an ICS attachment on email), matching what range days already do for rostered officers.",
+      "acceptance": [
+        "Adding an officer to an event creates an inbox item for that officer; rescheduling or cancelling notifies every rostered officer.",
+        "Email copies include an ICS attachment."
+      ],
+      "dependencies": [
+        "MOD-OPS-023"
+      ],
+      "status": "Not Started",
+      "staging": "Not released",
+      "production": "Not released",
+      "notes": "OA disposition: Enhancement – defer (finding-status). Email delivery depends on the dispatch scheduler (MOD-OPS-023, B6)."
+    }
+  ]
+}
