@@ -1,8 +1,86 @@
 @import "tailwindcss";
 
+/*
+ * TracePoint design tokens (MOD-DS). Contract: docs/modernization/design-system/TOKENS.md
+ *
+ * Runtime values live as --tp-* custom properties so the appearance preferences
+ * (accent and brightness classes set by TracePointShell) can swap them. Tailwind
+ * utilities read them through @theme inline: bg-surface, text-fg-muted, border-line,
+ * bg-accent, text-danger, bg-warning-soft, text-caption, rounded-control and so on.
+ * Modules use these utilities; they never pick raw palette colors to carry meaning.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  /* Surfaces: the navy command-center identity */
+  --tp-canvas: #020617;
+  --tp-surface: #0b1222;
+  --tp-surface-raised: #111a2e;
+  --tp-surface-sunken: #050b19;
+  --tp-line: #1e293b;
+  --tp-line-strong: #334155;
+
+  /* Text. Muted is the lowest contrast allowed for text (>= 4.5:1 on every surface). */
+  --tp-fg: #f1f5f9;
+  --tp-fg-secondary: #cbd5e1;
+  --tp-fg-muted: #94a3b8;
+
+  /* Accent (follows the agency accent preference) */
+  --tp-accent: #2563eb;
+  --tp-accent-hover: #3b82f6;
+  --tp-accent-fg: #ffffff;
+  --tp-accent-text: #93c5fd;
+  --tp-focus: #60a5fa;
+
+  /* Status roles. Color only ever signals status (blueprint §1). */
+  --tp-success: #34d399;
+  --tp-warning: #fbbf24;
+  --tp-danger: #f87171;
+  --tp-info: #60a5fa;
+  --tp-neutral: #94a3b8;
+
+  /* Legacy names, kept for code that still reads them */
+  --background: var(--tp-canvas);
+  --foreground: var(--tp-fg);
+}
+
+.tracepoint-accent-indigo {
+  --tp-accent: #4f46e5;
+  --tp-accent-hover: #6366f1;
+  --tp-accent-text: #a5b4fc;
+  --tp-focus: #818cf8;
+}
+
+.tracepoint-accent-emerald {
+  --tp-accent: #047857;
+  --tp-accent-hover: #059669;
+  --tp-accent-text: #6ee7b7;
+  --tp-focus: #34d399;
+}
+
+.tracepoint-accent-slate {
+  --tp-accent: #475569;
+  --tp-accent-hover: #64748b;
+  --tp-accent-text: #cbd5e1;
+  --tp-focus: #cbd5e1;
+}
+
+.tracepoint-brightness-balanced {
+  --tp-canvas: #0f172a;
+  --tp-surface: #16213a;
+  --tp-surface-raised: #1e293b;
+  --tp-surface-sunken: #0b1222;
+  --tp-line: #334155;
+}
+
+.tracepoint-brightness-high-contrast {
+  --tp-canvas: #000000;
+  --tp-surface: #020617;
+  --tp-surface-raised: #0f172a;
+  --tp-line: #475569;
+  --tp-line-strong: #64748b;
+  --tp-fg-secondary: #e2e8f0;
+  --tp-fg-muted: #cbd5e1;
 }
 
 @theme inline {
@@ -10,17 +88,92 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-canvas: var(--tp-canvas);
+  --color-surface: var(--tp-surface);
+  --color-surface-raised: var(--tp-surface-raised);
+  --color-surface-sunken: var(--tp-surface-sunken);
+  --color-line: var(--tp-line);
+  --color-line-strong: var(--tp-line-strong);
+
+  --color-fg: var(--tp-fg);
+  --color-fg-secondary: var(--tp-fg-secondary);
+  --color-fg-muted: var(--tp-fg-muted);
+
+  --color-accent: var(--tp-accent);
+  --color-accent-hover: var(--tp-accent-hover);
+  --color-accent-fg: var(--tp-accent-fg);
+  --color-accent-text: var(--tp-accent-text);
+  --color-accent-soft: color-mix(in oklab, var(--tp-accent) 16%, transparent);
+  --color-focus: var(--tp-focus);
+
+  --color-success: var(--tp-success);
+  --color-success-soft: color-mix(in oklab, var(--tp-success) 12%, transparent);
+  --color-success-line: color-mix(in oklab, var(--tp-success) 35%, transparent);
+  --color-warning: var(--tp-warning);
+  --color-warning-soft: color-mix(in oklab, var(--tp-warning) 12%, transparent);
+  --color-warning-line: color-mix(in oklab, var(--tp-warning) 35%, transparent);
+  --color-danger: var(--tp-danger);
+  --color-danger-soft: color-mix(in oklab, var(--tp-danger) 12%, transparent);
+  --color-danger-line: color-mix(in oklab, var(--tp-danger) 35%, transparent);
+  --color-info: var(--tp-info);
+  --color-info-soft: color-mix(in oklab, var(--tp-info) 12%, transparent);
+  --color-info-line: color-mix(in oklab, var(--tp-info) 35%, transparent);
+  --color-neutral: var(--tp-neutral);
+  --color-neutral-soft: color-mix(in oklab, var(--tp-neutral) 12%, transparent);
+  --color-neutral-line: color-mix(in oklab, var(--tp-neutral) 30%, transparent);
+
+  /* Type scale (Geist). Nothing below 12px. */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.125rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.25rem;
+  --text-emphasis: 1rem;
+  --text-emphasis--line-height: 1.5rem;
+  --text-section: 1.25rem;
+  --text-section--line-height: 1.75rem;
+  --text-title: 1.5rem;
+  --text-title--line-height: 2rem;
+  --text-kpi: 1.875rem;
+  --text-kpi--line-height: 2.25rem;
+
+  --radius-control: 6px;
+  --radius-card: 10px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  /*
+   * In the base layer so page utilities (bg-slate-950 on <body>) still win. The old
+   * unlayered rule painted body white on light-mode systems.
+   */
+  body {
+    background: var(--tp-canvas);
+    color: var(--tp-fg);
+    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  }
+
+  /* Dark scrollbars everywhere (blueprint #18) */
+  * {
+    scrollbar-color: var(--tp-line-strong) transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--tp-focus);
+    outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background: rgb(2 6 23 / 0.7);
+    backdrop-filter: blur(2px);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+/* 44px minimum target on coarse pointers (phones, tablets, gloves) */
+@utility tp-touch-target {
+  @media (pointer: coarse) {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
