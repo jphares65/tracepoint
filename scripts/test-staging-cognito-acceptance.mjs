@@ -78,7 +78,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           const auditResponse = await context.request.get('/api/settings/audit-log?limit=100');
           assert.equal(auditResponse.status(), 200);
           const audit = await auditResponse.json();
-          assert.ok(audit.events.some(event => event.action === 'department_patch_upload' && event.details?.result === 'succeeded'));
+          assert.ok(audit.events.some(event => event.action === 'department_patch_upload' && event.new_values?.result === 'succeeded'));
           add('administrator action is present in tenant audit log', 'pass');
         } else if (user.agencyIndex === 0) {
           activePhase = `${user.role}-authorization-denial`;
