@@ -35,6 +35,17 @@ function aws(args) {
   return JSON.parse(execFileSync('aws.exe', [...args, '--profile', process.env.AWS_PROFILE, '--region', region, '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
+async function retryTransientAws(operation) {
+  for (let attempt = 0; ; attempt += 1) {
+    try { return await operation(); }
+    catch (error) {
+      const code = error?.code ?? error?.name;
+      if (!['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'TimeoutError', 'AbortError'].includes(code) || attempt >= 2) throw error;
+      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+    }
+  }
+}
+
 function currentIdentity() {
   const identity = aws(['sts', 'get-caller-identity']);
   assert.equal(identity.Account, account, 'Only the staging account is allowed.');
@@ -81,9 +92,9 @@ async function listCognitoAcceptanceUsers() {
   const found = [];
   let paginationToken;
   do {
-    const page = await identityClient.send(new ListUsersCommand({
+    const page = await retryTransientAws(() => identityClient.send(new ListUsersCommand({
       UserPoolId: poolId, Limit: 60, ...(paginationToken ? { PaginationToken: paginationToken } : {}),
-    }));
+    })));
     found.push(...(page.Users ?? []).filter(isStagingAcceptanceUser));
     paginationToken = page.PaginationToken;
   } while (paginationToken);
@@ -164,7 +175,7 @@ async function deleteCognitoUsers(manifest) {
   const usernames = new Set([...createdUsernames, ...liveFixtureNames].filter(username => /^[0-9a-f-]{36}$/i.test(username ?? '')));
   let failed = false;
   for (const username of [...usernames].reverse()) {
-    try { await identityClient.send(new AdminDeleteUserCommand({ UserPoolId: poolId, Username: username })); }
+    try { await retryTransientAws(() => identityClient.send(new AdminDeleteUserCommand({ UserPoolId: poolId, Username: username }))); }
     catch (error) { if (error?.name !== 'UserNotFoundException') failed = true; }
   }
   if (failed) throw new Error('One or more staging Cognito fixture identities could not be deleted.');
@@ -186,7 +197,9 @@ async function main() {
     const manifestPath = process.argv[recoveryIndex + 1];
     if (!manifestPath) throw new Error('A fixture recovery manifest path is required.');
     const manifestInput = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'));
+    setOperationStage('verify-staging-account');
     currentIdentity();
+    setOperationStage('resolve-canonical-cognito-usernames');
     const liveUsers = await listCognitoAcceptanceUsers();
     for (const user of manifestInput.users ?? []) {
       if (!/^[0-9a-f-]{36}$/i.test(user.username ?? '')) {
@@ -199,13 +212,19 @@ async function main() {
     }
     const manifest = validateStagingFixtureManifest(manifestInput, 'cleanup');
     await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
+    setOperationStage('verify-cognito-cleanup-target');
     await verifyCognitoBoundary(manifest.users.map(user => user.username), false, true);
     for (const user of manifest.users ?? []) createdUsernames.push(user.username);
+    setOperationStage('verify-staging-database-boundary');
     verifyLiveBoundary();
     const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
+    setOperationStage('remove-staging-fixture-objects');
     await cleanupStorage(manifest);
+    setOperationStage('run-database-fixture-cleanup');
     runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
+    setOperationStage('remove-cognito-fixture-users');
     await deleteCognitoUsers(manifest);
+    setOperationStage('verify-fixture-cleanup');
     await rm(path.dirname(manifestPath), { recursive: true, force: true });
     console.log(JSON.stringify({ fixtureRun: manifest.run, cleanup: 'verified', secretsPersisted: false }));
     return;
