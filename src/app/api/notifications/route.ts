@@ -827,11 +827,27 @@ async function getPreferences(context: any) {
 }
 
 async function getNotificationRecipientEmail(context: any) {
+  const userId = text(context?.user?.id) || text(context?.userId);
+
+  // AT-3: the queue accepts only the member's agency profile address
+  // (tracepoint_auth.enqueue_notification_email, database/aws/024); a sign-in
+  // address that differs from it was refused on every load.
+  if (userId) {
+    const { data: profile, error: profileError } = await context.admin
+      .from("profiles")
+      .select("email")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileError) {
+      throw new Error(`Notification recipient lookup failed: ${profileError.message}`);
+    }
+    const profileEmail = text(profile?.email);
+    if (profileEmail) return profileEmail;
+  }
+
   const sessionEmail = text(context?.user?.email);
 
   if (sessionEmail) return sessionEmail;
-
-  const userId = text(context?.user?.id) || text(context?.userId);
 
   if (!userId) {
     throw new Error(
@@ -938,10 +954,16 @@ export async function GET(request: NextRequest) {
 
   try {
     const preferences = await getPreferences(context);
-    const notificationRecipientEmail =
-      preferences.email_enabled
-        ? await getNotificationRecipientEmail(context)
-        : "";
+    // AT-3: email is a side effect of reading the inbox; a recipient or queue
+    // failure is counted and logged, and never fails the inbox itself. A
+    // platform administrator supporting an agency is not its member, so their
+    // view queues nothing.
+    const emailQueue = { queued: 0, failed: 0, recipientUnavailable: false };
+    let notificationRecipientEmail = "";
+    if (preferences.email_enabled && context.isSupportMode !== true) {
+      try { notificationRecipientEmail = await getNotificationRecipientEmail(context); }
+      catch { emailQueue.recipientUnavailable = true; }
+    }
     const [
       rifles,
       ammunition,
@@ -1158,12 +1180,20 @@ export async function GET(request: NextRequest) {
           scheduled_for: emailScheduledFor,
           status: "Pending",
           updated_at: now,
-        }); } catch (queueError) {
-          throw new Error(
-            `Notification email could not be queued: ${queueError instanceof Error ? queueError.message : "Unknown error"}`,
-          );
+        }); emailQueue.queued += 1; } catch {
+          emailQueue.failed += 1;
         }
       }
+    }
+    if (emailQueue.failed || emailQueue.recipientUnavailable) {
+      // No address, subject or notification content is logged.
+      console.warn(JSON.stringify({
+        event: "notification_email_queue_failed",
+        departmentId: context.departmentId,
+        failed: emailQueue.failed,
+        queued: emailQueue.queued,
+        recipientUnavailable: emailQueue.recipientUnavailable,
+      }));
     }
 
     const activeKeys = new Set(filtered.map((item) => item.key));
@@ -1224,6 +1254,7 @@ export async function GET(request: NextRequest) {
       allOpenItems: sortRows(allOpenItems),
       preferences,
       sourceErrors,
+      emailQueue: { failed: emailQueue.failed, recipientUnavailable: emailQueue.recipientUnavailable },
       counts: {
         open: myItems.length,
         myOpen: myItems.length,

@@ -23,8 +23,8 @@ const USER = "a0000000-0000-4000-8000-000000000001";
 type Row = Record<string, any>;
 type Hook = (table: string, op: string, payload: any) => Promise<void> | void;
 
-const state: { tables: Record<string, Row[]>; fleet: Row[]; hook: Hook | null; writes: { table: string; op: string }[] } = {
-  tables: {}, fleet: [], hook: null, writes: [],
+const state: { tables: Record<string, Row[]>; fleet: Row[]; hook: Hook | null; writes: { table: string; op: string }[]; rejectEmail: boolean } = {
+  tables: {}, fleet: [], hook: null, writes: [], rejectEmail: false,
 };
 const UNIQUE: Record<string, string[]> = {
   notification_events: ["department_id", "user_id", "notification_key"],
@@ -51,6 +51,8 @@ function from(table: string) {
   async function run() {
     await new Promise((resolve) => setImmediate(resolve));
     if (op !== "select") { state.writes.push({ table, op }); if (state.hook) await state.hook(table, op, payload); }
+    // AT-3: tracepoint_auth.enqueue_notification_email refuses (recipient is not the profile address, or support mode).
+    if (state.rejectEmail && table === "notification_email_queue") return { data: null, error: { message: "Notification enqueue was rejected." } };
     const rows = (state.tables[table] ??= []);
     if (op === "select") {
       const matched = rows.filter((row) => filters.every((filter) => filter(row))).map((row) => ({ ...row }));
@@ -113,7 +115,8 @@ const high = { key: `fleet-service-hours-${USER}-v-2`, source: "Fleet", kind: "f
 
 function reset(items: Row[]) {
   state.tables = { notification_events: [], notification_email_queue: [], notification_preferences: [] };
-  state.fleet = items; state.hook = null; state.writes = []; fetched.length = 0;
+  state.fleet = items; state.hook = null; state.writes = []; state.rejectEmail = false; fetched.length = 0;
+  context.isSupportMode = false; context.user.email = "officer@agency.example";
 }
 const queue = () => state.tables.notification_email_queue;
 const events = () => state.tables.notification_events;
@@ -190,4 +193,54 @@ test("a genuinely changed condition still reopens the item and queues exactly on
   // Unchanged afterwards: no further rows.
   await get();
   assert.equal(queue().length, 2);
+});
+
+// AT-3 (staging acceptance 2026-10-22, N1): one email the queue refused made GET /api/notifications answer 500 on
+// every load, so the dashboard showed no notifications at all.
+test("AT-3 an email the queue refuses never fails the inbox; the failure is counted and logged without the address", async () => {
+  reset([critical, high]);
+  state.rejectEmail = true;
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (message: string) => { warnings.push(String(message)); };
+  try {
+    const payload = await get();
+    assert.equal(payload.items.length, 2, "the inbox is returned");
+    assert.deepEqual(payload.emailQueue, { failed: 1, recipientUnavailable: false });
+    assert.equal(events().length, 2, "the notifications themselves are recorded");
+    assert.equal(queue().length, 0);
+  } finally { console.warn = warn; }
+  const logged = warnings.map((line) => JSON.parse(line)).find((entry) => entry.event === "notification_email_queue_failed");
+  assert.deepEqual(logged, { event: "notification_email_queue_failed", departmentId: DEPARTMENT, failed: 1, queued: 0, recipientUnavailable: false });
+  assert.equal(warnings.join("\n").includes("@"), false, "no address is logged");
+});
+
+test("AT-3 email goes to the member's agency profile address, the one the queue accepts, not a differing sign-in address", async () => {
+  reset([critical]);
+  state.tables.profiles = [{ id: USER, email: "k.tine@agency.example" }];
+  context.user.email = "kris.personal@example.com";
+  const payload = await get();
+  assert.deepEqual(payload.emailQueue, { failed: 0, recipientUnavailable: false });
+  assert.deepEqual(queue().map((row) => row.recipient_email), ["k.tine@agency.example"]);
+});
+
+test("AT-3 with no usable recipient the inbox still loads and nothing is queued", async () => {
+  reset([critical]);
+  state.tables.profiles = [{ id: USER, email: null }];
+  context.user.email = "";
+  (context.admin as any).auth = { admin: { getUserById: async () => ({ data: { user: { email: null } }, error: null }) } };
+  try {
+    const payload = await get();
+    assert.equal(payload.items.length, 1);
+    assert.deepEqual(payload.emailQueue, { failed: 0, recipientUnavailable: true });
+    assert.equal(queue().length, 0);
+  } finally { delete (context.admin as any).auth; }
+});
+
+test("AT-3 a platform administrator supporting an agency queues no email for its notifications", async () => {
+  reset([critical]);
+  context.isSupportMode = true;
+  const payload = await get();
+  assert.equal(payload.items.length + payload.departmentItems.length, 1);
+  assert.equal(queue().length, 0);
 });
