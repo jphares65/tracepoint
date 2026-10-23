@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
+import QRCode from 'qrcode';
 import { applyStagingFixture, isStagingAcceptanceUser, sanitizeFixturePostgresDiagnostic, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
-import { extractTotpSecret, extractTotpSecretFromQrPayload, totp } from './staging-cognito-login.mjs';
+import { extractTotpSecret, extractTotpSecretFromQrImage, extractTotpSecretFromQrPayload, totp } from './staging-cognito-login.mjs';
 
 const run = 'c30a4084-6487-4c42-9d6f-83fd1df935a8';
 const manifest = {
@@ -129,6 +130,12 @@ test('extracts only valid TOTP secrets from Cognito otpauth QR payloads', () => 
   assert.equal(extractTotpSecretFromQrPayload('otpauth://totp/TracePoint%3Aofficer?secret=ABCDEFGHIJKLMNOP&issuer=TracePoint'), 'ABCDEFGHIJKLMNOP');
   assert.equal(extractTotpSecretFromQrPayload('https://example.invalid/?secret=ABCDEFGHIJKLMNOP'), null);
   assert.equal(extractTotpSecretFromQrPayload('otpauth://totp/TracePoint?secret=short'), null);
+});
+
+test('decodes a rendered Cognito TOTP QR image entirely in memory', async () => {
+  const payload = 'otpauth://totp/TracePoint%3Aofficer?secret=ABCDEFGHIJKLMNOP&issuer=TracePoint';
+  const image = await QRCode.toBuffer(payload, { type: 'png', margin: 4, scale: 6 });
+  assert.equal(extractTotpSecretFromQrImage(image), 'ABCDEFGHIJKLMNOP');
 });
 
 test('migration runner image copies its local fixture module dependency', async () => {

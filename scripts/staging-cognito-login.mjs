@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import jsQR from 'jsqr';
+import { PNG } from 'pngjs';
 
 export function totp(secret, now = Date.now()) {
   const clean = String(secret).replace(/[\s=-]/g, '').toUpperCase();
@@ -125,38 +127,31 @@ export function extractTotpSecretFromQrPayload(payload) {
 }
 
 async function extractTotpSecretFromQr(page) {
-  const empty = { secret: null, diagnostics: { barcodeDetectorAvailable: false, imageCount: 0, canvasCount: 0, qrDecoded: false, totpPayloadFound: false } };
-  try {
-    const result = await page.evaluate(async () => {
-      const images = [...document.images];
-      const canvases = [...document.querySelectorAll('canvas')];
-      if (typeof BarcodeDetector !== 'function') return { supported: false, imageCount: images.length, canvasCount: canvases.length, qrDecoded: false, payloads: [] };
-      const detector = new BarcodeDetector({ formats: ['qr_code'] });
-      const candidates = [...images, ...canvases];
-      const decoded = [];
-      for (const candidate of candidates) {
-        try {
-          for (const item of await detector.detect(candidate)) {
-            if (/^otpauth:\/\/totp\//i.test(item.rawValue ?? '')) decoded.push(item.rawValue);
-          }
-        } catch { /* Ignore non-QR images and continue through rendered candidates. */ }
-      }
-      return { supported: true, imageCount: images.length, canvasCount: canvases.length, qrDecoded: decoded.length > 0, payloads: decoded };
-    });
-    const diagnostics = {
-      barcodeDetectorAvailable: result.supported === true,
-      imageCount: Number.isInteger(result.imageCount) ? result.imageCount : 0,
-      canvasCount: Number.isInteger(result.canvasCount) ? result.canvasCount : 0,
-      qrDecoded: result.qrDecoded === true,
-      totpPayloadFound: Array.isArray(result.payloads) && result.payloads.some(payload => /^otpauth:\/\/totp\//i.test(payload)),
-    };
-    for (const payload of result.payloads ?? []) {
-      const secret = extractTotpSecretFromQrPayload(payload);
+  const diagnostics = { barcodeDetectorAvailable: false, imageCount: 0, canvasCount: 0, qrDecoded: false, totpPayloadFound: false };
+  const images = page.locator('img:visible');
+  diagnostics.imageCount = await images.count().catch(() => 0);
+  diagnostics.canvasCount = await page.locator('canvas:visible').count().catch(() => 0);
+  for (let index = 0; index < diagnostics.imageCount; index += 1) {
+    try {
+      const screenshot = await images.nth(index).screenshot({ animations: 'disabled', timeout: 5_000 });
+      const secret = extractTotpSecretFromQrImage(screenshot);
+      if (!secret) continue;
+      diagnostics.qrDecoded = true;
+      diagnostics.totpPayloadFound = true;
       if (secret) return { secret, diagnostics };
-    }
-    return { secret: null, diagnostics };
-  } catch { /* Browser QR decoding is best-effort; the manual setup path remains available. */ }
-  return empty;
+    } catch { /* Ignore image elements that are not readable QR codes. */ }
+  }
+  return { secret: null, diagnostics };
+}
+
+export function extractTotpSecretFromQrImage(imageBuffer) {
+  try {
+    const png = PNG.sync.read(imageBuffer);
+    const decoded = jsQR(new Uint8ClampedArray(png.data), png.width, png.height, { inversionAttempts: 'attemptBoth' });
+    return decoded?.data ? extractTotpSecretFromQrPayload(decoded.data) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function submit(page) {
