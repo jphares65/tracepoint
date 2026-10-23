@@ -45,9 +45,11 @@ test('pins all fixture SQL to the configured staging database host before connec
 test('creates only the declared agencies, identities, memberships, roles, and equipment entitlement in one transaction', async () => {
   const statements = [];
   const identityLinkUsernames = [];
+  const roleAssignments = [];
   const client = { async query(sql, parameters = []) {
     statements.push(sql);
     if (sql.includes('insert into public.authentication_identity_links')) identityLinkUsernames.push(parameters[3]);
+    if (sql.includes('insert into public.department_membership_roles')) roleAssignments.push(parameters);
     if (sql.includes('select id from public.departments')) return { rows: [], rowCount: 0 };
     if (sql.includes('select 1 from public.profiles')) return { rows: [], rowCount: 0 };
     if (sql.includes('select code from public.feature_catalog')) return { rows: [{ code: 'equipment_readiness' }], rowCount: 1 };
@@ -70,6 +72,11 @@ test('creates only the declared agencies, identities, memberships, roles, and eq
   assert.match(authAnchor, /auth\.users\(id,email,raw_user_meta_data\)/);
   assert.doesNotMatch(authAnchor, /\b(?:aud|role|encrypted_password|email_confirmed_at|raw_app_meta_data|created_at|updated_at)\b/);
   assert.deepEqual(identityLinkUsernames, manifest.users.map(user => user.username));
+  const firstRoleIndex = statements.findIndex(sql => sql.includes('insert into public.department_membership_roles'));
+  assert.equal(statements.slice(0, firstRoleIndex).filter(sql => sql.includes('insert into auth.users')).length, 5);
+  assert.equal(statements.slice(0, firstRoleIndex).filter(sql => sql.includes('insert into public.department_memberships')).length, 5);
+  const administratorId = manifest.users.find(user => user.role === 'administrator').id;
+  assert.deepEqual(roleAssignments.map(parameters => parameters[3]), [administratorId, administratorId, administratorId, null, null]);
   assert.ok(statements.every(sql => !/^\s*(alter|create|drop)\b/i.test(sql)));
 });
 

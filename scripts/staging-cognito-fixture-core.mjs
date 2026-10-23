@@ -146,6 +146,11 @@ async function createFixture(client, manifest) {
       values('cognito',$1,$2,$3,'active',$4)`, [manifest.issuer, user.subject, user.id, user.username]);
     await fixtureQuery(client, 'membership.create', `insert into public.department_memberships(department_id,user_id,is_active)
       values($1,$2,true)`, [departmentId, user.id]);
+  }
+  // assigned_by references auth.users, so the Administrator anchor must exist
+  // before any other synthetic role row is assigned to it.
+  for (const user of manifest.users) {
+    const departmentId = manifest.agencies[user.agencyIndex].id;
     await fixtureQuery(client, 'membership.assign_role', `insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by)
       values($1,$2,$3,$4)`, [departmentId, user.id, user.role, user.agencyIndex === 0 && user.role !== 'administrator' ? admin.id : null]);
   }
