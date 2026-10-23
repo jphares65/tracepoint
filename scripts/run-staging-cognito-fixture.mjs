@@ -48,7 +48,7 @@ async function connectStaging() {
 
 let client;
 try {
-  if (!['create', 'cleanup'].includes(action)) throw new Error('Fixture action must be create or cleanup.');
+  if (!['create', 'cleanup', 'verify'].includes(action)) throw new Error('Fixture action must be create, cleanup or verify.');
   operationStage = 'connect-staging-database';
   client = await connectStaging();
   operationStage = 'acquire-fixture-lock';
@@ -56,7 +56,7 @@ try {
   let manifest;
   try { manifest = JSON.parse(process.env.TRACEPOINT_ACCEPTANCE_FIXTURE_JSON ?? ''); }
   catch { throw new Error('Staging acceptance fixture manifest is invalid.'); }
-  operationStage = action === 'create' ? 'seed-fixture-records' : 'remove-fixture-records';
+  operationStage = { create: 'seed-fixture-records', cleanup: 'remove-fixture-records', verify: 'verify-fixture-ownership' }[action];
   const report = await applyStagingFixture(client, action, manifest);
   console.log(JSON.stringify(report));
 } catch (error) {

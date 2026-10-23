@@ -10,6 +10,7 @@ import {
 import { DeleteObjectCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
 import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
+import { fixtureStoragePrefix, planFixtureStorageDeletion } from './staging-acceptance-fixture-storage.mjs';
 import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureManifest, removeFixtureRunDirectory } from './staging-acceptance-fixture-directory.mjs';
 
 const account = '559054714699';
@@ -156,20 +157,27 @@ function runFixtureTask(action, manifestPath, toolingCommit) {
   if (result.error || result.status !== 0) throw new Error('Staging fixture task did not complete successfully.');
 }
 
-async function cleanupStorage(manifest) {
+async function listFixtureStorage(manifest, target) {
+  const listings = [];
+  for (const agency of manifest.agencies) {
+    const prefix = fixtureStoragePrefix(agency.id);
+    listings.push({ prefix, ...(await s3.send(new ListObjectVersionsCommand({ ...target, Prefix: prefix }))) });
+  }
+  return listings;
+}
+
+// Deletes only the objects the run recorded creating, and only after the staging database confirms the agencies are
+// this run's synthetic agencies and attests each object's upload. Any other object under the run's prefixes, or a
+// failed ownership check, stops cleanup before anything is deleted.
+async function cleanupStorage(manifest, manifestPath, toolingCommit) {
   currentIdentity();
   const target = { Bucket: 'tracepoint-staging-private-559054714699', ExpectedBucketOwner: account };
-  for (const agency of manifest.agencies) {
-    const prefix = `department-assets/${agency.id}/`;
-    const listing = await s3.send(new ListObjectVersionsCommand({ ...target, Prefix: prefix }));
-    if (listing.IsTruncated) throw new Error('Staging fixture storage cleanup exceeded one page.');
-    for (const object of [...(listing.Versions ?? []), ...(listing.DeleteMarkers ?? [])]) {
-      if (!object.Key?.startsWith(prefix) || !object.VersionId) throw new Error('Staging fixture storage cleanup target did not match.');
-      await s3.send(new DeleteObjectCommand({ ...target, Key: object.Key, VersionId: object.VersionId }));
-    }
-    const remaining = await s3.send(new ListObjectVersionsCommand({ ...target, Prefix: prefix }));
-    if ((remaining.Versions?.length ?? 0) + (remaining.DeleteMarkers?.length ?? 0) !== 0) throw new Error('Staging fixture storage cleanup was incomplete.');
-  }
+  const deletions = planFixtureStorageDeletion(manifest, await listFixtureStorage(manifest, target));
+  if (!deletions.length) return;
+  runFixtureTask('acceptance-fixture-verify', manifestPath, toolingCommit);
+  for (const object of deletions) await s3.send(new DeleteObjectCommand({ ...target, ...object }));
+  const remaining = await listFixtureStorage(manifest, target);
+  if (remaining.some(listing => (listing.Versions?.length ?? 0) + (listing.DeleteMarkers?.length ?? 0) !== 0)) throw new Error('Staging fixture storage cleanup was incomplete.');
 }
 
 async function deleteCognitoUsers(manifest) {
@@ -229,7 +237,7 @@ async function main() {
     verifyLiveBoundary();
     const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
     setOperationStage('remove-staging-fixture-objects');
-    await cleanupStorage(manifest);
+    await cleanupStorage(manifest, manifestPath, toolingCommit);
     setOperationStage('run-database-fixture-cleanup');
     runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
     setOperationStage('remove-cognito-fixture-users');
@@ -261,7 +269,13 @@ async function main() {
     setOperationStage('seed-staging-database-fixtures');
     runFixtureTask('acceptance-fixture-create', manifestPath, toolingCommit);
     setOperationStage('authenticated-pkce-mfa-acceptance');
-    const acceptance = await runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets: secrets });
+    const acceptance = await runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets: secrets, onStorageObject: async (key) => {
+      // Recorded before anything else happens, so cleanup and recovery can delete exactly this object.
+      const tracked = { ...manifest, storageObjects: [...(manifest.storageObjects ?? []), key] };
+      validateStagingFixtureManifest(tracked, 'cleanup');
+      manifest.storageObjects = tracked.storageObjects;
+      await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
+    } });
     console.log(JSON.stringify({ stagingTarget: 'verified', taskRevision: boundary.service.taskDefinition.split(':').at(-1), appDigest: boundary.appDigest }));
     for (const item of acceptance.results) console.log(JSON.stringify(item));
     resultCode = acceptance.results.every(item => item.status === 'pass') ? 0 : 1;
@@ -271,8 +285,8 @@ async function main() {
     try {
       setOperationStage('cleanup-staging-fixtures');
       if (taskAttempted) {
-        await cleanupStorage(manifest);
         const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
+        await cleanupStorage(manifest, manifestPath, toolingCommit);
         runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
       }
     } catch { cleanupError = true; }

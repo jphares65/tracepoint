@@ -5,7 +5,7 @@ import { loginThroughCognitoPkce } from './staging-cognito-login.mjs';
 const baseURL = 'https://staging.tracepointhq.com';
 const pixelPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+nm6kAAAAASUVORK5CYII=', 'base64');
 
-export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map() }) {
+export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {} }) {
   const results = [];
   const browser = await chromium.launch({ headless: true });
   let typeId;
@@ -75,6 +75,8 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           const patch = await context.request.post('/api/settings/department-patch', { multipart: { file: { name: 'acceptance.png', mimeType: 'image/png', buffer: pixelPng } } });
           assert.equal(patch.status(), 200);
           patchCreated = true;
+          // Cleanup deletes only objects recorded here; the delivery path is the object's key below department-assets/.
+          await onStorageObject(`department-assets/${new URL((await patch.json()).patchUrl, baseURL).searchParams.get('path') ?? ''}`);
           const auditResponse = await context.request.get('/api/settings/audit-log?limit=100');
           assert.equal(auditResponse.status(), 200);
           const audit = await auditResponse.json();
