@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const roles = new Set(['officer', 'instructor', 'supervisor', 'administrator']);
 const issuer = 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Y9GiDA5Zy';
+// The only object the acceptance run creates: the Agency A patch upload, under that agency's department-assets prefix.
+const fixtureObjectKey = /^department-assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(patch-[0-9]{1,16}\.(?:png|jpg|webp))$/;
 export const stagingAuthUserAnchorSql = `insert into auth.users(id,email,raw_user_meta_data)
   values($1,$2,jsonb_build_object('full_name',$3::text,'identity_provider','cognito'))
   on conflict(id) do nothing`;
 
 export function validateStagingFixtureManifest(manifest, action) {
-  assert.equal(action === 'create' || action === 'cleanup', true, 'Unsupported fixture action.');
+  assert.equal(['create', 'cleanup', 'verify'].includes(action), true, 'Unsupported fixture action.');
   assert.ok(manifest && typeof manifest === 'object' && !Array.isArray(manifest), 'Fixture manifest is invalid.');
   assert.equal(manifest.environment, 'staging', 'Fixtures are staging-only.');
   assert.match(manifest.run, uuid, 'Fixture run identifier is invalid.');
@@ -44,7 +46,24 @@ export function validateStagingFixtureManifest(manifest, action) {
   }
   for (const role of roles) assert.ok(rolesInFirst.has(role), `Agency A is missing ${role}.`);
   assert.equal(secondAgencyOfficer, 1, 'Agency B must have one isolated officer.');
+  fixtureStorageObjects(manifest);
   return manifest;
+}
+
+/**
+ * The storage objects this run recorded creating, as exact keys. Each must be a patch object under one of this run's
+ * own agency prefixes; anything else is refused, so storage cleanup can never be pointed outside the run.
+ */
+export function fixtureStorageObjects(manifest) {
+  const keys = manifest?.storageObjects ?? [];
+  assert.ok(Array.isArray(keys) && keys.length <= 10, 'Fixture storage objects are invalid.');
+  const agencyIds = new Set((manifest.agencies ?? []).map(agency => agency.id));
+  for (const key of keys) {
+    const match = typeof key === 'string' ? fixtureObjectKey.exec(key) : null;
+    assert.ok(match && agencyIds.has(match[1]), "Fixture storage object is outside this run's storage scope.");
+  }
+  assert.equal(new Set(keys).size, keys.length, 'Fixture storage objects must be unique.');
+  return keys.map(key => { const [, agencyId, name] = fixtureObjectKey.exec(key); return { key, agencyId, path: `${agencyId}/${name}` }; });
 }
 
 export function isStagingAcceptanceUser(user) {
@@ -106,9 +125,10 @@ export async function applyStagingFixture(client, action, input, environment = p
     throw new Error('Fixture database target does not match the pinned staging instance.');
   }
 
-  await fixtureQuery(client, 'transaction.begin', 'begin');
+  await fixtureQuery(client, 'transaction.begin', action === 'verify' ? 'begin read only' : 'begin');
   try {
     if (action === 'create') await createFixture(client, manifest);
+    else if (action === 'verify') await verifyFixtureOwnership(client, manifest);
     else await cleanupFixture(client, manifest);
     await fixtureQuery(client, 'transaction.commit', 'commit');
   } catch (error) {
@@ -156,6 +176,40 @@ async function createFixture(client, manifest) {
   }
 }
 
+/**
+ * Read-only proof, from the staging database rather than from local files, that the manifest's agencies are this
+ * run's synthetic agencies and that every storage object it names was uploaded into one of them by one of its
+ * identities. Storage cleanup runs only after this succeeds.
+ */
+async function verifyFixtureOwnership(client, manifest) {
+  const agencyIds = manifest.agencies.map(agency => agency.id);
+  const userIds = manifest.users.map(user => user.id);
+  const objects = fixtureStorageObjects(manifest);
+  const agencies = await fixtureQuery(client, 'ownership.read_agencies', 'select id::text as id, slug, name from public.departments where id=any($1::uuid[])', [agencyIds]);
+  if (!agencies.rowCount) {
+    if (objects.length) throw new Error("Fixture storage objects cannot be attributed: the run's agencies are absent.");
+    return;
+  }
+  for (const [index, agency] of manifest.agencies.entries()) {
+    const row = agencies.rows.find(candidate => candidate.id === agency.id);
+    const name = `Staging Acceptance ${manifest.run.slice(0, 8)}-${index === 0 ? 'A' : 'B'}`;
+    if (!row || row.slug !== agency.slug || row.name !== name) throw new Error('Fixture agency does not belong to this run.');
+  }
+  const users = await fixtureQuery(client, 'ownership.read_identities', `select p.id from public.profiles p
+    join public.authentication_identity_links l on l.tracepoint_user_id=p.id and l.provider='cognito' and l.issuer=$1
+    where p.id=any($2::uuid[]) and l.subject=any($3::text[]) and p.email=any($4::text[])`, [manifest.issuer, userIds, manifest.users.map(user => user.subject), manifest.users.map(user => user.email)]);
+  if (users.rowCount !== manifest.users.length) throw new Error('Fixture identities do not match the recorded Cognito subjects.');
+  const foreign = await fixtureQuery(client, 'ownership.find_foreign_members', `select
+    (select count(*) from public.department_memberships where department_id=any($1::uuid[]) and user_id<>all($2::uuid[]))::int as foreign_members,
+    (select count(*) from public.department_memberships where user_id=any($2::uuid[]) and department_id<>all($1::uuid[]))::int as outside_memberships`, [agencyIds, userIds]);
+  if (foreign.rows[0].foreign_members || foreign.rows[0].outside_memberships) throw new Error('Fixture agency has members outside this run.');
+  for (const object of objects) {
+    const attested = await fixtureQuery(client, 'ownership.attest_storage_object', `select 1 from public.audit_events
+      where department_id=$1::uuid and action='department_patch_upload' and actor_user_id=any($2::uuid[]) and details->>'storage_path'=$3 limit 1`, [object.agencyId, userIds, object.path]);
+    if (attested.rowCount !== 1) throw new Error('Fixture storage object was not created by this run.');
+  }
+}
+
 async function cleanupFixture(client, manifest) {
   const agencyIds = manifest.agencies.map(agency => agency.id);
   const before = await client.query(`select
@@ -175,6 +229,7 @@ async function cleanupFixture(client, manifest) {
   const unexpectedMemberships = await client.query(`select count(*)::int as count from public.department_memberships
     where user_id=any($1::uuid[]) and department_id<>all($2::uuid[])`, [manifest.users.map(user => user.id), agencyIds]);
   if (unexpectedMemberships.rows[0].count !== 0) throw new Error('Fixture identity is linked to a non-fixture agency.');
+  await verifyFixtureOwnership(client, manifest);
   await client.query('delete from public.equipment_asset_assignments where department_id=any($1::uuid[])', [agencyIds]);
   await client.query('delete from public.equipment_assets where department_id=any($1::uuid[])', [agencyIds]);
   await client.query('delete from public.equipment_types where department_id=any($1::uuid[])', [agencyIds]);

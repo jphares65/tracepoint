@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
     # Staging release lane: status, baseline, reconcile, apply, diagnose.
     # Production lane: inspect, publish-only, range-workspace-hotfix and the guarded live final-database actions.
-    [ValidateSet('status','baseline','reconcile','apply','diagnose','inspect','publish-only','range-workspace-hotfix','precheck','inventory-035-037','password-scope-039-040','agency-documents-038-048','acceptance-fixture-create','acceptance-fixture-cleanup')][string]$Action = 'status',
+    [ValidateSet('status','baseline','reconcile','apply','diagnose','inspect','publish-only','range-workspace-hotfix','precheck','inventory-035-037','password-scope-039-040','agency-documents-038-048','acceptance-fixture-create','acceptance-fixture-cleanup','acceptance-fixture-verify')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit,
     [ValidatePattern('^[0-9a-f]{40}$')][string]$MigrationSourceCommit,
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ApplicationImageDigest,
@@ -385,7 +385,7 @@ function Invoke-MigrationTask {
   $acceptanceFixtureDatabaseHost = $null
   $container.image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
   if ($Action -like 'acceptance-fixture-*') {
-    $fixtureAction = if ($Action -eq 'acceptance-fixture-create') { 'create' } else { 'cleanup' }
+    $fixtureAction = $Action.Substring('acceptance-fixture-'.Length)
     $container.command = @('scripts/run-staging-cognito-fixture.mjs',$fixtureAction,$Environment)
   } else { $container.command = @('scripts/run-aws-native-migrations.mjs',$TaskAction,$Environment) }
   Set-MigrationTaskContainerUser $container
