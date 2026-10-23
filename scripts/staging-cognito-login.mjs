@@ -85,9 +85,14 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       await codeInput.waitFor({ state: 'visible', timeout: 15_000 });
       onStep('fill-totp-code');
       await codeInput.fill(totp(secret));
+      const beforeUrl = page.url();
+      const beforeBody = await page.locator('body').innerText().catch(() => '');
       onStep('submit-totp-code');
       await submit(page);
-      await page.waitForTimeout(300);
+      onStep('wait-for-totp-response');
+      await page.waitForFunction(({ previousUrl, previousBody }) =>
+        location.href !== previousUrl || document.body?.innerText !== previousBody,
+      { previousUrl: beforeUrl, previousBody: beforeBody }, { timeout: 15_000 });
       const responseText = await page.locator('body').innerText().catch(() => '');
       if (/invalid|incorrect|try again/i.test(responseText)) onStep('totp-code-rejected');
       continue;
