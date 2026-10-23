@@ -40,8 +40,8 @@ Run it from a clean checkout of `3329411a`. Never add `-AuthorizeLiveDatabaseCha
 
 **Guarded procedure for the owner's workstation:** [`Invoke-LiveProductionInspection.ps1`](Invoke-LiveProductionInspection.ps1) (Windows PowerShell 5.1, paths `C:\Users\jphar\tracepoint` and `C:\Users\jphar\tracepoint-release-evidence-20261022-140702`). Its steps:
 1. Fetch, and verify that `3329411a` is on the Batch 2 branch, that `5700011` is local, and that the reviewed script blob is the one checked in.
-2. Use a clean detached worktree; the main checkout is untouched.
-3. Before anything runs, require production to be in the evidence state: task definition `tracepoint-production:30`, digest `sha256:c5ab4e1f…bc7c2`, no rollout in progress, and the `5700011` image tag resolving to that digest.
+2. Use a new detached worktree at a unique path per run. No existing worktree or folder is reused or removed, and cleanup never uses `--force`. The main checkout is untouched.
+3. Before anything runs, require production to be in the evidence state: task definition `tracepoint-production-consolidated-aws-native-20260929:30`, digest `sha256:c5ab4e1f…bc7c2`, no rollout in progress, and the `5700011` image tag resolving to that digest.
 4. Run only the command above.
 5. Compare the service before and after (status, task definition, desired count, deployments, running digests) and stop if anything differs.
 6. Check the task that ran: family, command `inspect production`, no task role, the expected image, a single runtime secret, the pinned host, exit code 0.

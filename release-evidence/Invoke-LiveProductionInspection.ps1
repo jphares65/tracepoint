@@ -4,7 +4,8 @@ TracePoint: guarded live production database inspection (evidence support only).
 
 Runs exactly one approved action:
   scripts\apply-app-migrations.ps1 -Environment production -Action inspect -ImageCommit 5700011...
-from a clean detached worktree of the agreed candidate 3329411a.
+from a new, clean detached worktree of the agreed candidate 3329411a (a unique path
+per run; no existing worktree or folder is reused or removed).
 
 What it may change in AWS: it registers one revision of the dedicated task family
 tracepoint-production-live-database-inspect and runs one Fargate task from it. That task
@@ -25,17 +26,19 @@ $ProgressPreference = 'SilentlyContinue'
 
 $Repo           = 'C:\Users\jphar\tracepoint'
 $Evidence       = 'C:\Users\jphar\tracepoint-release-evidence-20261022-140702'
-$Tooling        = Join-Path $env:TEMP 'tp-live-inspect-3329411a'
 $ToolingCommit  = '3329411acd33d0d7f00cc3418a536caf40f0c07e'   # claude/integration-batch2-20261022
 $ProductionApp  = '5700011cc9ea6cff880bcb7f697423fa7f4fd27c'   # running production commit
 $ExpectedDigest = 'sha256:c5ab4e1facd4a4cd69bf1a011b156e6020c440359fa222749f638930fcfbc7c2'
-$ExpectedTaskDefinition = 'arn:aws:ecs:us-east-1:193644343389:task-definition/tracepoint-production:30'
+$ExpectedTaskDefinition = 'arn:aws:ecs:us-east-1:193644343389:task-definition/tracepoint-production-consolidated-aws-native-20260929:30'
 $InspectFamily  = 'tracepoint-production-live-database-inspect'
 $ExpectedScriptBlob = '376219ccbf32594064af624b26ed2c1803380d4a'  # scripts/apply-app-migrations.ps1 at 3329411a
 $AwsProfile = 'tracepoint-production'; $Region = 'us-east-1'; $Account = '193644343389'
 $Cluster = 'tracepoint-production'; $Service = 'tracepoint-production'
 $Stamp   = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 $OutDir  = Join-Path $Evidence "production-live-inspection-$Stamp"
+# A new worktree path for every run; an existing path (any other worktree or folder) is never reused or removed.
+$Tooling = Join-Path $env:TEMP ("tp-live-inspect-3329411a-$Stamp-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$CreatedWorktree = $false
 
 function Stop-Inspection([string]$Message) { throw "STOPPED (nothing was inspected or changed after this point): $Message" }
 function Invoke-AwsJson([string[]]$Arguments) {
@@ -73,9 +76,10 @@ try {
     & git.exe -C $Repo merge-base --is-ancestor $ToolingCommit origin/claude/integration-batch2-20261022
     if ($LASTEXITCODE -ne 0) { Stop-Inspection "$ToolingCommit is not on origin/claude/integration-batch2-20261022." }
     if ((& git.exe -C $Repo cat-file -t $ProductionApp) -ne 'commit') { Stop-Inspection "Production commit $ProductionApp is not in the local repository." }
-    if (Test-Path -LiteralPath $Tooling) { & git.exe -C $Repo worktree remove --force $Tooling | Out-Null }
+    if (Test-Path -LiteralPath $Tooling) { Stop-Inspection "The new worktree path $Tooling already exists; nothing was removed." }
     & git.exe -C $Repo worktree add --detach $Tooling $ToolingCommit | Out-Null
     if ($LASTEXITCODE -ne 0) { Stop-Inspection 'Could not create the tooling worktree.' }
+    $CreatedWorktree = $true
     if ((& git.exe -C $Tooling rev-parse HEAD).Trim() -ne $ToolingCommit) { Stop-Inspection 'The tooling worktree is not at the reviewed commit.' }
     if (@(& git.exe -C $Tooling status --porcelain --untracked-files=all).Count -ne 0) { Stop-Inspection 'The tooling worktree is not clean.' }
     $blob = ((& git.exe -C $Tooling ls-tree HEAD scripts/apply-app-migrations.ps1) -split '\s+')[2]
@@ -154,6 +158,12 @@ try {
     Write-Host "Results (local only, not committed or pushed): $OutDir"
     Write-Host 'Give live-inspection-report.log, inspection-task-checks.json and service-before/after.json to the release coordinator.'
 } finally {
-    if (Test-Path -LiteralPath $Tooling) { & git.exe -C $Repo worktree remove --force $Tooling | Out-Null }
+    # Only the worktree this run created, and never with --force: if git refuses
+    # (for example the tree is not clean), it is left in place for review.
+    if ($CreatedWorktree) {
+        $prior = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        try { & git.exe -C $Repo worktree remove $Tooling 2>&1 | Out-Null; $removed = ($LASTEXITCODE -eq 0) } catch { $removed = $false } finally { $ErrorActionPreference = $prior }
+        if (-not $removed -or (Test-Path -LiteralPath $Tooling)) { Write-Warning "The tooling worktree was not removed and is left at $Tooling for review." }
+    }
     Stop-Transcript | Out-Null
 }
