@@ -137,7 +137,38 @@ export function custodyTransferFailure(error: { code?: string | null; message?: 
   ];
   const match = known.find(([pattern]) => pattern.test(message));
   if (match) return { status: match[1], error: match[2] };
-  return { status: error.code === "42501" ? 403 : error.code === "22023" ? 400 : 409, error: message || "Custody could not be updated." };
+  if (/^custody must follow the firearm's active assignment$/i.test(message)) return { status: 409, error: ASSIGNMENT_CHANGED };
+  return { status: error.code === "42501" ? 403 : error.code === "22023" ? 400 : 409, error: message && !GENERIC_DATABASE_FAILURE.test(message) ? message : "Custody could not be updated." };
+}
+
+const GENERIC_DATABASE_FAILURE = /^PostgreSQL data operation failed\.?$/i;
+const ASSIGNMENT_CHANGED = "The firearm's assignment changed while this was being saved. Reload it and try again.";
+
+/**
+ * AT-4: the refusals of set_firearm_restriction, clear_firearm_restriction and
+ * operate_restricted_firearm_custody (031, 067), as the status and message the route returns.
+ * They reached the officer as "PostgreSQL data operation failed." before.
+ */
+export function restrictedCustodyFailure(error: { code?: string | null; message?: string | null }) {
+  const message = String(error.message ?? "");
+  const known: Array<[RegExp, number, string]> = [
+    [/^restricted use requires an active assignment$/i, 409, "Issue this firearm to an officer before restricting it."],
+    [/^invalid firearm restriction$/i, 400, "This restriction is not valid for this firearm."],
+    [/^restriction-management permission required$/i, 403, "Restriction-management permission is required."],
+    [/^active restriction unavailable$/i, 409, "This restriction is no longer active. Reload the firearm to see its current restrictions."],
+    [/^invalid restricted custody action$/i, 400, "Choose check-in or check-out."],
+    [/^active assigned firearm restriction required$/i, 409, "Check-in and check-out apply only to an issued firearm with an active Duty Only restriction."],
+    [/^no-carry restriction prohibits checkout$/i, 409, "This firearm is restricted No Carry and cannot be checked out."],
+    [/^restricted custody is unavailable for this restriction$/i, 409, "Check-in and check-out apply only to a Duty Only restriction."],
+    [/^restricted custody permission required$/i, 403, "Only the assigned officer or a custody manager can check this firearm in or out."],
+    [/^physical custody must be initialized by an administrator$/i, 409, "This firearm's custody has not been recorded yet. An administrator must record who holds it first."],
+    [/^firearm is not ready for this custody action$/i, 409, "This firearm is already checked in or out. Reload it to see where it is."],
+    [/^secure storage location required$/i, 400, "Choose an active secure-storage location."],
+    [/^custody must follow the firearm's active assignment$/i, 409, ASSIGNMENT_CHANGED],
+  ];
+  const match = known.find(([pattern]) => pattern.test(message));
+  if (match) return { status: match[1], error: match[2] };
+  return { status: error.code === "42501" ? 403 : error.code === "22023" ? 400 : 409, error: "The firearm restriction or custody could not be updated." };
 }
 
 type Restriction = {

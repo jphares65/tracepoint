@@ -165,6 +165,24 @@ test("invalid identifiers and database failures return non-sensitive errors", as
   assert.equal(JSON.stringify(result).includes("secret SQL detail"), false);
 });
 
+// AT-4 (staging acceptance 2026-10-22, A4/A5): an Armory refusal raised on purpose by a TracePoint function reached the
+// officer as "PostgreSQL data operation failed." It is passed through; any other database error stays generic.
+test("a refusal a TracePoint function raises on purpose is passed through; other database errors stay generic", async () => {
+  const failing = (error: Record<string, unknown>) => ({ async connect() { return { async query(text: string) { if (text === "begin" || text === "rollback") return {}; throw Object.assign(new Error(String(error.message)), error); }, release() {} }; } });
+  const rpc = async (error: Record<string, unknown>) => (await new PostgresDataClient(failing(error) as never, subjectId, departmentId).rpc("set_firearm_restriction", {})).error;
+  assert.deepEqual(await rpc({ code: "22023", message: "restricted use requires an active assignment", where: "PL/pgSQL function set_firearm_restriction(uuid,text,date,text,text,date) line 15 at RAISE" }),
+    { message: "restricted use requires an active assignment", code: "22023" });
+  for (const [label, error] of [
+    ["a constraint violation", { code: "23505", message: 'duplicate key value violates unique constraint "firearms_serial_key"', where: "SQL statement \"insert into ...\"\nPL/pgSQL function f() line 3 at SQL statement" }],
+    ["an error whose innermost frame is not a RAISE", { code: "22023", message: "internal detail", where: "SQL statement \"select g()\"\nPL/pgSQL function f() line 2 at RAISE" }],
+    ["an invalid SQLSTATE (42704)", { code: "42704", message: 'unrecognized exception condition "409"', where: "PL/pgSQL function f() line 1 at RAISE" }],
+    ["a message too long to be a designed refusal", { code: "P0001", message: "x".repeat(201), where: "PL/pgSQL function f() line 1 at RAISE" }],
+    ["an error with no function context", { code: "42501", message: "permission denied for table firearms" }],
+  ] as const) {
+    assert.equal((await rpc(error)).message, "PostgreSQL data operation failed.", label);
+  }
+});
+
 test("notification dispatcher is cross-tenant only for its two reviewed tables", async () => {
   const calls: Array<{ text: string; values?: readonly unknown[] }> = [];
   const dispatcher = PostgresDataClient.forNotificationDispatch({

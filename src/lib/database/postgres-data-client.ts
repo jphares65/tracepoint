@@ -126,9 +126,20 @@ function selectSql(table: string, selection: string, relatedFilters: Filter[], v
   return { projection: expressions.join(","), inner };
 }
 
+// AT-4: a refusal a TracePoint function raises on purpose (RAISE EXCEPTION with its own
+// SQLSTATE, e.g. "restricted use requires an active assignment") is written for the user
+// and is passed through so routes can explain it. Every other database error (constraint,
+// syntax, connection, data) keeps the generic message: it can name internal objects.
+function deliberateRefusal(error: { code?: unknown; message?: unknown; where?: unknown }) {
+  const frame = String(error.where ?? "").split("\n")[0];
+  return /^PL\/pgSQL function [^\n]+ line \d+ at RAISE$/.test(frame) && /^[0-9A-Z]{5}$/.test(String(error.code ?? ""))
+    && String(error.code) !== "42704" && typeof error.message === "string" && error.message.length > 0 && error.message.length <= 200;
+}
+
 function safeError(error: unknown) {
   const code = typeof error === "object" && error && "code" in error ? String((error as { code: unknown }).code) : undefined;
-  return { message: "PostgreSQL data operation failed.", ...(code ? { code } : {}) };
+  const message = typeof error === "object" && error && deliberateRefusal(error as Record<string, unknown>) ? String((error as { message: string }).message) : "PostgreSQL data operation failed.";
+  return { message, ...(code ? { code } : {}) };
 }
 
 function databaseValue(table:string,column:string,value:unknown){

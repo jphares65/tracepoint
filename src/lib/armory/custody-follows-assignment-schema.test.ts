@@ -9,6 +9,8 @@ import EmbeddedPostgres from "embedded-postgres";
 import { localPostgresPort } from "../../test-support/local-postgres-port.mjs";
 import { isAwsNativeSchemaFile } from "../../test-support/aws-native-schema-files.mjs";
 import { supabasePrerequisites } from "../../../scripts/postgres-bootstrap-prerequisites.mjs";
+import { PostgresDataClient } from "../database/postgres-data-client.ts";
+import { restrictedCustodyFailure } from "./custody-transfer.ts";
 
 // AT-2 on the full AWS-native schema (Supabase lineage plus database/aws 001-067), called as
 // the runtime does (tracepoint_runtime -> authenticated, subject and agency set): custody
@@ -215,4 +217,44 @@ test("without the 067 guard the same races leave custody naming the returned off
   } finally {
     await owner.query("alter table public.firearm_current_custody enable trigger firearm_current_custody_active_assignment");
   }
+});
+
+// AT-4 (staging acceptance 2026-10-22, A4/A5): the database's reasons for refusing a restriction or custody change
+// reached the officer as 409 "PostgreSQL data operation failed." (and a second check-in raised errcode '409', which
+// PostgreSQL replaced with 42704). Through the runtime's data client and the route's mapping they are now explained.
+test("AT-4 restriction and custody refusals reach the user as their reasons, through the real data client", async () => {
+  const client = new PostgresDataClient(runtime, armorer, A);
+  const refusal = async (name: string, args: Record<string, unknown>) => {
+    const result = await client.rpc(name, args);
+    assert.ok(result.error, `${name} was refused`);
+    return { raw: result.error, mapped: restrictedCustodyFailure(result.error) };
+  };
+  const unissued = await firearm();
+  const noAssignment = await refusal("set_firearm_restriction", { p_firearm_id: unissued, p_restriction_type: "duty_only", p_effective_date: null, p_reason: "r", p_notes: null, p_review_date: null });
+  assert.deepEqual(noAssignment.raw, { message: "restricted use requires an active assignment", code: "22023" });
+  assert.deepEqual(noAssignment.mapped, { status: 409, error: "Issue this firearm to an officer before restricting it." });
+
+  const gun = await firearm();
+  await issue(gun, kris);
+  const restriction = String((await client.rpc("set_firearm_restriction", { p_firearm_id: gun, p_restriction_type: "duty_only", p_effective_date: null, p_reason: "r", p_notes: null, p_review_date: null })).data);
+  const checkIn = () => client.rpc("operate_restricted_firearm_custody", { p_firearm_id: gun, p_action: "CHECK_IN", p_storage_location_id: vault, p_notes: null, p_idempotency_key: key() });
+  assert.equal((await checkIn()).error, null);
+  const second = await checkIn();
+  assert.deepEqual(second.error, { message: "firearm is not ready for this custody action", code: "55000" }, "a second check-in is refused with its reason, not 42704");
+  assert.deepEqual(restrictedCustodyFailure(second.error!), { status: 409, error: "This firearm is already checked in or out. Reload it to see where it is." });
+
+  assert.equal((await client.rpc("clear_firearm_restriction", { p_restriction_id: restriction, p_reason: "done" })).error, null);
+  const again = await refusal("clear_firearm_restriction", { p_restriction_id: restriction, p_reason: "again" });
+  assert.deepEqual(again.mapped, { status: 409, error: "This restriction is no longer active. Reload the firearm to see its current restrictions." });
+
+  const officer = new PostgresDataClient(runtime, eli, A);
+  const denied = await officer.rpc("set_firearm_restriction", { p_firearm_id: gun, p_restriction_type: "no_carry", p_effective_date: null, p_reason: "r", p_notes: null, p_review_date: null });
+  assert.deepEqual(restrictedCustodyFailure(denied.error!), { status: 403, error: "Restriction-management permission is required." });
+});
+
+test("AT-4 an ordinary database error still reaches the user only as a generic message", async () => {
+  const client = new PostgresDataClient(runtime, armorer, A);
+  const result = await client.rpc("set_firearm_restriction", { p_firearm_id: "not-a-uuid", p_restriction_type: "duty_only", p_effective_date: null, p_reason: "r", p_notes: null, p_review_date: null });
+  assert.deepEqual(result.error, { message: "PostgreSQL data operation failed.", code: "22P02" });
+  assert.equal(restrictedCustodyFailure(result.error!).error, "The firearm restriction or custody could not be updated.");
 });

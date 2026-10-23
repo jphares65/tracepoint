@@ -670,8 +670,8 @@
                            "stagingLedger":  "pending",
                            "lineage":  "defect-remediation",
                            "formerly":  "064 at fad53326 (claude/fix-at1-at2-20261022, staging acceptance AT-2); never applied",
-                           "sha256Lf":  "0f7268ba7d31ecb39c695006cd839ca4aee13d1804c684be64ef0b873fb0392a",
-                           "sha256Crlf":  "3f23548c236fc041ade78a7ba8dcdb1fe594ab8b352a53034f4c806c4fd66ed7"
+                           "sha256Lf":  "89620831130f364c91c0bca275fce94a0892d07ab6eaeb0254acb5120446d209",
+                           "sha256Crlf":  "db7af502a2cf079df18d31e1d9098f1d3f3f1c61bb0e62887ca1106737a8cabf"
                        },
                        {
                            "version":  68,

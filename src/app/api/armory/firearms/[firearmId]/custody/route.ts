@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { accessFailureResponse, hasAnyServerPermission, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { parseRestrictedCustodyRequest, restrictedCustodyOperations } from "@/lib/armory/restricted-custody";
-import { custodyRecipients, custodyRequestKind, custodyTransferFailure, custodyTransferOperations, custodyTransferPermissions, parseCustodyTransferRequest } from "@/lib/armory/custody-transfer";
+import { custodyRecipients, custodyRequestKind, custodyTransferFailure, custodyTransferOperations, custodyTransferPermissions, parseCustodyTransferRequest, restrictedCustodyFailure } from "@/lib/armory/custody-transfer";
 
 type RouteContext = { params: Promise<{ firearmId: string }> };
 const text = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   const parsed = parseRestrictedCustodyRequest(firearmId, body);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
   const result = await context.db.rpc("operate_restricted_firearm_custody", { p_firearm_id: firearmId, p_action: parsed.action, p_storage_location_id: parsed.storageLocationId, p_notes: parsed.notes, p_idempotency_key: parsed.idempotencyKey });
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: result.error.code === "42501" ? 403 : 409 });
+  if (result.error) { const failure = restrictedCustodyFailure(result.error); return NextResponse.json({ error: failure.error }, { status: failure.status }); }
   return NextResponse.json({ ok: true, custodyEventId: result.data });
 }
 
@@ -116,7 +116,7 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
     p_effective_date: text(body.effectiveDate), p_reason: text(body.reason),
     p_notes: text(body.notes), p_review_date: text(body.reviewDate),
   });
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: result.error.code === "42501" ? 403 : 409 });
+  if (result.error) { const failure = restrictedCustodyFailure(result.error); return NextResponse.json({ error: failure.error }, { status: failure.status }); }
   return NextResponse.json({ ok: true, restrictionId: result.data });
 }
 
@@ -129,6 +129,6 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
   const restrictionId = text(body.restrictionId);
   if (!uuid.test(firearmId) || !uuid.test(restrictionId ?? "") || !hasAnyServerPermission(context, ["manage_firearm_restrictions"])) return permissionDeniedResponse("Restriction-management permission is required.");
   const result = await context.db.rpc("clear_firearm_restriction", { p_restriction_id: restrictionId, p_reason: text(body.reason) });
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: result.error.code === "42501" ? 403 : 409 });
+  if (result.error) { const failure = restrictedCustodyFailure(result.error); return NextResponse.json({ error: failure.error }, { status: failure.status }); }
   return NextResponse.json({ ok: true, restrictionId: result.data });
 }
