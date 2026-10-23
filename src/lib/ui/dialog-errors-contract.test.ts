@@ -4,7 +4,8 @@ import test from "node:test";
 
 // UX-RB2-7: a failure from a dialog is shown inside that dialog (role=alert) and
 // the dialog stays open; before, it went to the page banner behind the backdrop.
-const read = (path: string) => readFile(new URL(`../../app/${path}`, import.meta.url), "utf8");
+// The staging migration image is built from a CRLF archive; the contracts compare LF source.
+const read = async (path: string) => (await readFile(new URL(`../../app/${path}`, import.meta.url), "utf8")).replaceAll("\r\n", "\n");
 const body = (source: string, start: string, end: string) => {
   const from = source.indexOf(start);
   assert.ok(from >= 0, start);

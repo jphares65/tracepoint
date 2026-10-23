@@ -227,11 +227,11 @@ function Publish-MigrationImage {
     # The Docker validation gates execute scripts directly and the production
     # lint ratchet checks every changed scripts/** file. Archive the complete
     # tree so the immutable build context cannot omit a referenced script.
-    $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','lint-baseline.json','public','src','database/aws','database/rehearsal','supabase/migrations','scripts','infra/lib/production-target.ts','Dockerfile','buildspec.staging-image.yml')
+    $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','lint-baseline.json','public','src','database/aws','database/rehearsal','supabase/migrations','scripts','infra/lib/production-target.ts','e2e/support/env.ts','Dockerfile','buildspec.staging-image.yml')
     # Already inside 'scripts'; named here as the staging image contract (mobile
     # route checks and the staging-only migration diagnostics).
     if ($Environment -eq 'staging') { $paths += @('scripts/mobile-route-image-contract-core.mjs','scripts/test-staging-image-mobile-routes.sh','scripts/aws-native-migration-diagnostics.mjs') }
-    if ($Environment -eq 'production') { $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts','infra/lib/production-target.ts','Dockerfile.aws-native-production','buildspec.production-image.yml') }
+    if ($Environment -eq 'production') { $paths = @('.dockerignore','package.json','package-lock.json','next.config.ts','tsconfig.json','eslint.config.mjs','postcss.config.mjs','public','src','database/aws','database/rehearsal','supabase/migrations','scripts','infra/lib/production-target.ts','e2e/support/env.ts','Dockerfile.aws-native-production','buildspec.production-image.yml') }
     # Staging's migration ledger records the SHA-256 of the CRLF archive bytes,
     # so the staging migration image must be built from an autocrlf=true archive.
     if ($Environment -eq 'staging') { & git.exe -C $root -c core.autocrlf=true archive --format=zip "--output=$zip" $Commit -- @paths }

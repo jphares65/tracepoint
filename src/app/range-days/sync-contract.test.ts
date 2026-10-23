@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const page = () => readFile(new URL("./page.tsx", import.meta.url), "utf8");
+// The staging migration image is built from a CRLF archive; the contracts compare LF source.
+const page = async () => (await readFile(new URL("./page.tsx", import.meta.url), "utf8")).replaceAll("\r\n", "\n");
 
 test("UX-RB-5: a stale save is recovered by merging, never by reloading the page", async () => {
   const source = await page();
