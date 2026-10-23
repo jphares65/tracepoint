@@ -31,6 +31,14 @@ function setOperationStage(stage) {
   console.log(JSON.stringify({ acceptanceStage: stage }));
 }
 
+function safeFailureCode(error) {
+  const code = String(error?.code ?? '');
+  if (/^[0-9A-Z]{5}$/.test(code)) return code;
+  if (/^(ECONN|EAI_|ETIMEDOUT|ENOTFOUND)/.test(code)) return code;
+  if (error?.name === 'AssertionError') return 'PRECONDITION_FAILED';
+  return error?.name === 'AccessDeniedException' ? 'AWS_ACCESS_DENIED' : 'RUNNER_FAILURE';
+}
+
 function aws(args) {
   return JSON.parse(execFileSync('aws.exe', [...args, '--profile', process.env.AWS_PROFILE, '--region', region, '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
@@ -256,8 +264,8 @@ async function main() {
     console.log(JSON.stringify({ stagingTarget: 'verified', taskRevision: boundary.service.taskDefinition.split(':').at(-1), appDigest: boundary.appDigest }));
     for (const item of acceptance.results) console.log(JSON.stringify(item));
     resultCode = acceptance.results.every(item => item.status === 'pass') ? 0 : 1;
-  } catch {
-    console.error(JSON.stringify({ acceptanceHarness: 'failed', stage: taskAttempted ? 'fixture-or-authenticated-workflow' : 'provisioning', sensitiveDetailsPrinted: false }));
+  } catch (error) {
+    console.error(JSON.stringify({ acceptanceHarness: 'failed', stage: operationStage, failureCode: safeFailureCode(error), sensitiveDetailsPrinted: false }));
   } finally {
     try {
       setOperationStage('cleanup-staging-fixtures');

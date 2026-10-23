@@ -5,6 +5,15 @@ import { applyStagingFixture } from './staging-cognito-fixture-core.mjs';
 const action = process.argv[2];
 const environmentName = process.argv[3];
 const lockName = 'tracepoint:aws-native-schema-migrations:v1';
+let operationStage = 'validate-fixture-action';
+
+function safeFailureCode(error) {
+  const code = String(error?.code ?? '');
+  if (/^[0-9A-Z]{5}$/.test(code)) return code;
+  if (/^(ECONN|EAI_|ETIMEDOUT|ENOTFOUND)/.test(code)) return code;
+  if (error?.name === 'AssertionError') return 'FIXTURE_PRECONDITION_FAILED';
+  return 'FIXTURE_RUNNER_FAILED';
+}
 
 async function connectStaging() {
   if (environmentName !== 'staging' || process.env.CONFIGURATION_ENVIRONMENT !== 'staging' ||
@@ -35,15 +44,18 @@ async function connectStaging() {
 let client;
 try {
   if (!['create', 'cleanup'].includes(action)) throw new Error('Fixture action must be create or cleanup.');
+  operationStage = 'connect-staging-database';
   client = await connectStaging();
+  operationStage = 'acquire-fixture-lock';
   await client.query('select pg_advisory_lock(hashtext($1))', [lockName]);
   let manifest;
   try { manifest = JSON.parse(process.env.TRACEPOINT_ACCEPTANCE_FIXTURE_JSON ?? ''); }
   catch { throw new Error('Staging acceptance fixture manifest is invalid.'); }
+  operationStage = action === 'create' ? 'seed-fixture-records' : 'remove-fixture-records';
   const report = await applyStagingFixture(client, action, manifest);
   console.log(JSON.stringify(report));
-} catch {
-  console.error(JSON.stringify({ stagingAcceptanceFixture: 'failed', detailsSuppressed: true }));
+} catch (error) {
+  console.error(JSON.stringify({ stagingAcceptanceFixture: 'failed', stage: operationStage, failureCode: safeFailureCode(error), detailsSuppressed: true }));
   process.exitCode = 1;
 } finally {
   if (client) {
