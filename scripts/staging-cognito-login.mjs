@@ -20,6 +20,13 @@ export function totp(secret, now = Date.now()) {
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 export async function loginThroughCognitoPkce({ page, baseURL, email, password, knownMfaSecret, onStep = () => {} }) {
+  let callbackStatus;
+  page.on('response', response => {
+    try {
+      const url = new URL(response.url());
+      if (url.origin === new URL(baseURL).origin && url.pathname === '/api/auth/cognito/callback') callbackStatus = response.status();
+    } catch { /* Ignore non-URL response metadata. */ }
+  });
   onStep('open-login-page');
   await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' });
   onStep('start-cognito-sign-in');
@@ -132,6 +139,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       retryNotice: /try again|please retry/i.test(text),
       genericRequestError: /invalid request|unable to process|something went wrong/i.test(text),
       totpSubmissions,
+      callbackStatus: Number.isInteger(callbackStatus) ? callbackStatus : null,
     };
     throw error;
   }

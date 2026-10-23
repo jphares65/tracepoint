@@ -138,6 +138,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         retryNotice: diagnostics.retryNotice === true,
         genericRequestError: diagnostics.genericRequestError === true,
         totpSubmissions: Number.isInteger(diagnostics.totpSubmissions) ? diagnostics.totpSubmissions : 0,
+        callbackStatus: Number.isInteger(diagnostics.callbackStatus) ? diagnostics.callbackStatus : null,
       } } : {}),
     });
   } finally {
