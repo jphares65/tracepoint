@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   AdminCreateUserCommand, AdminDeleteUserCommand, AdminSetUserPasswordCommand,
-  CognitoIdentityProviderClient, DescribeUserPoolClientCommand, DescribeUserPoolCommand,
+  CognitoIdentityProviderClient, DescribeUserPoolClientCommand, GetUserPoolMfaConfigCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { DeleteObjectCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
@@ -54,9 +54,9 @@ function verifyLiveBoundary() {
 }
 
 async function verifyCognitoBoundary(expectedUsernames = [], requireTotp = true) {
-  const pool = (await identityClient.send(new DescribeUserPoolCommand({ UserPoolId: poolId }))).UserPool;
-  if (pool?.MfaConfiguration !== 'ON') throw Object.assign(new Error(), { code: 'STAGING_MFA_NOT_REQUIRED' });
-  if (requireTotp && pool?.SoftwareTokenMfaConfiguration?.Enabled !== true) throw Object.assign(new Error(), { code: 'STAGING_TOTP_FACTOR_UNAVAILABLE' });
+  const mfa = await identityClient.send(new GetUserPoolMfaConfigCommand({ UserPoolId: poolId }));
+  if (mfa?.MfaConfiguration !== 'ON') throw Object.assign(new Error(), { code: 'STAGING_MFA_NOT_REQUIRED' });
+  if (requireTotp && mfa?.SoftwareTokenMfaConfiguration?.Enabled !== true) throw Object.assign(new Error(), { code: 'STAGING_TOTP_FACTOR_UNAVAILABLE' });
   const app = (await identityClient.send(new DescribeUserPoolClientCommand({ UserPoolId: poolId, ClientId: clientId }))).UserPoolClient;
   assert.equal(app?.AllowedOAuthFlowsUserPoolClient, true);
   assert.ok(app?.AllowedOAuthFlows?.includes('code'));
