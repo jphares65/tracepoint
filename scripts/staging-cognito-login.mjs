@@ -17,19 +17,25 @@ export function totp(secret, now = Date.now()) {
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
-export async function loginThroughCognitoPkce({ page, baseURL, email, password, knownMfaSecret }) {
+export async function loginThroughCognitoPkce({ page, baseURL, email, password, knownMfaSecret, onStep = () => {} }) {
+  onStep('open-login-page');
   await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' });
+  onStep('start-cognito-sign-in');
   await page.getByRole('button', { name: /continue with secure sign-in/i }).click();
+  onStep('wait-for-cognito-redirect');
   await page.waitForURL(url => url.hostname.endsWith('amazoncognito.com'), { timeout: 30_000 });
+  onStep('fill-cognito-username');
   const username = page.locator('input[autocomplete="username"],input[name="username"],input[name="email"],input[type="email"]').first();
   await username.waitFor({ state: 'visible', timeout: 30_000 });
   await username.fill(email);
   const pass = page.locator('input[autocomplete="current-password"],input[name="password"],input[type="password"]').first();
   if (await pass.isVisible().catch(() => false)) await pass.fill(password);
+  onStep('submit-cognito-credentials');
   await submit(page);
   let secret = knownMfaSecret ?? null;
   for (let step = 0; step < 5; step += 1) {
     if (new URL(page.url()).origin === new URL(baseURL).origin && new URL(page.url()).pathname === '/api/auth/cognito/callback') {
+      onStep('complete-pkce-callback');
       await page.waitForURL(url => url.origin === new URL(baseURL).origin && !url.pathname.startsWith('/api/auth/cognito/callback'), { timeout: 30_000 });
       return secret;
     }
@@ -40,6 +46,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     }
     const text = await page.locator('body').innerText().catch(() => '');
     if (/select.*mfa|choose.*mfa|verification method/i.test(text)) {
+      onStep('select-cognito-mfa-factor');
       const factor = page.getByRole('button', { name: /authenticator app|software token|time-based one-time password/i }).first();
       await factor.waitFor({ state: 'visible', timeout: 15_000 });
       await factor.click();
@@ -47,11 +54,13 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       continue;
     }
     if (/software token|authenticator app|setup.*mfa|set up.*authenticator/i.test(text)) {
+      onStep('configure-cognito-totp');
       const setupSecret = extractTotpSecret(text);
       if (setupSecret) secret = setupSecret;
       if (!secret) throw new Error('Cognito software-token MFA setup did not expose an authenticator secret.');
     }
     if (/verification code|authenticator|one.time password|software token/i.test(text)) {
+      onStep('answer-cognito-mfa-challenge');
       if (!secret) throw new Error('Cognito requested MFA without an enrolled software-token secret.');
       const codeInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
       await codeInput.waitFor({ state: 'visible', timeout: 15_000 });
@@ -60,6 +69,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       continue;
     }
     if (/configure.*authenticator|scan.*qr|can't scan/i.test(text)) {
+      onStep('complete-cognito-totp-setup');
       if (!secret) throw new Error('Cognito MFA setup is required but no software-token secret was found.');
       continue;
     }

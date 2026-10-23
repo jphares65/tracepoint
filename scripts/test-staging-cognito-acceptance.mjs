@@ -27,7 +27,14 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         });
         const page = await context.newPage();
         activePhase = 'cognito-pkce-mfa-login';
-        const secret = await loginThroughCognitoPkce({ page, baseURL, email: user.email, password: passwords.get(user.email), knownMfaSecret: mfaSecrets.get(user.email) });
+        const secret = await loginThroughCognitoPkce({
+          page,
+          baseURL,
+          email: user.email,
+          password: passwords.get(user.email),
+          knownMfaSecret: mfaSecrets.get(user.email),
+          onStep: step => { activePhase = `cognito-${step}`; },
+        });
         if (secret) mfaSecrets.set(user.email, secret);
         activePhase = 'read-role-and-tenant-access';
         const accessResponse = await context.request.get('/api/access');
@@ -104,7 +111,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
       }
     }
   } catch (error) {
-    const errorName = /^[A-Za-z]+Error$/.test(error?.name ?? '') ? error.name : 'UnknownError';
+    const errorName = /^[A-Za-z]*Error$/.test(error?.name ?? '') ? error.name : 'UnknownError';
     const role = ['officer', 'instructor', 'supervisor', 'administrator'].includes(activeUser?.role) ? activeUser.role : 'unknown';
     add('authenticated acceptance execution', 'fail', {
       code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
