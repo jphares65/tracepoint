@@ -42,8 +42,8 @@ export function planFixtureStorageDeletion(manifest, listings) {
 
 /**
  * Performs one idempotent cleanup pass over only the manifest's recorded keys and their listed versions.
- * The caller supplies retry-wrapped AWS operations; ownership is checked after the plan is built and before
- * the first version is deleted. A later recovery pass replans from the current listing, so already deleted
+ * The caller supplies retry-wrapped AWS operations; ownership is checked after a first plan is built, and the
+ * deletion set is planned again from a fresh listing before the first version is deleted. A later recovery pass replans from the current listing, so already deleted
  * versions are not reintroduced and the manifest cannot expand the deletion scope.
  */
 export async function cleanupRecordedFixtureStorage(manifest, target, {
@@ -64,9 +64,11 @@ export async function cleanupRecordedFixtureStorage(manifest, target, {
     return listings;
   };
 
-  const deletions = planFixtureStorageDeletion(manifest, await listAll());
-  if (!deletions.length) return { planned: 0, deleted: 0 };
+  if (!planFixtureStorageDeletion(manifest, await listAll()).length) return { planned: 0, deleted: 0 };
   await verifyOwnership();
+  // The ownership check takes minutes; what is deleted is planned again from a listing taken after it, under the
+  // same rules, so a version added, removed or left untracked meanwhile is accounted for before anything is deleted.
+  const deletions = planFixtureStorageDeletion(manifest, await listAll());
   for (const object of deletions) {
     await retry(() => deleteVersion({ ...target, Key: object.Key, VersionId: object.VersionId }));
   }

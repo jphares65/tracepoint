@@ -24,7 +24,7 @@ test('retries transient listing, exact-version deletion, and post-delete verific
       counts.list += 1;
       if (counts.list === 1) throw Object.assign(new Error('temporary transport failure'), { code: 'ECONNABORTED' });
       if (counts.list === 4) throw Object.assign(new Error('temporary service failure'), { $metadata: { httpStatusCode: 503 } });
-      if (params.Prefix.endsWith(`${agencyA}/`)) return listing(agencyA, counts.list < 4 ? [{ Key: trackedKey, VersionId: 'v1' }] : []);
+      if (params.Prefix.endsWith(`${agencyA}/`)) return listing(agencyA, counts.delete < 2 ? [{ Key: trackedKey, VersionId: 'v1' }] : []);
       return listing(agencyB);
     },
     verifyOwnership: async () => { verified = true; },
@@ -36,7 +36,48 @@ test('retries transient listing, exact-version deletion, and post-delete verific
     },
   });
   assert.deepEqual(result, { planned: 1, deleted: 1 });
-  assert.deepEqual(counts, { list: 6, delete: 2 });
+  // plan (1 retried + 2), re-plan after verify (1 retried + 2), post-delete check (2)
+  assert.deepEqual(counts, { list: 8, delete: 2 });
+});
+
+// Run 4c66f928: the ownership check blocked the runner for minutes between the first listing and the delete.
+const changingListing = (before, after) => {
+  let verified = false;
+  return {
+    retry: retryWithoutDelay,
+    listVersions: async params => params.Prefix.endsWith(`${agencyA}/`) ? listing(agencyA, verified ? after : before) : listing(agencyB),
+    verifyOwnership: async () => { verified = true; },
+  };
+};
+
+test('the deletion set is planned again after the ownership check: a version added meanwhile is deleted too', async () => {
+  const deleted = [];
+  let gone = false;
+  const ops = changingListing([{ Key: trackedKey, VersionId: 'v1' }], [{ Key: trackedKey, VersionId: 'v1' }, { Key: trackedKey, VersionId: 'v2' }]);
+  const listVersions = ops.listVersions;
+  const result = await cleanupRecordedFixtureStorage(manifest, target, {
+    ...ops,
+    listVersions: async params => gone && params.Prefix.endsWith(`${agencyA}/`) ? listing(agencyA) : listVersions(params),
+    deleteVersion: async params => { deleted.push(params.VersionId); if (deleted.length === 2) gone = true; },
+  });
+  assert.deepEqual(deleted, ['v1', 'v2']);
+  assert.deepEqual(result, { planned: 2, deleted: 2 });
+});
+
+test('an untracked object that appears during the ownership check refuses cleanup before any deletion', async () => {
+  const untracked = `department-assets/${agencyA}/patch-2.png`;
+  await assert.rejects(cleanupRecordedFixtureStorage(manifest, target, {
+    ...changingListing([{ Key: trackedKey, VersionId: 'v1' }], [{ Key: trackedKey, VersionId: 'v1' }, { Key: untracked, VersionId: 'u1' }]),
+    deleteVersion: async () => assert.fail('nothing may be deleted'),
+  }), { code: 'FIXTURE_STORAGE_REFUSED' });
+});
+
+test('an object already removed by the time ownership is confirmed is not deleted again', async () => {
+  const result = await cleanupRecordedFixtureStorage(manifest, target, {
+    ...changingListing([{ Key: trackedKey, VersionId: 'v1' }], []),
+    deleteVersion: async () => assert.fail('nothing is left to delete'),
+  });
+  assert.deepEqual(result, { planned: 0, deleted: 0 });
 });
 
 test('stops after bounded retries when an S3 listing keeps failing transiently', async () => {
@@ -125,7 +166,8 @@ test('refuses cleanup when post-deletion verification cannot inspect a complete 
     listVersions: async params => {
       listCalls += 1;
       if (params.Prefix.endsWith(`${agencyA}/`)) {
-        return listCalls <= 2 ? listing(agencyA, [{ Key: trackedKey, VersionId: 'v1' }]) : { ...listing(agencyA), IsTruncated: true };
+        // calls 1 and 3 are the plan and the re-plan after the ownership check; call 5 is the post-delete check
+        return listCalls <= 4 ? listing(agencyA, [{ Key: trackedKey, VersionId: 'v1' }]) : { ...listing(agencyA), IsTruncated: true };
       }
       return listing(agencyB);
     },
