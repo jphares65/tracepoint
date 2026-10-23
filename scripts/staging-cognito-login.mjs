@@ -83,13 +83,16 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
   return secret;
 }
 
-function extractTotpSecret(text) {
+export function extractTotpSecret(text) {
   const lines = text.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     if (!/secret|manual setup|setup key/i.test(lines[index])) continue;
-    for (const candidate of lines.slice(index, index + 4)) {
-      const match = candidate.toUpperCase().match(/(?:^|\s)([A-Z2-7]{16,64})(?:\s|$)/);
-      if (match) return match[1];
+    for (const candidate of lines.slice(index, index + 13)) {
+      const value = candidate.toUpperCase().trim();
+      if (/^[A-Z2-7]{16,64}$/.test(value)) return value;
+      if (!/^[A-Z2-7]{4,8}(?:[\s-]+[A-Z2-7]{4,8}){3,15}$/.test(value)) continue;
+      const normalized = value.replace(/[\s-]/g, '');
+      if (/^[A-Z2-7]{16,64}$/.test(normalized)) return normalized;
     }
   }
   return null;

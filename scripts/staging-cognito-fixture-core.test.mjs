@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { applyStagingFixture, isStagingAcceptanceUser, sanitizeFixturePostgresDiagnostic, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
-import { totp } from './staging-cognito-login.mjs';
+import { extractTotpSecret, totp } from './staging-cognito-login.mjs';
 
 const run = 'c30a4084-6487-4c42-9d6f-83fd1df935a8';
 const manifest = {
@@ -117,6 +117,12 @@ test('cleanup is idempotent for the same completed run', async () => {
 
 test('computes RFC 6238 six-digit software-token codes', () => {
   assert.equal(totp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 59_000), '287082');
+});
+
+test('extracts Cognito TOTP setup keys when grouped or separated from their label', () => {
+  assert.equal(extractTotpSecret('Secret key:\nABCD EFGH IJKL MNOP QRST UVWX'), 'ABCDEFGHIJKLMNOPQRSTUVWX');
+  assert.equal(extractTotpSecret('Manual setup\nUse the authenticator app\nABCD-EFGH-IJKL-MNOP'), 'ABCDEFGHIJKLMNOP');
+  assert.equal(extractTotpSecret('An unrelated base32-like line\nABCDEFGHIJKLMNOP'), null);
 });
 
 test('migration runner image copies its local fixture module dependency', async () => {
