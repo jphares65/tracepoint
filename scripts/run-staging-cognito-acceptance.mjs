@@ -7,11 +7,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   AdminCreateUserCommand, AdminDeleteUserCommand, AdminSetUserPasswordCommand,
-  CognitoIdentityProviderClient, DescribeUserPoolClientCommand, GetUserPoolMfaConfigCommand,
+  CognitoIdentityProviderClient, DescribeUserPoolClientCommand, GetUserPoolMfaConfigCommand, ListUsersCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { DeleteObjectCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
-import { validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
+import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
 
 const account = '559054714699';
 const region = 'us-east-1';
@@ -58,7 +58,7 @@ function verifyLiveBoundary() {
   return { service, task, appDigest: task.containerDefinitions[0].image.split('@').at(-1), databaseHost: db.Endpoint.Address };
 }
 
-async function verifyCognitoBoundary(expectedUsernames = [], requireTotp = true) {
+async function verifyCognitoBoundary(expectedUsernames = [], requireTotp = true, allowOtherAcceptanceUsers = false) {
   const mfa = await identityClient.send(new GetUserPoolMfaConfigCommand({ UserPoolId: poolId }));
   if (mfa?.MfaConfiguration !== 'ON') throw Object.assign(new Error(), { code: 'STAGING_MFA_NOT_REQUIRED' });
   if (requireTotp && mfa?.SoftwareTokenMfaConfiguration?.Enabled !== true) throw Object.assign(new Error(), { code: 'STAGING_TOTP_FACTOR_UNAVAILABLE' });
@@ -70,10 +70,24 @@ async function verifyCognitoBoundary(expectedUsernames = [], requireTotp = true)
   assert.ok(app?.ExplicitAuthFlows?.includes('ALLOW_USER_SRP_AUTH'));
   const domainInfo = aws(['cognito-idp', 'describe-user-pool-domain', '--domain', 'tracepoint-staging-559054714699']);
   assert.equal(domainInfo.DomainDescription?.Status, 'ACTIVE');
-  const users = aws(['cognito-idp', 'list-users', '--user-pool-id', poolId, '--filter', 'username ^= "acceptance-"']);
-  const found = (users.Users ?? []).filter(user => user.Username?.startsWith('acceptance-'));
-  assert.ok(found.every(user => expectedUsernames.includes(user.Username)), 'Only the saved fixture run may exist during cleanup.');
-  if (!expectedUsernames.length) assert.equal(found.length, 0, 'No prior synthetic acceptance identities may exist.');
+  const found = await listCognitoAcceptanceUsers();
+  if (!allowOtherAcceptanceUsers) {
+    assert.ok(found.every(user => expectedUsernames.includes(user.Username)), 'Only the saved fixture run may exist during cleanup.');
+    if (!expectedUsernames.length) assert.equal(found.length, 0, 'No prior synthetic acceptance identities may exist.');
+  }
+}
+
+async function listCognitoAcceptanceUsers() {
+  const found = [];
+  let paginationToken;
+  do {
+    const page = await identityClient.send(new ListUsersCommand({
+      UserPoolId: poolId, Limit: 60, ...(paginationToken ? { PaginationToken: paginationToken } : {}),
+    }));
+    found.push(...(page.Users ?? []).filter(isStagingAcceptanceUser));
+    paginationToken = page.PaginationToken;
+  } while (paginationToken);
+  return found;
 }
 
 function newManifest(run) {
@@ -86,7 +100,7 @@ function newManifest(run) {
     { role: 'officer', agencyIndex: 1, code: 'foreign' },
   ];
   return { environment: 'staging', run, poolId, issuer, agencies, users: roles.map((spec, index) => ({
-    id: randomUUID(), subject: '', username: `acceptance-${run}-${spec.code}@example.invalid`,
+    id: randomUUID(), subject: '', username: '',
     email: `acceptance-${run}-${spec.code}@example.invalid`, fullName: `Staging Acceptance ${spec.role} ${index + 1}`,
     role: spec.role, agencyIndex: spec.agencyIndex,
   })) };
@@ -94,16 +108,24 @@ function newManifest(run) {
 
 async function provisionCognito(manifest, passwords) {
   for (const user of manifest.users) {
-    createdUsernames.push(user.username);
+    createdUsernames.push(user.email);
     const response = await identityClient.send(new AdminCreateUserCommand({
       UserPoolId: poolId, Username: user.username, MessageAction: 'SUPPRESS',
       UserAttributes: [{ Name: 'email', Value: user.email }, { Name: 'name', Value: user.fullName }, { Name: 'email_verified', Value: 'false' }],
       TemporaryPassword: passwords.get(user.email),
     }));
     const subject = response.User?.Attributes?.find(attribute => attribute.Name === 'sub')?.Value;
+    const canonicalUsername = response.User?.Username;
+    if (canonicalUsername) {
+      user.subject = subject ?? '';
+      user.username = canonicalUsername;
+      createdUsernames.push(canonicalUsername);
+    }
     assert.match(subject ?? '', /^[0-9a-f-]{36}$/i);
+    assert.match(canonicalUsername ?? '', /^[0-9a-f-]{36}$/i);
     user.subject = subject;
-    await identityClient.send(new AdminSetUserPasswordCommand({ UserPoolId: poolId, Username: user.username, Password: passwords.get(user.email), Permanent: true }));
+    user.username = canonicalUsername;
+    await identityClient.send(new AdminSetUserPasswordCommand({ UserPoolId: poolId, Username: canonicalUsername, Password: passwords.get(user.email), Permanent: true }));
   }
 }
 
@@ -132,10 +154,16 @@ async function cleanupStorage(manifest) {
   }
 }
 
-async function deleteCognitoUsers() {
+async function deleteCognitoUsers(manifest) {
   currentIdentity();
+  const fixtureEmails = new Set((manifest?.users ?? []).map(user => user.email));
+  const liveFixtureNames = (await listCognitoAcceptanceUsers()).filter(user => {
+    const email = user.Attributes?.find(attribute => attribute.Name === 'email')?.Value;
+    return fixtureEmails.has(email);
+  }).map(user => user.Username);
+  const usernames = new Set([...createdUsernames, ...liveFixtureNames].filter(username => /^[0-9a-f-]{36}$/i.test(username ?? '')));
   let failed = false;
-  for (const username of [...createdUsernames].reverse()) {
+  for (const username of [...usernames].reverse()) {
     try { await identityClient.send(new AdminDeleteUserCommand({ UserPoolId: poolId, Username: username })); }
     catch (error) { if (error?.name !== 'UserNotFoundException') failed = true; }
   }
@@ -157,14 +185,27 @@ async function main() {
     setOperationStage('recover-fixture-cleanup');
     const manifestPath = process.argv[recoveryIndex + 1];
     if (!manifestPath) throw new Error('A fixture recovery manifest path is required.');
-    const manifest = validateStagingFixtureManifest(JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8')), 'cleanup');
-    currentIdentity(); await verifyCognitoBoundary(manifest.users.map(user => user.username), false);
+    const manifestInput = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'));
+    currentIdentity();
+    const liveUsers = await listCognitoAcceptanceUsers();
+    for (const user of manifestInput.users ?? []) {
+      if (!/^[0-9a-f-]{36}$/i.test(user.username ?? '')) {
+        const canonicalUsername = liveUsers.find(candidate => {
+          const attributes = new Map((candidate.Attributes ?? []).map(attribute => [attribute.Name, attribute.Value]));
+          return attributes.get('email') === user.email && attributes.get('sub') === user.subject;
+        })?.Username;
+        user.username = canonicalUsername ?? user.subject;
+      }
+    }
+    const manifest = validateStagingFixtureManifest(manifestInput, 'cleanup');
+    await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
+    await verifyCognitoBoundary(manifest.users.map(user => user.username), false, true);
     for (const user of manifest.users ?? []) createdUsernames.push(user.username);
     verifyLiveBoundary();
     const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
     await cleanupStorage(manifest);
     runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
-    await deleteCognitoUsers();
+    await deleteCognitoUsers(manifest);
     await rm(path.dirname(manifestPath), { recursive: true, force: true });
     console.log(JSON.stringify({ fixtureRun: manifest.run, cleanup: 'verified', secretsPersisted: false }));
     return;
@@ -207,7 +248,7 @@ async function main() {
         runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
       }
     } catch { cleanupError = true; }
-    try { await deleteCognitoUsers(); } catch { cleanupError = true; }
+    try { await deleteCognitoUsers(manifest); } catch { cleanupError = true; }
     if (cleanupError) {
       console.error(JSON.stringify({ fixtureRun: run, cleanup: 'FAILED', recoveryManifest: manifestPath, secretsPersisted: false }));
       resultCode = 1;

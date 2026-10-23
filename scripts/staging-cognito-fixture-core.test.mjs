@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { applyStagingFixture, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
+import { applyStagingFixture, isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
 import { totp } from './staging-cognito-login.mjs';
 
 const run = 'c30a4084-6487-4c42-9d6f-83fd1df935a8';
@@ -11,7 +11,7 @@ const manifest = {
   agencies: [0, 1].map(index => ({ id: `00000000-0000-4000-8000-00000000000${index + 1}`, slug: `acceptance-${run}-${index}` })),
   users: ['officer', 'instructor', 'supervisor', 'administrator', 'foreign'].map((role, index) => {
     const email = `acceptance-${run}-${role}@example.invalid`;
-    return { id: `10000000-0000-4000-8000-00000000000${index + 1}`, subject: `20000000-0000-4000-8000-00000000000${index + 1}`, username: email, email, fullName: `Staging Acceptance ${role}`, role: role === 'foreign' ? 'officer' : role, agencyIndex: role === 'foreign' ? 1 : 0 };
+    return { id: `10000000-0000-4000-8000-00000000000${index + 1}`, subject: `20000000-0000-4000-8000-00000000000${index + 1}`, username: `30000000-0000-4000-8000-00000000000${index + 1}`, email, fullName: `Staging Acceptance ${role}`, role: role === 'foreign' ? 'officer' : role, agencyIndex: role === 'foreign' ? 1 : 0 };
   }),
 };
 
@@ -24,6 +24,12 @@ test('rejects production, role drift, cross-run slugs, and embedded credentials'
   assert.throws(() => validateStagingFixtureManifest({ ...manifest, agencies: [{ ...manifest.agencies[0], slug: 'production' }, manifest.agencies[1]] }, 'create'), /bound to this run/);
   assert.throws(() => validateStagingFixtureManifest({ ...manifest, users: manifest.users.map((user, index) => index ? user : { ...user, role: 'chief' }) }, 'create'), /Unsupported fixture role/);
   assert.throws(() => validateStagingFixtureManifest({ ...manifest, password: 'secret' }, 'create'), /Authentication secrets/);
+});
+
+test('detects acceptance identities by email when Cognito canonicalizes the username', () => {
+  assert.equal(isStagingAcceptanceUser({ Username: '20000000-0000-4000-8000-000000000001', Attributes: [{ Name: 'email', Value: 'acceptance-run-officer@example.invalid' }] }), true);
+  assert.equal(isStagingAcceptanceUser({ Username: 'acceptance-run-officer@example.invalid', Attributes: [] }), true);
+  assert.equal(isStagingAcceptanceUser({ Username: 'ordinary-user', Attributes: [{ Name: 'email', Value: 'member@example.invalid' }] }), false);
 });
 
 test('pins all fixture SQL to the configured staging database host before connecting to fixture rows', async () => {

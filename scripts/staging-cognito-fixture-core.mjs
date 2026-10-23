@@ -20,26 +20,33 @@ export function validateStagingFixtureManifest(manifest, action) {
   assert.ok(Array.isArray(manifest.users) && manifest.users.length === 5, 'Exactly five synthetic identities are required.');
   const seenIds = new Set();
   const seenSubs = new Set();
+  const seenUsernames = new Set();
   const seenEmails = new Set();
   const rolesInFirst = new Set();
   let secondAgencyOfficer = 0;
   for (const user of manifest.users) {
     assert.match(user.id, uuid, 'User identifier is invalid.');
     assert.match(user.subject, uuid, 'Cognito subject is invalid.');
-    assert.equal(user.username, user.email, 'Cognito fixture username must match its synthetic address.');
+    assert.match(user.username, uuid, 'Cognito fixture username must be the canonical Cognito username.');
+    assert.notEqual(user.username, user.email, 'Cognito fixture username must not use the mutable email alias.');
     assert.match(user.email, new RegExp(`^acceptance-${manifest.run}-[a-z]+@example\\.invalid$`), 'Synthetic address is invalid.');
     assert.equal(typeof user.fullName, 'string');
     assert.ok(user.fullName.startsWith('Staging Acceptance '));
     assert.ok(roles.has(user.role), 'Unsupported fixture role.');
     assert.ok(user.agencyIndex === 0 || user.agencyIndex === 1, 'Agency index is invalid.');
-    assert.ok(!seenIds.has(user.id) && !seenSubs.has(user.subject) && !seenEmails.has(user.email), 'Fixture identities must be unique.');
-    seenIds.add(user.id); seenSubs.add(user.subject); seenEmails.add(user.email);
+    assert.ok(!seenIds.has(user.id) && !seenSubs.has(user.subject) && !seenUsernames.has(user.username) && !seenEmails.has(user.email), 'Fixture identities must be unique.');
+    seenIds.add(user.id); seenSubs.add(user.subject); seenUsernames.add(user.username); seenEmails.add(user.email);
     if (user.agencyIndex === 0) rolesInFirst.add(user.role);
     if (user.agencyIndex === 1 && user.role === 'officer') secondAgencyOfficer += 1;
   }
   for (const role of roles) assert.ok(rolesInFirst.has(role), `Agency A is missing ${role}.`);
   assert.equal(secondAgencyOfficer, 1, 'Agency B must have one isolated officer.');
   return manifest;
+}
+
+export function isStagingAcceptanceUser(user) {
+  const email = user?.Attributes?.find(attribute => attribute.Name === 'email')?.Value ?? '';
+  return user?.Username?.startsWith('acceptance-') === true || email.toLowerCase().startsWith('acceptance-');
 }
 
 export async function applyStagingFixture(client, action, input, environment = process.env) {
