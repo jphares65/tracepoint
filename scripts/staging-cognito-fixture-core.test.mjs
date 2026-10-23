@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { applyStagingFixture, isStagingAcceptanceUser, sanitizeFixturePostgresDiagnostic, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
-import { extractTotpSecret, totp } from './staging-cognito-login.mjs';
+import { extractTotpSecret, extractTotpSecretFromQrPayload, totp } from './staging-cognito-login.mjs';
 
 const run = 'c30a4084-6487-4c42-9d6f-83fd1df935a8';
 const manifest = {
@@ -123,6 +123,12 @@ test('extracts Cognito TOTP setup keys when grouped or separated from their labe
   assert.equal(extractTotpSecret('Secret key:\nABCD EFGH IJKL MNOP QRST UVWX'), 'ABCDEFGHIJKLMNOPQRSTUVWX');
   assert.equal(extractTotpSecret('Manual setup\nUse the authenticator app\nABCD-EFGH-IJKL-MNOP'), 'ABCDEFGHIJKLMNOP');
   assert.equal(extractTotpSecret('An unrelated base32-like line\nABCDEFGHIJKLMNOP'), null);
+});
+
+test('extracts only valid TOTP secrets from Cognito otpauth QR payloads', () => {
+  assert.equal(extractTotpSecretFromQrPayload('otpauth://totp/TracePoint%3Aofficer?secret=ABCDEFGHIJKLMNOP&issuer=TracePoint'), 'ABCDEFGHIJKLMNOP');
+  assert.equal(extractTotpSecretFromQrPayload('https://example.invalid/?secret=ABCDEFGHIJKLMNOP'), null);
+  assert.equal(extractTotpSecretFromQrPayload('otpauth://totp/TracePoint?secret=short'), null);
 });
 
 test('migration runner image copies its local fixture module dependency', async () => {

@@ -55,7 +55,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     }
     if (/software token|authenticator app|setup.*mfa|set up.*authenticator/i.test(text)) {
       onStep('configure-cognito-totp');
-      const setupSecret = extractTotpSecret(text);
+      const setupSecret = extractTotpSecret(text) ?? await extractTotpSecretFromQr(page);
       if (setupSecret) secret = setupSecret;
       if (!secret) {
         const manualSetup = page.getByText(/can't scan|enter.*manually|manual setup/i).first();
@@ -103,6 +103,40 @@ export function extractTotpSecret(text) {
       if (/^[A-Z2-7]{16,64}$/.test(normalized)) return normalized;
     }
   }
+  return null;
+}
+
+export function extractTotpSecretFromQrPayload(payload) {
+  if (!String(payload).startsWith('otpauth://totp/')) return null;
+  try {
+    const secret = new URL(payload).searchParams.get('secret')?.replace(/[\s=-]/g, '').toUpperCase();
+    return /^[A-Z2-7]{16,64}$/.test(secret ?? '') ? secret : null;
+  } catch {
+    return null;
+  }
+}
+
+async function extractTotpSecretFromQr(page) {
+  try {
+    const payloads = await page.evaluate(async () => {
+      if (typeof BarcodeDetector !== 'function') return [];
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      const candidates = [...document.images, ...document.querySelectorAll('canvas')];
+      const decoded = [];
+      for (const candidate of candidates) {
+        try {
+          for (const item of await detector.detect(candidate)) {
+            if (/^otpauth:\/\/totp\//i.test(item.rawValue ?? '')) decoded.push(item.rawValue);
+          }
+        } catch { /* Ignore non-QR images and continue through rendered candidates. */ }
+      }
+      return decoded;
+    });
+    for (const payload of payloads) {
+      const secret = extractTotpSecretFromQrPayload(payload);
+      if (secret) return secret;
+    }
+  } catch { /* Browser QR decoding is best-effort; the manual setup path remains available. */ }
   return null;
 }
 
