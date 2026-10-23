@@ -413,6 +413,77 @@ test("F3 a fleet manager clears a safety hold only with a reason; the clearance 
   assert.equal((await clear({ clearSafetyHold: true, clearanceReason: "again" })).status, 409, "nothing left to clear");
 });
 
+// AT-1 (staging acceptance 2026-10-22): a manual Available or Attention on a held vehicle was answered 200 while
+// the database guard kept the status, and the override flag and reason it saved kept the vehicle Out of Service
+// after the hold was released. Both manual-status routes now refuse first and write nothing.
+const heldVehicle = () => createDb(fleet([vehicle({ status: "Out of Service", status_override_active: false, status_reason: "Held" })], [heldOrder({ status: "Completed" })]));
+
+test("AT-1 a held vehicle cannot be set Available or Attention, and the refusal writes nothing", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  for (const status of ["Available", "Attention"]) {
+    for (const [route, send] of [
+      ["vehicle", (body: Row) => vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", body), params({ vehicleId: V }))],
+      ["list", (body: Row) => listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, ...body }))],
+    ] as const) {
+      const db = heldVehicle();
+      signIn(db, MANAGER);
+      const response = await send({ status, reason: "manager says it is fine" });
+      const body = await response.json();
+      assert.equal(response.status, 409, `${route} ${status}`);
+      assert.match(body.error, /under a safety hold and was not changed\. Critical work order "Brakes" recorded on 2026-10-01/);
+      assert.equal(body.safetyHold.source, "work_order");
+      const row = db.tables.fleet_vehicles[0];
+      assert.deepEqual([row.status, row.status_override_active, row.status_reason], ["Out of Service", false, "Held"], `${route} ${status} wrote nothing`);
+      assert.equal(db.tables.audit_events.length, 0, `${route} ${status} recorded no update`);
+    }
+  }
+});
+
+test("AT-1 a stricter manual status stays allowed under a hold, and Available is allowed once the hold is cleared", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  const db = heldVehicle();
+  signIn(db, MANAGER);
+  assert.equal((await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { status: "Maintenance", reason: "in the shop" }), params({ vehicleId: V }))).status, 200);
+  assert.equal(db.tables.fleet_vehicles[0].status, "Maintenance");
+  assert.equal((await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, comments: "keys at the desk", reason: "note" }))).status, 200, "edits that keep the status are not checked");
+
+  const cleared = heldVehicle();
+  cleared.tables.fleet_vehicles[0].safety_hold_cleared_at = "2026-10-02T09:00:00.000Z";
+  signIn(cleared, MANAGER);
+  const response = await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { status: "Available", reason: "returned to service" }), params({ vehicleId: V }));
+  assert.equal(response.status, 200);
+  assert.equal(cleared.tables.fleet_vehicles[0].status_override_active, true, "a manager status after clearance is a normal override");
+});
+
+test("AT-1 a hold the check did not see is rolled back when the guard keeps the status", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  // Stand-in for database/aws/057: the guard keeps Out of Service whatever status is written.
+  const guarded = (db: ReturnType<typeof createDb>) => {
+    const from = db.from;
+    db.from = (table: string) => {
+      const builder = from(table);
+      if (table !== "fleet_vehicles") return builder;
+      const update = builder.update;
+      builder.update = (value: Row) => update(value.status === "Available" || value.status === "Attention" ? { ...value, status: "Out of Service" } : value);
+      return builder;
+    };
+    return db;
+  };
+  for (const [route, send] of [
+    ["vehicle", (body: Row) => vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", body), params({ vehicleId: V }))],
+    ["list", (body: Row) => listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, ...body }))],
+  ] as const) {
+    const db = guarded(createDb(fleet([vehicle({ status: "Out of Service", status_override_active: false, status_reason: "Held" })])));
+    signIn(db, MANAGER);
+    const response = await send({ status: "Available", reason: "race with a new critical defect" });
+    assert.equal(response.status, 409, route);
+    assert.match((await response.json()).error, /safety hold kept this vehicle out of service, so the update was not saved/);
+    const row = db.tables.fleet_vehicles[0];
+    assert.deepEqual([row.status, row.status_override_active, row.status_reason], ["Out of Service", false, "Held"], `${route} rolled back the override and reason`);
+    assert.equal(db.tables.audit_events.length, 0, `${route} recorded no update`);
+  }
+});
+
 test("F6a a safety hold cannot be cleared while a critical work order is open; once it is closed the clearance is allowed", async () => {
   const { json, vehicleRoute, workOrders } = await load();
   const db = createDb(fleet([vehicle({ status: "Out of Service" })], [heldOrder()]));

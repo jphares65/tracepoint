@@ -134,6 +134,20 @@ export async function findSafetyHold(context: Parameters<typeof auditFleet>[0], 
   };
 }
 
+// The statuses the safety-hold guard (database/aws/057 guard_fleet_safety_hold_status) keeps a held vehicle
+// from taking. A manual status update asking for one of them while a hold applies is refused before anything is
+// written (AT-1): the guard would keep the status but save the override flag and reason, leaving the vehicle
+// overridden Out of Service after the hold is released.
+export const SAFETY_HOLD_RELEASING_STATUSES: ReadonlySet<string> = new Set(["Available", "Attention"]);
+
+export async function findStatusBlockingSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, vehicle: FleetRow, requestedStatus: unknown): Promise<FleetSafetyHold | null> {
+  if (typeof requestedStatus !== "string" || !SAFETY_HOLD_RELEASING_STATUSES.has(requestedStatus) || requestedStatus === vehicle?.status) return null;
+  return findSafetyHold(context, vehicleId, vehicle);
+}
+
+export const safetyHoldStatusRefusal = (hold: FleetSafetyHold) =>
+  `This vehicle is under a safety hold and was not changed. ${hold.reason}`;
+
 export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const [rulesResult, workResult, equipmentResult, vehicleResult] = await Promise.all([
     context.admin.from("fleet_rules").select("*").eq("department_id", context.departmentId).maybeSingle(),

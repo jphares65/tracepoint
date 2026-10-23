@@ -8,7 +8,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { canReadFleet } from "@/lib/tracepoint/fleet-access";
-import { canManageFleet, reconcileFleetAudit, refreshFleetVehicle } from "@/lib/tracepoint/fleet-server";
+import { canManageFleet, findStatusBlockingSafetyHold, reconcileFleetAudit, refreshFleetVehicle, SAFETY_HOLD_RELEASING_STATUSES, safetyHoldStatusRefusal } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 import { FleetReadRepositoryError } from "@/lib/fleet/read-repository-core";
 
@@ -315,6 +315,24 @@ export async function PATCH(request: NextRequest) {
   const nextStatus = body.status === undefined
     ? existing.status as FleetStatus
     : normalizeStatus(body.status);
+  // AT-1: a held vehicle cannot be made Available or Attention by a manual edit; refuse before writing anything.
+  // The override flag, reason and clearance time are not in VEHICLE_SELECT, so they are read for the check and for
+  // the rollback below.
+  let holdState: Record<string, unknown> | null = null;
+  if (nextStatus !== existing.status && SAFETY_HOLD_RELEASING_STATUSES.has(nextStatus)) {
+    const { data: state, error: stateError } = await resolved.admin
+      .from("fleet_vehicles")
+      .select("status,status_override_active,status_reason,safety_hold_cleared_at")
+      .eq("department_id", resolved.departmentId)
+      .eq("id", id)
+      .maybeSingle();
+    if (stateError || !state) return NextResponse.json({ error: fleetUnavailable(stateError) }, { status: 500 });
+    holdState = state;
+    let hold;
+    try { hold = await findStatusBlockingSafetyHold(resolved, id, state, nextStatus); }
+    catch (holdError) { return NextResponse.json({ error: holdError instanceof Error ? holdError.message : "The safety hold could not be checked." }, { status: 500 }); }
+    if (hold) return NextResponse.json({ error: safetyHoldStatusRefusal(hold), safetyHold: hold }, { status: 409 });
+  }
   const updatedAt = new Date().toISOString();
   const value = (input: string, column: string) =>
     body[input] === undefined ? existing[column] : body[input];
@@ -393,6 +411,19 @@ export async function PATCH(request: NextRequest) {
         ? "A vehicle with that unit number, VIN, or license plate already exists for this agency."
         : "The vehicle could not be updated." },
       { status: duplicate ? 409 : 500 },
+    );
+  }
+
+  // A hold that appeared after the check: the guard kept the status, so nothing of this update stands.
+  if (holdState && data.status !== nextStatus) {
+    await resolved.admin
+      .from("fleet_vehicles")
+      .update({ ...existing, status_override_active: holdState.status_override_active, status_reason: holdState.status_reason })
+      .eq("department_id", resolved.departmentId)
+      .eq("id", id);
+    return NextResponse.json(
+      { error: "A safety hold kept this vehicle out of service, so the update was not saved. Clear the hold before returning it to service." },
+      { status: 409 },
     );
   }
 
