@@ -57,6 +57,14 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       onStep('configure-cognito-totp');
       const setupSecret = extractTotpSecret(text);
       if (setupSecret) secret = setupSecret;
+      if (!secret) {
+        const manualSetup = page.getByText(/can't scan|enter.*manually|manual setup/i).first();
+        if (await manualSetup.isVisible().catch(() => false)) {
+          onStep('reveal-cognito-totp-manual-key');
+          await manualSetup.click();
+          continue;
+        }
+      }
       if (!secret) throw new Error('Cognito software-token MFA setup did not expose an authenticator secret.');
     }
     if (/verification code|authenticator|one.time password|software token/i.test(text)) {
