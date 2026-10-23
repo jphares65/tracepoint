@@ -113,11 +113,20 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
   } catch (error) {
     const errorName = /^[A-Za-z]*Error$/.test(error?.name ?? '') ? error.name : 'UnknownError';
     const role = ['officer', 'instructor', 'supervisor', 'administrator'].includes(activeUser?.role) ? activeUser.role : 'unknown';
+    const diagnostics = error?.acceptanceDiagnostics;
     add('authenticated acceptance execution', 'fail', {
       code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
       role,
       phase: activePhase,
       errorName,
+      ...(diagnostics && typeof diagnostics === 'object' ? { diagnostics: {
+        barcodeDetectorAvailable: diagnostics.barcodeDetectorAvailable === true,
+        imageCount: Number.isInteger(diagnostics.imageCount) ? diagnostics.imageCount : 0,
+        canvasCount: Number.isInteger(diagnostics.canvasCount) ? diagnostics.canvasCount : 0,
+        qrDecoded: diagnostics.qrDecoded === true,
+        totpPayloadFound: diagnostics.totpPayloadFound === true,
+        manualSetupVisible: diagnostics.manualSetupVisible === true,
+      } } : {}),
     });
   } finally {
     if (adminContext) await adminContext.close().catch(() => undefined);

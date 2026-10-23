@@ -55,15 +55,23 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     }
     if (/software token|authenticator app|setup.*mfa|set up.*authenticator/i.test(text)) {
       onStep('configure-cognito-totp');
-      const setupSecret = extractTotpSecret(text) ?? await extractTotpSecretFromQr(page);
+      let setupSecret = extractTotpSecret(text);
+      let qrDiagnostics = null;
+      if (!setupSecret) {
+        const qrResult = await extractTotpSecretFromQr(page);
+        setupSecret = qrResult.secret;
+        qrDiagnostics = qrResult.diagnostics;
+      }
       if (setupSecret) secret = setupSecret;
       if (!secret) {
         const manualSetup = page.getByText(/can't scan|enter.*manually|manual setup/i).first();
-        if (await manualSetup.isVisible().catch(() => false)) {
+        const manualSetupVisible = await manualSetup.isVisible().catch(() => false);
+        if (manualSetupVisible) {
           onStep('reveal-cognito-totp-manual-key');
           await manualSetup.click();
           continue;
         }
+        if (qrDiagnostics) throw Object.assign(new Error('Cognito TOTP enrollment QR could not be read.'), { acceptanceDiagnostics: { ...qrDiagnostics, manualSetupVisible } });
       }
       if (!secret) throw new Error('Cognito software-token MFA setup did not expose an authenticator secret.');
     }
@@ -117,11 +125,14 @@ export function extractTotpSecretFromQrPayload(payload) {
 }
 
 async function extractTotpSecretFromQr(page) {
+  const empty = { secret: null, diagnostics: { barcodeDetectorAvailable: false, imageCount: 0, canvasCount: 0, qrDecoded: false, totpPayloadFound: false } };
   try {
-    const payloads = await page.evaluate(async () => {
-      if (typeof BarcodeDetector !== 'function') return [];
+    const result = await page.evaluate(async () => {
+      const images = [...document.images];
+      const canvases = [...document.querySelectorAll('canvas')];
+      if (typeof BarcodeDetector !== 'function') return { supported: false, imageCount: images.length, canvasCount: canvases.length, qrDecoded: false, payloads: [] };
       const detector = new BarcodeDetector({ formats: ['qr_code'] });
-      const candidates = [...document.images, ...document.querySelectorAll('canvas')];
+      const candidates = [...images, ...canvases];
       const decoded = [];
       for (const candidate of candidates) {
         try {
@@ -130,14 +141,22 @@ async function extractTotpSecretFromQr(page) {
           }
         } catch { /* Ignore non-QR images and continue through rendered candidates. */ }
       }
-      return decoded;
+      return { supported: true, imageCount: images.length, canvasCount: canvases.length, qrDecoded: decoded.length > 0, payloads: decoded };
     });
-    for (const payload of payloads) {
+    const diagnostics = {
+      barcodeDetectorAvailable: result.supported === true,
+      imageCount: Number.isInteger(result.imageCount) ? result.imageCount : 0,
+      canvasCount: Number.isInteger(result.canvasCount) ? result.canvasCount : 0,
+      qrDecoded: result.qrDecoded === true,
+      totpPayloadFound: Array.isArray(result.payloads) && result.payloads.some(payload => /^otpauth:\/\/totp\//i.test(payload)),
+    };
+    for (const payload of result.payloads ?? []) {
       const secret = extractTotpSecretFromQrPayload(payload);
-      if (secret) return secret;
+      if (secret) return { secret, diagnostics };
     }
+    return { secret: null, diagnostics };
   } catch { /* Browser QR decoding is best-effort; the manual setup path remains available. */ }
-  return null;
+  return empty;
 }
 
 async function submit(page) {
