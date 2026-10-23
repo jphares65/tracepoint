@@ -1250,6 +1250,15 @@ test("migration tasks use the distroless numeric nonroot runtime contract and re
   assert.match(migrationTask, /\$entryPoint\.Value = @\('\/nodejs\/bin\/node'\)/);
   assert.doesNotMatch(migrationTask, /entryPoint\.Value = @\('node'\)/);
   assert.match(migrationTask, /function Get-MigrationTaskFailureDetails/);
+  assert.match(migrationTask, /function Read-SafeAcceptanceFixtureFailure\(\[string\]\$LogGroup,\[string\]\$StreamName,\[string\]\$StopCode\)/);
+  assert.match(migrationTask, /'logs','get-log-events','--log-group-name',\$LogGroup,'--log-stream-name',\$StreamName,'--limit','50'/);
+  assert.match(migrationTask, /for \(\$attempt = 1; \$attempt -le 8; \$attempt\+\+\)/);
+  assert.match(migrationTask, /if \(\$StopCode -eq 'TaskFailedToStart'\) \{ return \$null \}/);
+  assert.match(migrationTask, /if \(\$attempt -lt 8\) \{ Start-Sleep -Seconds 2 \}/);
+  assert.match(migrationTask, /if \(\$Action -like 'acceptance-fixture-\*'\) \{\s+\$taskId = \[string\]\$task\.taskArn\.Split\('\/'\)\[-1\]\s+\$streamName = "\$logPrefix\/\$\(\$container\.name\)\/\$taskId"\s+\$fixtureDiagnostic = Read-SafeAcceptanceFixtureFailure -LogGroup \$logGroup -StreamName \$streamName -StopCode \$failure\.StopCode\s+if \(\$fixtureDiagnostic\) \{ Write-Output \$fixtureDiagnostic \}\s+\}/);
+  assert.match(migrationTask, /if \(\$Action -like 'acceptance-fixture-\*'\) \{\s+if \(\$container\.logConfiguration\.logDriver -cne 'awslogs'\)/);
+  assert.match(migrationTask, /stagingAcceptanceFixture='failed'/);
+  assert.doesNotMatch(migrationTask, /Write-Output \$event\.message|Write-Host \$event\.message/);
   assert.match(migrationTask, /function Get-ReportedValue/);
   assert.match(migrationTask, /Get-OptionalPropertyValue \$container 'exitCode'/);
   assert.doesNotMatch(migrationTask, /\?\?/);

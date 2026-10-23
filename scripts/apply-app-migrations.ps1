@@ -310,6 +310,57 @@ function Read-MigrationTaskReport([string]$LogGroup,[string]$StreamName) {
   } while ([DateTimeOffset]::UtcNow -lt $deadline)
   throw 'Migration task logs did not contain a parseable ledger report.'
 }
+function ConvertTo-SafeFixtureDiagnosticText([string]$Value) {
+  if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '(?i)password|secret|token|cookie|authorization|credential|connection string') { return $null }
+  $safe = $Value -replace '[\r\n\t]+', ' '
+  $safe = $safe -replace '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', '[redacted-email]'
+  $safe = $safe -replace '\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b', '[redacted-id]'
+  $safe = $safe -replace '\b(?:eyJ[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{48,})\b', '[redacted-token]'
+  $safe = $safe -replace '(?:https?://|[A-Z]:\\|\\\\)[^\s,;]*', '[redacted-location]'
+  if ($safe.Length -gt 320) { $safe = $safe.Substring(0, 320) }
+  if ([string]::IsNullOrWhiteSpace($safe)) { return $null }
+  return $safe
+}
+function Read-SafeAcceptanceFixtureFailure([string]$LogGroup,[string]$StreamName,[string]$StopCode) {
+  # Read only the exact failed ECS task stream. Missing streams are expected for
+  # TaskFailedToStart; they must never hide the original ECS failure.
+  if ($StopCode -eq 'TaskFailedToStart') { return $null }
+  for ($attempt = 1; $attempt -le 8; $attempt++) {
+    try { $result = Invoke-Aws @('logs','get-log-events','--log-group-name',$LogGroup,'--log-stream-name',$StreamName,'--limit','50') }
+    catch {
+      if ($_.Exception.Message -notmatch 'ResourceNotFoundException|ResourceNotFound') { return $null }
+      $result = $null
+    }
+    $events = if ($null -ne $result) { @($result.events) } else { @() }
+    foreach ($event in $events) {
+      try { $parsed = ([string]$event.message) | ConvertFrom-Json -ErrorAction Stop }
+      catch { continue }
+      if ((Get-OptionalPropertyValue $parsed 'stagingAcceptanceFixture') -cne 'failed') { continue }
+      $safe = [ordered]@{ stagingAcceptanceFixture='failed' }
+      $stage = [string](Get-OptionalPropertyValue $parsed 'stage')
+      if ($stage -match '^[a-z][a-z0-9-]{0,63}$') { $safe.stage = $stage }
+      $sqlState = [string](Get-OptionalPropertyValue $parsed 'sqlstate')
+      if ($sqlState -match '^[0-9A-Z]{5}$') { $safe.sqlstate = $sqlState }
+      $failureCode = [string](Get-OptionalPropertyValue $parsed 'failureCode')
+      if ($failureCode -match '^[A-Z0-9_]{1,48}$') { $safe.failureCode = $failureCode }
+      $operation = [string](Get-OptionalPropertyValue $parsed 'operation')
+      if ($operation -match '^[a-z_][a-z0-9_.]{0,127}$') { $safe.operation = $operation }
+      foreach ($name in @('schema','table','column','routine')) {
+        $value = [string](Get-OptionalPropertyValue $parsed $name)
+        if ($value -match '^[a-z_][a-z0-9_]{0,62}$') { $safe[$name] = $value }
+      }
+      $position = Get-OptionalPropertyValue $parsed 'position'
+      if ($null -ne $position -and [string]$position -match '^[1-9][0-9]{0,8}$') { $safe.position = [int]$position }
+      foreach ($name in @('message','detail','hint','executionContext')) {
+        $value = ConvertTo-SafeFixtureDiagnosticText ([string](Get-OptionalPropertyValue $parsed $name))
+        if ($value) { $safe[$name] = $value }
+      }
+      return ConvertTo-Json -InputObject $safe -Depth 4 -Compress
+    }
+    if ($attempt -lt 8) { Start-Sleep -Seconds 2 }
+  }
+  return $null
+}
 function Invoke-MigrationTask {
   [CmdletBinding(DefaultParameterSetName='Commit')]
   param(
@@ -398,6 +449,13 @@ function Invoke-MigrationTask {
     $logPrefix = [string]$logOptions.'awslogs-stream-prefix'
     if ([string]::IsNullOrWhiteSpace($logGroup) -or [string]::IsNullOrWhiteSpace($logPrefix) -or [string]$logOptions.'awslogs-region' -cne $settings.Region) { throw 'Migration task CloudWatch log configuration is missing or points to the wrong region.' }
   }
+  if ($Action -like 'acceptance-fixture-*') {
+    if ($container.logConfiguration.logDriver -cne 'awslogs') { throw 'Acceptance fixture task must use CloudWatch awslogs for sanitized failure evidence.' }
+    $logOptions = $container.logConfiguration.options
+    $logGroup = [string]$logOptions.'awslogs-group'
+    $logPrefix = [string]$logOptions.'awslogs-stream-prefix'
+    if ([string]::IsNullOrWhiteSpace($logGroup) -or [string]::IsNullOrWhiteSpace($logPrefix) -or [string]$logOptions.'awslogs-region' -cne $settings.Region) { throw 'Acceptance fixture CloudWatch log configuration is missing or points to the wrong region.' }
+  }
   if ($settings.MigratorSecretArn -and -not $liveInspection) {
     # A migration task must use the existing database-owner credential, never
     # the web service's least-privileged runtime credential.  Deliberately
@@ -447,6 +505,12 @@ function Invoke-MigrationTask {
     $finished = (Invoke-Aws @('ecs','describe-tasks','--cluster',$settings.Cluster,'--tasks',$task.taskArn)).tasks | Select-Object -First 1
     $failure = Get-MigrationTaskFailureDetails $finished $container.name
     if ($failure.StopCode -ne 'EssentialContainerExited' -or -not $failure.ExitCodeReported -or $failure.ExitCode -ne '0') {
+      if ($Action -like 'acceptance-fixture-*') {
+        $taskId = [string]$task.taskArn.Split('/')[-1]
+        $streamName = "$logPrefix/$($container.name)/$taskId"
+        $fixtureDiagnostic = Read-SafeAcceptanceFixtureFailure -LogGroup $logGroup -StreamName $streamName -StopCode $failure.StopCode
+        if ($fixtureDiagnostic) { Write-Output $fixtureDiagnostic }
+      }
       throw "Migration task failed (stop code $($failure.StopCode); stopped reason $($failure.StoppedReason); container reason $($failure.ContainerReason); exit code $($failure.ExitCode))."
     }
     $report = $null
