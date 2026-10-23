@@ -127,11 +127,13 @@ async function load() {
 
 test("FLT-01 a manual override never leaves a vehicle with an open critical defect Available, and keeps a stricter manager status", async () => {
   const { server } = await load();
-  for (const [status, expected] of [["Available", "Out of Service"], ["Attention", "Out of Service"], ["Maintenance", "Maintenance"], ["Out of Service", "Out of Service"], ["Retired", "Retired"]]) {
+  // AT-1: an overridden Available/Attention taken out of service no longer stands, so its override is dropped (left
+  // active, it kept the vehicle Out of Service after the hold was released); a stricter manager status keeps its override.
+  for (const [status, expected, overrideKept] of [["Available", "Out of Service", false], ["Attention", "Out of Service", false], ["Maintenance", "Maintenance", true], ["Out of Service", "Out of Service", true], ["Retired", "Retired", true]] as const) {
     const db = createDb(fleet([vehicle({ status, status_override_active: true })], [criticalOrder]));
     const readiness = await server.refreshFleetVehicle({ admin: db, departmentId: "dept-1" }, V);
     assert.equal(readiness.status, expected, `override ${status}`);
-    assert.equal(db.tables.fleet_vehicles[0].status_override_active, true);
+    assert.equal(db.tables.fleet_vehicles[0].status_override_active, overrideKept, `override ${status}`);
   }
   const db = createDb(fleet([vehicle({ status: "Out of Service", status_override_active: true })], [{ ...criticalOrder, priority: "Normal", affects_availability: false }]));
   assert.equal((await server.refreshFleetVehicle({ admin: db, departmentId: "dept-1" }, V)).status, "Out of Service", "automation never makes an overridden vehicle more available");
@@ -153,14 +155,16 @@ test("FLT-01 manager sets Available, then a Critical inspection defect takes the
 
 test("FLT-01 a manual Available through the fleet list does not mask an open critical work order", async () => {
   const { json, listRoute } = await load();
-  const db = createDb(fleet([vehicle({ status: "Out of Service" })], [criticalOrder]));
+  const db = createDb(fleet([vehicle({ status: "Out of Service" })], [{ ...criticalOrder, created_at: "2026-10-01T08:00:00.000Z" }]));
   signIn(db, MANAGER);
+  // AT-1: this was answered 200 while the status was kept and the override saved; it is now refused and writes nothing.
   const response = await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, status: "Available", reason: "manager override", openIssueCount: 0 }));
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 409);
   assert.equal(db.tables.fleet_vehicles[0].status, "Out of Service");
-  assert.equal(db.tables.fleet_vehicles[0].open_issue_count, 1, "FLT-19: the open-issue count is recomputed");
+  assert.equal(db.tables.fleet_vehicles[0].status_override_active, false, "the refused override is not saved");
   assert.equal((await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, comments: "spare keys in office", reason: "note" }))).status, 200);
-  assert.equal(db.tables.fleet_vehicles[0].status_override_active, true, "an edit that keeps the status leaves the override flag alone");
+  assert.equal(db.tables.fleet_vehicles[0].open_issue_count, 1, "FLT-19: the open-issue count is recomputed");
+  assert.equal(db.tables.fleet_vehicles[0].status_override_active, false, "an edit that keeps the status leaves the override flag alone");
 });
 
 test("D-14 a typed open-issue count is never stored: a new vehicle starts at 0 and an edit keeps the computed count", async () => {
@@ -411,6 +415,98 @@ test("F3 a fleet manager clears a safety hold only with a reason; the clearance 
   assert.equal(db.tables.audit_events[0].details.reason, "brakes replaced and road tested");
   assert.equal(db.tables.audit_events[0].details.hold.since, "2026-10-01T08:00:00.000Z");
   assert.equal((await clear({ clearSafetyHold: true, clearanceReason: "again" })).status, 409, "nothing left to clear");
+});
+
+// AT-1 (staging acceptance 2026-10-22, F8 and F12-F13): a manual Available on a held vehicle was answered 200 while
+// the database guard kept the status, and the override flag and reason it saved kept the vehicle Out of Service after
+// the hold was released. Both manual-status routes now refuse first and write nothing but the refusal's audit entry.
+// Ported from 77e1a98c (claude/fix-at1-at2-20261022); the in-route rollback there is replaced by database/aws/068.
+const heldVehicle = () => createDb(fleet([vehicle({ status: "Out of Service", status_override_active: false, status_reason: "Held" })], [heldOrder({ status: "Completed" })]));
+const manualStatusRoutes = (vehicleRoute: any, listRoute: any, json: any) => [
+  ["vehicle", (body: Row) => vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", body), params({ vehicleId: V }))],
+  ["list", (body: Row) => listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, ...body }))],
+] as const;
+
+test("AT-1 a held vehicle cannot be set Available or Attention by either route, and the refusal writes nothing", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  for (const status of ["Available", "Attention"]) {
+    for (const [route, send] of manualStatusRoutes(vehicleRoute, listRoute, json)) {
+      for (const extra of [{}, { clearStatusOverride: true }]) {
+        const db = heldVehicle();
+        signIn(db, MANAGER);
+        const response = await send({ status, reason: "manager says it is fine", comments: "should not be saved", ...extra });
+        const body = await response.json();
+        assert.equal(response.status, 409, `${route} ${status}`);
+        assert.equal(body.code, "safety_hold_active");
+        assert.match(body.error, /under a safety hold and was not changed\. Critical work order "Brakes" recorded on 2026-10-01/);
+        assert.equal(body.safetyHold.source, "work_order");
+        const row = db.tables.fleet_vehicles[0];
+        assert.deepEqual([row.status, row.status_override_active, row.status_reason, row.comments], ["Out of Service", false, "Held", undefined], `${route} ${status} wrote nothing`);
+        assert.deepEqual(db.tables.audit_events.map((event: Row) => [event.action, event.details.attempted_status]), [["fleet_safety_hold_status_refused", status]]);
+      }
+    }
+  }
+});
+
+test("AT-1 a stricter manual status stays allowed under a hold, and Available is allowed once the hold is cleared", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  const db = heldVehicle();
+  signIn(db, MANAGER);
+  assert.equal((await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { status: "Maintenance", reason: "in the shop" }), params({ vehicleId: V }))).status, 200);
+  assert.equal(db.tables.fleet_vehicles[0].status, "Maintenance");
+  assert.equal((await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, comments: "keys at the desk", reason: "note" }))).status, 200, "edits that keep the status are not checked");
+
+  const cleared = heldVehicle();
+  cleared.tables.fleet_vehicles[0].safety_hold_cleared_at = "2026-10-02T09:00:00.000Z";
+  signIn(cleared, MANAGER);
+  const response = await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { status: "Available", reason: "returned to service" }), params({ vehicleId: V }));
+  assert.equal(response.status, 200);
+  assert.equal(cleared.tables.fleet_vehicles[0].status_override_active, true, "a manager status after clearance is a normal override");
+});
+
+test("AT-1 a hold the check did not see: the database refuses the whole update (068) and the route answers 409", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  // Stand-in for database/aws/068: a manual update (one that writes the override) to Available/Attention is refused, writing nothing.
+  const guarded = (db: ReturnType<typeof createDb>) => {
+    const from = db.from;
+    (db as any).from = (table: string) => {
+      const builder = from(table);
+      if (table !== "fleet_vehicles") return builder;
+      const update = builder.update;
+      builder.update = (value: Row) => {
+        if (!["Available", "Attention"].includes(value.status) || !("status_override_active" in value)) return update(value);
+        builder.then = (resolve: any) => Promise.resolve({ data: null, error: { code: "55000", message: "PostgreSQL data operation failed." } }).then(resolve);
+        return builder;
+      };
+      return builder;
+    };
+    return db;
+  };
+  for (const [route, send] of manualStatusRoutes(vehicleRoute, listRoute, json)) {
+    // No hold is visible to the route's check: the critical work order is committed after it.
+    const db = guarded(createDb(fleet([vehicle({ status: "Out of Service", status_override_active: false, status_reason: "Held" })])));
+    signIn(db, MANAGER);
+    const response = await send({ status: "Available", reason: "race with a new critical defect" });
+    assert.equal(response.status, 409, route);
+    assert.equal((await response.json()).code, "safety_hold_active");
+    const row = db.tables.fleet_vehicles[0];
+    assert.deepEqual([row.status, row.status_override_active, row.status_reason], ["Out of Service", false, "Held"], `${route} wrote nothing`);
+    assert.deepEqual(db.tables.audit_events.map((event: Row) => event.action), ["fleet_safety_hold_status_refused"], `${route} recorded only the refusal`);
+  }
+});
+
+test("AT-1 an override set just before a hold is dropped when the hold takes the vehicle out of service, so it cannot outlive the hold", async () => {
+  const { json, workOrders, inspections } = await load();
+  // The manager's Available committed before the critical work order existed (the race the route check cannot see).
+  const db = createDb(fleet([vehicle({ status: "Available", status_override_active: true, status_reason: "manager returned it" })], [heldOrder()]));
+  signIn(db, ["manage_fleet_maintenance"]);
+  const repaired = await workOrders.PATCH(json(`/api/fleet/vehicles/${V}/work-orders`, "PATCH", { id: "wo-critical", reason: "repaired", status: "Completed" }), params({ vehicleId: V }));
+  assert.equal(repaired.status, 200);
+  assert.deepEqual([db.tables.fleet_vehicles[0].status, db.tables.fleet_vehicles[0].status_override_active], ["Out of Service", false], "the hold supersedes the manual Available");
+  asInspector(db);
+  const passed = await inspect(inspections, json, checklist());
+  assert.equal(passed.status, 201);
+  assert.equal(passed.body.readiness.status, "Available", "after the hold is released the vehicle is not stuck Out of Service (F12-F13)");
 });
 
 test("F6a a safety hold cannot be cleared while a critical work order is open; once it is closed the clearance is allowed", async () => {

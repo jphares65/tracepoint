@@ -8,7 +8,7 @@ import {
   resolveServerAccess,
 } from "@/lib/tracepoint/server-access";
 import { canReadFleet } from "@/lib/tracepoint/fleet-access";
-import { canManageFleet, reconcileFleetAudit, refreshFleetVehicle } from "@/lib/tracepoint/fleet-server";
+import { canManageFleet, findStatusBlockingSafetyHold, isSafetyHoldRefusal, reconcileFleetAudit, refreshFleetVehicle, refuseStatusUnderSafetyHold } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 import { FleetReadRepositoryError } from "@/lib/fleet/read-repository-core";
 
@@ -315,6 +315,21 @@ export async function PATCH(request: NextRequest) {
   const nextStatus = body.status === undefined
     ? existing.status as FleetStatus
     : normalizeStatus(body.status);
+  // AT-1: a held vehicle is never made Available or Attention by hand; refuse before writing anything. The hold
+  // clearance time is not in VEHICLE_SELECT, so it is read for the check.
+  if (nextStatus !== existing.status) {
+    const { data: holdState, error: holdStateError } = await resolved.admin
+      .from("fleet_vehicles")
+      .select("status,safety_hold_cleared_at")
+      .eq("department_id", resolved.departmentId)
+      .eq("id", id)
+      .maybeSingle();
+    if (holdStateError || !holdState) return NextResponse.json({ error: fleetUnavailable(holdStateError) }, { status: 500 });
+    let hold;
+    try { hold = await findStatusBlockingSafetyHold(resolved, id, holdState, nextStatus); }
+    catch (holdError) { return NextResponse.json({ error: holdError instanceof Error ? holdError.message : "The safety hold could not be checked." }, { status: 500 }); }
+    if (hold) return NextResponse.json(await refuseStatusUnderSafetyHold(resolved, id, existing, nextStatus, hold), { status: 409 });
+  }
   const updatedAt = new Date().toISOString();
   const value = (input: string, column: string) =>
     body[input] === undefined ? existing[column] : body[input];
@@ -386,6 +401,10 @@ export async function PATCH(request: NextRequest) {
     .select(VEHICLE_SELECT)
     .single();
 
+  // A hold recorded after the check: the database refused the whole update (068), so nothing was written.
+  if (isSafetyHoldRefusal(error)) {
+    return NextResponse.json(await refuseStatusUnderSafetyHold(resolved, id, existing, nextStatus, null), { status: 409 });
+  }
   if (error) {
     const duplicate = error.code === "23505";
     return NextResponse.json(

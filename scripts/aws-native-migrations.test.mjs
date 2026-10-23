@@ -1334,13 +1334,14 @@ test("migration versions are unique and 038-048 hold the reconciled lineage with
     assert.equal(normalizedSha256(await readFile(new URL(filename, directory), "utf8")), sha256, `${filename} contents are unchanged`);
   }
   // 049-063 are the defect-remediation sequence renumbered after the staging lineage; 064-065 the stabilization
-  // convergence's armorer permission and inventory idempotency; 066 the D-2 equipment condition report; 067 the AT-2 custody fix
+  // convergence's armorer permission and inventory idempotency; 066 the D-2 equipment condition report; 067 the AT-2 custody fix; 068 the AT-1 manual status guard
   // (database/aws/MANIFEST.json).
-  assert.deepEqual(versions, Array.from({ length: 67 }, (_, index) => index + 1), "migrations are 001-067 contiguous");
+  assert.deepEqual(versions, Array.from({ length: 68 }, (_, index) => index + 1), "migrations are 001-068 contiguous");
   assert.equal(names[63], "064_armorer_storage_location_permission.sql", "064 holds the armorer storage-location permission");
   assert.equal(names[64], "065_inventory_idempotency_and_recipients.sql", "065 holds inventory idempotency and recipients");
   assert.equal(names[65], "066_equipment_condition_report.sql", "066 holds the equipment condition report");
   assert.equal(names[66], "067_firearm_custody_follows_assignment.sql", "067 holds the AT-2 custody fix");
+  assert.equal(names[67], "068_fleet_manual_status_under_safety_hold.sql", "068 holds the AT-1 manual status guard");
   assert.equal(names.find((name) => name.startsWith("042_")), "042_default_module_entitlements.sql", "042 holds the default module entitlements");
   const crlfSha256 = async (filename) => createHash("sha256").update((await readFile(new URL(filename, directory), "utf8")).replace(/\r\n/g, "\n").replace(/\n/g, "\r\n")).digest("hex");
   assert.equal(await crlfSha256("038_agency_documents_template_builder.sql"), "83f1ffdb10c646d4b7ac7e1d0478b009d53da214cbc4407c12f6b9db6edf1e3a", "038 staging ledger (CRLF archive) hash");

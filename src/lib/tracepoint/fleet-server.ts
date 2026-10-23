@@ -134,6 +134,29 @@ export async function findSafetyHold(context: Parameters<typeof auditFleet>[0], 
   };
 }
 
+// AT-1: the statuses a safety hold keeps a vehicle from taking. A manual request for one of them while a hold applies is
+// refused before anything is written; database/aws/068 refuses the same update (SQLSTATE 55000) whatever sent it, so a
+// hold that appears between this check and the write still writes nothing.
+export const SAFETY_HOLD_RELEASING_STATUSES: ReadonlySet<string> = new Set(["Available", "Attention"]);
+
+export async function findStatusBlockingSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, vehicle: FleetRow, requestedStatus: unknown): Promise<FleetSafetyHold | null> {
+  if (typeof requestedStatus !== "string" || !SAFETY_HOLD_RELEASING_STATUSES.has(requestedStatus)) return null;
+  return findSafetyHold(context, vehicleId, vehicle);
+}
+
+export const isSafetyHoldRefusal = (error: { code?: unknown } | null | undefined) => String(error?.code ?? "") === "55000";
+
+/** The 409 body for a manual status refused under a safety hold; the refusal is audited, nothing else is written. */
+export async function refuseStatusUnderSafetyHold(context: Parameters<typeof auditFleet>[0], vehicleId: string, vehicle: FleetRow, requestedStatus: unknown, hold: FleetSafetyHold | null) {
+  try { await auditFleet(context, "fleet_safety_hold_status_refused", "fleet_vehicle", vehicleId, { attempted_status: requestedStatus, previous_status: vehicle?.status ?? null, hold }); }
+  catch { /* the refusal stands even if its audit entry cannot be written */ }
+  return {
+    error: `This vehicle is under a safety hold and was not changed. ${hold?.reason ?? "Clear the hold before returning it to service."}`,
+    code: "safety_hold_active",
+    safetyHold: hold,
+  };
+}
+
 export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const [rulesResult, workResult, equipmentResult, vehicleResult] = await Promise.all([
     context.admin.from("fleet_rules").select("*").eq("department_id", context.departmentId).maybeSingle(),
@@ -159,15 +182,17 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
   const openIssueCount = work.length;
 
   let status = vehicle?.status ?? "Available";
+  let supersededOverride = false;
   if (rules.status_automation_enabled === false) {
     // As with a manual override: an Available/Attention vehicle with a critical hold is taken out of service, nothing else changes.
     if (criticalHold && ["Available", "Attention"].includes(status)) status = "Out of Service";
   }
   else if (status !== "Retired") {
     if (vehicle?.status_override_active === true) {
-      // A manual override never masks a critical condition: an overridden Available/Attention vehicle is still taken out of service.
+      // A manual override never masks a critical condition: an overridden Available/Attention vehicle is still taken out of service,
+      // and that manual status no longer stands (AT-1: left active, it kept the vehicle Out of Service after the hold was released).
       // Manager-set Maintenance, Out of Service and Retired are left alone, and the override stays active.
-      if (outOfService && ["Available", "Attention"].includes(status)) status = "Out of Service";
+      if (outOfService && ["Available", "Attention"].includes(status)) { status = "Out of Service"; supersededOverride = true; }
     }
     else if (outOfService) status = "Out of Service";
     else if (work.some((item: any) => ["Assigned", "Scheduled", "In Progress", "Awaiting Parts"].includes(item.status))) status = "Maintenance";
@@ -175,7 +200,7 @@ export async function refreshFleetVehicle(context: any, vehicleId: string) {
     else status = "Available";
   }
 
-  const { error: updateError } = await context.admin.from("fleet_vehicles").update({ status, open_issue_count: openIssueCount, updated_at: new Date().toISOString() }).eq("department_id", context.departmentId).eq("id", vehicleId);
+  const { error: updateError } = await context.admin.from("fleet_vehicles").update({ status, open_issue_count: openIssueCount, ...(supersededOverride ? { status_override_active: false } : {}), updated_at: new Date().toISOString() }).eq("department_id", context.departmentId).eq("id", vehicleId);
   if (updateError) throw new Error(`Vehicle readiness could not be refreshed: ${updateError.message}`);
   return { status, openIssueCount, safetyHold };
 }

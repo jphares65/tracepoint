@@ -6,7 +6,7 @@ import {
 } from "@/lib/storage/object-store";
 import { accessFailureResponse, featureDisabledResponse, hasServerFeature, permissionDeniedResponse, resolveServerAccess } from "@/lib/tracepoint/server-access";
 import { canReadFleet } from "@/lib/tracepoint/fleet-access";
-import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canSubmitFleetInspection, canViewFleetCosts, canViewNetworkDetails, findOpenCriticalWorkOrders, findSafetyHold, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, text } from "@/lib/tracepoint/fleet-server";
+import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canSubmitFleetInspection, canViewFleetCosts, canViewNetworkDetails, findOpenCriticalWorkOrders, findSafetyHold, findStatusBlockingSafetyHold, isSafetyHoldRefusal, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, refuseStatusUnderSafetyHold, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
 
 export const dynamic = "force-dynamic";
@@ -135,6 +135,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const { data: previous, error: loadError } = await context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
   if (loadError || !previous) return NextResponse.json({ error: loadError?.message ?? "Vehicle was not found." }, { status: loadError ? 500 : 404 });
+  // AT-1: a held vehicle is never made Available or Attention by hand; refuse before writing anything.
+  const requestedStatus = body.status !== undefined ? nullableText(body.status, 5000) : undefined;
+  let blockingHold;
+  try { blockingHold = await findStatusBlockingSafetyHold(context, vehicleId, previous, requestedStatus); }
+  catch (holdError) { return NextResponse.json({ error: holdError instanceof Error ? holdError.message : "The safety hold could not be checked." }, { status: 500 }); }
+  if (blockingHold) return NextResponse.json(await refuseStatusUnderSafetyHold(context, vehicleId, previous, requestedStatus, blockingHold), { status: 409 });
 
   const update: Record<string, unknown> = { updated_by_user_id: context.user.id, updated_at: new Date().toISOString() };
   const fields: Array<[string, string]> = [["status","status"],["assignedTo","assigned_to"],["homeLocation","home_location"],["comments","comments"]];
@@ -162,6 +168,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body.clearStatusOverride === true) update.status_override_active = false;
 
   const { data, error } = await context.admin.from("fleet_vehicles").update(update).eq("department_id", context.departmentId).eq("id", vehicleId).select("*").single();
+  // A hold recorded after the check: the database refused the whole update (068), so nothing was written.
+  if (isSafetyHoldRefusal(error)) return NextResponse.json(await refuseStatusUnderSafetyHold(context, vehicleId, previous, requestedStatus, null), { status: 409 });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const mileageCorrection = correction ? { mileage_correction: { reason: correctionReason, previous_mileage: previous.current_mileage, new_mileage: data.current_mileage, previous_hours: previous.current_hours, new_hours: data.current_hours } } : {};
   try { await auditFleet(context, correction ? "fleet_odometer_corrected" : "fleet_vehicle_updated", "fleet_vehicle", vehicleId, { reason, previous, current: data, ...mileageCorrection }); }
