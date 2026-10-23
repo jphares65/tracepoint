@@ -121,7 +121,7 @@ async function provisionCognito(manifest, passwords) {
   for (const user of manifest.users) {
     createdUsernames.push(user.email);
     const response = await identityClient.send(new AdminCreateUserCommand({
-      UserPoolId: poolId, Username: user.username, MessageAction: 'SUPPRESS',
+      UserPoolId: poolId, Username: user.email, MessageAction: 'SUPPRESS',
       UserAttributes: [{ Name: 'email', Value: user.email }, { Name: 'name', Value: user.fullName }, { Name: 'email_verified', Value: 'false' }],
       TemporaryPassword: passwords.get(user.email),
     }));
