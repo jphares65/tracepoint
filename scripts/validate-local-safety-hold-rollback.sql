@@ -2,10 +2,12 @@
 -- after the database/aws ledger, with the AWS runtime's session shape (see
 -- validate-local-field-write-authorization.sql). Covers database/aws/046's
 -- status guard: the writes an older image makes after completing a held
--- vehicle's critical work order (its readiness refresh, a manager's override)
--- succeed but keep the vehicle Out of Service, with an audit row by the
--- writer; a later inspection without critical defects or a manager clearance
--- with a reason still releases it, and vehicles without a hold are unaffected.
+-- vehicle's critical work order: its readiness refresh succeeds but keeps the
+-- vehicle Out of Service, with an audit row by the writer; a manager's override
+-- is refused whole (database/aws/068, SQLSTATE 55000), so neither the override
+-- flag nor its reason is saved. A later inspection without critical defects or
+-- a manager clearance with a reason still releases it, and vehicles without a
+-- hold are unaffected.
 begin;
 insert into auth.users(id,email) values
  ('0f470000-0000-4000-8000-0000000000a1','hr-inspector@example.invalid'),
@@ -54,10 +56,15 @@ update public.fleet_vehicles set status='Available', open_issue_count=0, updated
 where id in ('0f470000-0000-4000-8000-0000000001e1','0f470000-0000-4000-8000-0000000001e2');
 -- Vehicle 4: held only by its open work order; the refresh writes Attention.
 update public.fleet_vehicles set status='Attention', open_issue_count=1 where id='0f470000-0000-4000-8000-0000000001e4';
--- The previous image's manager override, and vehicle 3 without a hold.
+-- The previous image's manager override is refused whole (068), and vehicle 3 without a hold.
 select set_config('tracepoint.subject_id','0f470000-0000-4000-8000-0000000000a3',true);
-update public.fleet_vehicles set status='Available', status_reason='Back in service', status_override_active=true
-where id='0f470000-0000-4000-8000-0000000001e1';
+do $$
+begin
+ update public.fleet_vehicles set status='Available', status_reason='Back in service', status_override_active=true
+ where id='0f470000-0000-4000-8000-0000000001e1';
+ raise exception 'A manual override of a held vehicle was accepted';
+exception when sqlstate '55000' then null;
+end $$;
 update public.fleet_vehicles set status='Attention' where id='0f470000-0000-4000-8000-0000000001e3';
 reset role;
 reset session authorization;
@@ -75,8 +82,8 @@ begin
        and e.actor_user_id='0f470000-0000-4000-8000-0000000000a3') as kept_by_manager
   from public.fleet_vehicles v where v.department_id='0f470000-0000-4000-8000-00000000000a'
  loop
-  if (row.unit_number='HR-1' and (row.status<>'Out of Service' or row.open_issue_count<>0 or not row.status_override_active
-                                  or row.kept<>2 or row.kept_by_mechanic<>1 or row.kept_by_manager<>1))
+  if (row.unit_number='HR-1' and (row.status<>'Out of Service' or row.open_issue_count<>0 or row.status_override_active
+                                  or row.kept<>1 or row.kept_by_mechanic<>1 or row.kept_by_manager<>0))
      or (row.unit_number in ('HR-2','HR-4') and (row.status<>'Out of Service' or row.kept<>1 or row.kept_by_mechanic<>1))
      or (row.unit_number='HR-3' and (row.status<>'Attention' or row.kept<>0)) then
    raise exception 'Safety hold status after the previous image''s writes: % is % (override %, open issues %), % kept audit rows (mechanic %, manager %)',
@@ -128,7 +135,7 @@ begin
   raise exception 'Released vehicles: %', (select string_agg(unit_number || '=' || status, ',' order by unit_number) from public.fleet_vehicles
      where department_id='0f470000-0000-4000-8000-00000000000a');
  end if;
- if (select count(*) from public.audit_events where department_id='0f470000-0000-4000-8000-00000000000a' and action='fleet_safety_hold_status_kept') <> 4 then
+ if (select count(*) from public.audit_events where department_id='0f470000-0000-4000-8000-00000000000a' and action='fleet_safety_hold_status_kept') <> 3 then
   raise exception 'A release wrote a kept-status audit row';
  end if;
  if has_function_privilege('authenticated', 'public.guard_fleet_safety_hold_status()', 'execute')
