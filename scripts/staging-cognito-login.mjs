@@ -36,6 +36,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
   await submit(page);
   let secret = knownMfaSecret ?? null;
   for (let step = 0; step < 5; step += 1) {
+    onStep(`cognito-login-loop-${step + 1}`);
     if (new URL(page.url()).origin === new URL(baseURL).origin && new URL(page.url()).pathname === '/api/auth/cognito/callback') {
       onStep('complete-pkce-callback');
       await page.waitForURL(url => url.origin === new URL(baseURL).origin && !url.pathname.startsWith('/api/auth/cognito/callback'), { timeout: 30_000 });
@@ -78,12 +79,17 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       if (!secret) throw new Error('Cognito software-token MFA setup did not expose an authenticator secret.');
     }
     if (/verification code|authenticator|one.time password|software token/i.test(text)) {
-      onStep('answer-cognito-mfa-challenge');
+      onStep('wait-for-totp-input');
       if (!secret) throw new Error('Cognito requested MFA without an enrolled software-token secret.');
       const codeInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
       await codeInput.waitFor({ state: 'visible', timeout: 15_000 });
+      onStep('fill-totp-code');
       await codeInput.fill(totp(secret));
+      onStep('submit-totp-code');
       await submit(page);
+      await page.waitForTimeout(300);
+      const responseText = await page.locator('body').innerText().catch(() => '');
+      if (/invalid|incorrect|try again/i.test(responseText)) onStep('totp-code-rejected');
       continue;
     }
     if (/configure.*authenticator|scan.*qr|can't scan/i.test(text)) {
@@ -96,6 +102,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     }
     await page.waitForTimeout(300);
   }
+  onStep('cognito-login-loop-exhausted');
   if (!secret) throw new Error('Cognito PKCE/MFA login did not complete.');
   await page.waitForURL(url => url.origin === new URL(baseURL).origin && url.pathname === '/', { timeout: 30_000 });
   return secret;
