@@ -126,6 +126,13 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         qrDecoded: diagnostics.qrDecoded === true,
         totpPayloadFound: diagnostics.totpPayloadFound === true,
         manualSetupVisible: diagnostics.manualSetupVisible === true,
+        onCognitoHost: diagnostics.onCognitoHost === true,
+        callbackReached: diagnostics.callbackReached === true,
+        mfaPromptVisible: diagnostics.mfaPromptVisible === true,
+        otpInputVisible: diagnostics.otpInputVisible === true,
+        passwordInputVisible: diagnostics.passwordInputVisible === true,
+        invalidCodeNotice: diagnostics.invalidCodeNotice === true,
+        totpSubmissions: Number.isInteger(diagnostics.totpSubmissions) ? diagnostics.totpSubmissions : 0,
       } } : {}),
     });
   } finally {

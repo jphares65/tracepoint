@@ -35,6 +35,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
   onStep('submit-cognito-credentials');
   await submit(page);
   let secret = knownMfaSecret ?? null;
+  let totpSubmissions = 0;
   for (let step = 0; step < 5; step += 1) {
     onStep(`cognito-login-loop-${step + 1}`);
     if (new URL(page.url()).origin === new URL(baseURL).origin && new URL(page.url()).pathname === '/api/auth/cognito/callback') {
@@ -85,6 +86,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       await codeInput.waitFor({ state: 'visible', timeout: 15_000 });
       onStep('fill-totp-code');
       await codeInput.fill(totp(secret));
+      totpSubmissions += 1;
       const beforeUrl = page.url();
       const beforeBody = await page.locator('body').innerText().catch(() => '');
       onStep('submit-totp-code');
@@ -109,7 +111,24 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
   }
   onStep('cognito-login-loop-exhausted');
   if (!secret) throw new Error('Cognito PKCE/MFA login did not complete.');
-  await page.waitForURL(url => url.origin === new URL(baseURL).origin && url.pathname === '/', { timeout: 30_000 });
+  try {
+    await page.waitForURL(url => url.origin === new URL(baseURL).origin && url.pathname === '/', { timeout: 30_000 });
+  } catch (error) {
+    const text = await page.locator('body').innerText().catch(() => '');
+    const otpInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
+    const passwordInput = page.locator('input[autocomplete="current-password"],input[name="password"],input[type="password"]').first();
+    const current = new URL(page.url());
+    error.acceptanceDiagnostics = {
+      onCognitoHost: current.hostname.endsWith('amazoncognito.com'),
+      callbackReached: current.origin === new URL(baseURL).origin && current.pathname === '/api/auth/cognito/callback',
+      mfaPromptVisible: /verification code|authenticator|one.time password|software token/i.test(text),
+      otpInputVisible: await otpInput.isVisible().catch(() => false),
+      passwordInputVisible: await passwordInput.isVisible().catch(() => false),
+      invalidCodeNotice: /invalid|incorrect|try again/i.test(text),
+      totpSubmissions,
+    };
+    throw error;
+  }
   return secret;
 }
 
