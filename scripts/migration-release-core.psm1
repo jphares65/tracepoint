@@ -17,12 +17,14 @@ $script:StagingReleaseBranches = @(
     # The integration lineage's fixes converged onto the staging lineage, with migrations 064-065 (2026-10-22).
     'claude/stabilization-convergence-20261022',
     # The D-2 officer equipment condition report on top of the convergence, with migration 066 (2026-10-22).
-    'claude/fix-d2-equipment-condition-report'
+    'claude/fix-d2-equipment-condition-report',
+    # Batch 3: D-2 plus the staging acceptance defects AT-1 to AT-4, with migrations 067-068 (2026-10-23).
+    'claude/fix-at-acceptance-defects'
 )
-# The staging release applies 066 on top of the recorded 001-065 (database/aws/MANIFEST.json); 064-065 are recorded
-# by the stabilization convergence's release (its commit is named to deploy-only as -RecordedMigrationCommit).
+# The staging release applies 066-068 on top of the recorded 001-065 (database/aws/MANIFEST.json); 064-065 are recorded
+# by the Batch 2 release of f4e8588d (its commit is named to deploy-only as -RecordedMigrationCommit).
 $script:StagingRecordedThrough = 65
-$script:StagingReleaseLast = 66
+$script:StagingReleaseLast = 68
 
 function Get-ReviewedImageTag {
     [CmdletBinding()]
@@ -208,13 +210,13 @@ function Assert-MigrationLedgerReport {
         if ($filesByVersion[$version] -cne [string]$entry.filename -or $hashesByVersion[$version] -cne [string]$entry.sha256Crlf) { throw "Migration $('{0:d3}' -f $version) does not match database/aws/MANIFEST.json." }
     }
     # Staging records 001-065 (the staging lineage and its defect remediation, 049-063 applied by ec027f50 on
-    # 2026-10-22, and the stabilization convergence's 064-065); the release applies the rest, 066, as a contiguous
+    # 2026-10-22, and the stabilization convergence's 064-065); the release applies the rest, 066-068, as a contiguous
     # continuation of the recorded prefix.
     foreach ($version in 1..$script:StagingRecordedThrough) {
         if (-not $appliedByVersion.ContainsKey($version)) { throw "Migration $('{0:d3}' -f $version) of the recorded staging lineage is not applied." }
     }
     if ($appliedByVersion.Count -and $pendingByVersion.Count -and (($appliedByVersion.Keys | Measure-Object -Maximum).Maximum -gt ($pendingByVersion.Keys | Measure-Object -Minimum).Minimum)) { throw 'Migration ledger is not a contiguous applied prefix.' }
-    if ($Expectation -eq 'before-apply' -and $pendingByVersion.Count -eq 0) { throw 'Apply requires pending migration 066; nothing is pending.' }
+    if ($Expectation -eq 'before-apply' -and $pendingByVersion.Count -eq 0) { throw 'Apply requires pending migrations from 066-068; nothing is pending.' }
     if ($Expectation -eq 'after-apply' -and $pendingByVersion.Count -ne 0) { throw 'Post-apply ledger still has pending migrations.' }
     return $Report
 }
@@ -238,9 +240,9 @@ function Assert-EntitlementMigrationRecord {
         [Parameter(Mandatory)]$Report,
         [Parameter(Mandatory)][string]$ApplicationCommit,
         [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
-        # The migrations one release applied: 066 by default (this release); 064-065 by the stabilization convergence's
-        # release; 049-063 by ec027f50; 048 by 22e543d8 when the staging lineage's release applied it; 047 by eb637823; 046 by 75499335; 043-045 by e3b06e6a.
-        [ValidateRange(43, 66)][int[]]$Versions = @(66)
+        # The migrations one release applied: 066-068 by default (this release); 064-065 by the Batch 2 release of f4e8588d;
+        # 049-063 by ec027f50; 048 by 22e543d8 when the staging lineage's release applied it; 047 by eb637823; 046 by 75499335; 043-045 by e3b06e6a.
+        [ValidateRange(43, 68)][int[]]$Versions = @(66, 67, 68)
     )
     # Every migration a release applies must be recorded by its commit, in this environment, as an apply.
     # A list of pairs, not an [ordered] dictionary: an ordered dictionary treats an [int] key as a position.
@@ -250,7 +252,8 @@ function Assert-EntitlementMigrationRecord {
         @(52, '052_equipment_self_custody.sql'), @(53, '053_range_packet_ready_is_not_final.sql'), @(54, '054_fleet_inspection_audit_outbox.sql'), @(55, '055_personnel_import_preservation.sql'),
         @(56, '056_fleet_inspection_eligibility.sql'), @(57, '057_fleet_safety_hold_clearance.sql'), @(58, '058_training_record_visibility.sql'), @(59, '059_equipment_separated_holder.sql'),
         @(60, '060_training_closeout_records.sql'), @(61, '061_range_instructor_line_actions.sql'), @(62, '062_armory_separation_of_duties.sql'), @(63, '063_armory_audit_and_access.sql'),
-        @(64, '064_armorer_storage_location_permission.sql'), @(65, '065_inventory_idempotency_and_recipients.sql'), @(66, '066_equipment_condition_report.sql'))
+        @(64, '064_armorer_storage_location_permission.sql'), @(65, '065_inventory_idempotency_and_recipients.sql'), @(66, '066_equipment_condition_report.sql'),
+        @(67, '067_firearm_custody_follows_assignment.sql'), @(68, '068_fleet_manual_status_under_safety_hold.sql'))
     # Built with a loop: piping the pairs would unroll a single selected pair into its two elements.
     $expected = [System.Collections.Generic.List[object]]::new()
     foreach ($pair in $known) { if ($Versions -contains [int]$pair[0]) { $expected.Add($pair) } }

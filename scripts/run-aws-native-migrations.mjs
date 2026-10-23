@@ -93,31 +93,33 @@ function verifyLedger(files, rows) {
     if (!file || file.filename !== row.filename || file.sha256 !== row.content_sha256) throw new Error(`MIGRATION_DRIFT: recorded migration ${row.version} does not exactly match the repository.`);
   }
 }
-// The staging release: the officer equipment condition report (066, D-2), a new security-definer function
-// report_equipment_condition (see database/aws/MANIFEST.json and docs/remediation/STABILIZATION-CONVERGENCE-20261022.md).
-// Staging's ledger records 001-065 (064-065 recorded by the stabilization convergence's release, named to a later
-// deploy-only redeploy through -RecordedMigrationCommit). Its apply must find exactly a contiguous 001-065 recorded and
-// only 066 pending; anything else stops before any SQL. A single-migration release has no partial state: 066 either
-// committed (001-066 recorded, nothing pending) or did not (001-065 recorded, 066 pending).
+// The staging release (Batch 3): the officer equipment condition report (066, D-2), custody that follows the active
+// assignment (067, AT-2 and AT-4) and the manual-status safety-hold guard (068, AT-1); see database/aws/MANIFEST.json.
+// Staging's ledger records 001-065 (064-065 recorded by the Batch 2 release of f4e8588d, named to a later deploy-only
+// redeploy through -RecordedMigrationCommit). Its apply must find a contiguous 001-065, 001-066 or 001-067 recorded and
+// exactly the rest of 066-068 pending; anything else stops before any SQL. Each file is its own transaction, so an apply
+// stopped part-way resumes from the next file with the same runner.
 export const STAGING_RELEASE_PENDING = Object.freeze([
   "066_equipment_condition_report.sql",
+  "067_firearm_custody_follows_assignment.sql",
+  "068_fleet_manual_status_under_safety_hold.sql",
 ]);
 const STAGING_RELEASE_FIRST_RECORDED = 65;
-const STAGING_RELEASE_LAST = 66;
+const STAGING_RELEASE_LAST = 68;
 function requireStagingReleaseMigrations(report, files) {
   const versions = files.map((file) => file.version);
   if (report.ledger !== "present" || versions.length !== STAGING_RELEASE_LAST || versions.some((version, index) => version !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-066.");
+    throw new Error("STAGING_RELEASE_LINEAGE_INVALID: expected a present ledger and contiguous migration files 001-068.");
   }
   if (report.applied.length === STAGING_RELEASE_LAST) {
-    throw new Error("STAGING_RELEASE_NOTHING_PENDING: 001-066 are already recorded.");
+    throw new Error("STAGING_RELEASE_NOTHING_PENDING: 001-068 are already recorded.");
   }
   if (report.applied.length < STAGING_RELEASE_FIRST_RECORDED || report.applied.length > STAGING_RELEASE_LAST || report.applied.some((row, index) => Number(row.version) !== index + 1)) {
-    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-065, including the Agency Documents lineage, module entitlements, the Fleet/Inventory catalog rows, the 049-063 defect remediation and the 064-065 stabilization convergence, must all be recorded, followed only by 066.");
+    throw new Error("STAGING_RELEASE_LEDGER_GAP: migrations 001-065, including the Agency Documents lineage, module entitlements, the Fleet/Inventory catalog rows, the 049-063 defect remediation and the 064-065 stabilization convergence, must all be recorded, followed only by 066-068.");
   }
   const expected = STAGING_RELEASE_PENDING.slice(report.applied.length - STAGING_RELEASE_FIRST_RECORDED);
   if (report.pending.length !== expected.length || report.pending.some((file, index) => file.filename !== expected[index])) {
-    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly 066 pending.");
+    throw new Error("STAGING_RELEASE_PENDING_INVALID: apply requires exactly the rest of 066-068 pending.");
   }
 }
 async function report(client, files) {
