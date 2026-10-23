@@ -57,6 +57,7 @@ COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-production-l
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-migration-inspection.mjs ./scripts/aws-native-migration-inspection.mjs
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-mobile-preflight-diagnostics.mjs ./scripts/aws-native-mobile-preflight-diagnostics.mjs
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/aws-native-live-release-units.mjs ./scripts/aws-native-live-release-units.mjs
+COPY --chown=nonroot:nonroot scripts/run-staging-cognito-fixture.mjs scripts/staging-cognito-fixture-core.mjs ./scripts/
 COPY --chown=nonroot:nonroot scripts/validate-tracepoint-runtime-config.mjs ./validate-tracepoint-runtime-config.mjs
 COPY --chown=nonroot:nonroot scripts/start-tracepoint-container.mjs ./start-tracepoint-container.mjs
 COPY --from=builder --chown=nonroot:nonroot /app/scripts/mobile-route-image-contract-core.mjs ./scripts/mobile-route-image-contract-core.mjs

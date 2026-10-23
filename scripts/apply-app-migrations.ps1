@@ -3,10 +3,11 @@ param(
     [Parameter(Mandatory)][ValidateSet('staging','production')][string]$Environment,
     # Staging release lane: status, baseline, reconcile, apply, diagnose.
     # Production lane: inspect, publish-only, range-workspace-hotfix and the guarded live final-database actions.
-    [ValidateSet('status','baseline','reconcile','apply','diagnose','inspect','publish-only','range-workspace-hotfix','precheck','inventory-035-037','password-scope-039-040','agency-documents-038-048')][string]$Action = 'status',
+    [ValidateSet('status','baseline','reconcile','apply','diagnose','inspect','publish-only','range-workspace-hotfix','precheck','inventory-035-037','password-scope-039-040','agency-documents-038-048','acceptance-fixture-create','acceptance-fixture-cleanup')][string]$Action = 'status',
     [ValidatePattern('^[0-9a-f]{40}$')][string]$ImageCommit,
     [ValidatePattern('^[0-9a-f]{40}$')][string]$MigrationSourceCommit,
     [ValidatePattern('^sha256:[0-9a-f]{64}$')][string]$ApplicationImageDigest,
+    [string]$AcceptanceFixtureManifestPath,
     [switch]$AuthorizeLiveDatabaseChange,
     [string]$PasswordScopeResolutionsPath
 )
@@ -43,6 +44,9 @@ if ($Action -eq 'publish-only' -and -not $ImageCommit) { throw 'Publish-only req
 $liveOwnerActions = @('precheck','inventory-035-037','password-scope-039-040','agency-documents-038-048')
 $liveDatabaseChangeActions = @('inventory-035-037','password-scope-039-040','agency-documents-038-048')
 if ($Action -in $liveOwnerActions -and $Environment -ne 'production') { throw 'Live final-database actions are production-only.' }
+if ($Action -like 'acceptance-fixture-*' -and $Environment -ne 'staging') { throw 'Synthetic acceptance fixtures are staging-only.' }
+if ($Action -like 'acceptance-fixture-*' -and -not $AcceptanceFixtureManifestPath) { throw 'Acceptance fixture actions require -AcceptanceFixtureManifestPath.' }
+if ($AcceptanceFixtureManifestPath -and $Action -notlike 'acceptance-fixture-*') { throw '-AcceptanceFixtureManifestPath applies only to acceptance fixture actions.' }
 # The reviewed list of password operations to resolve travels with the task;
 # the runner validates it in full before connecting.
 function Read-PasswordScopeResolutions([string]$Path) {
@@ -377,8 +381,13 @@ function Invoke-MigrationTask {
     }
   }
   $container = $registration.containerDefinitions[0]
+  $acceptanceFixtureManifestText = $null
+  $acceptanceFixtureDatabaseHost = $null
   $container.image = "$($settings.Account).dkr.ecr.$($settings.Region).amazonaws.com/$($settings.Repository)@$($image.Digest)"
-  $container.command = @('scripts/run-aws-native-migrations.mjs',$TaskAction,$Environment)
+  if ($Action -like 'acceptance-fixture-*') {
+    $fixtureAction = if ($Action -eq 'acceptance-fixture-create') { 'create' } else { 'cleanup' }
+    $container.command = @('scripts/run-staging-cognito-fixture.mjs',$fixtureAction,$Environment)
+  } else { $container.command = @('scripts/run-aws-native-migrations.mjs',$TaskAction,$Environment) }
   Set-MigrationTaskContainerUser $container
   Set-MigrationTaskContainerEntryPoint $container
   if ($releaseTask) {
@@ -405,13 +414,29 @@ function Invoke-MigrationTask {
     # only to this pinned live host for the guarded final-database actions.
     if ($Action -in $liveOwnerActions) { $container.environment += ,([ordered]@{ name='TRACEPOINT_EXPECTED_DATABASE_HOST'; value=$settings.LiveDatabaseHost }) }
     if ($Action -eq 'password-scope-039-040') { $container.environment += ,([ordered]@{ name='TRACEPOINT_PASSWORD_SCOPE_RESOLUTIONS'; value=$passwordScopeResolutionsJson }) }
+    if ($Action -like 'acceptance-fixture-*') {
+      $manifestText = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $AcceptanceFixtureManifestPath).Path)
+      $manifest = $manifestText | ConvertFrom-Json -ErrorAction Stop
+      if ($manifestText -match '"(?:password|temporaryPassword|mfaSecret|totpSecret|accessToken|refreshToken)"\s*:' -or $manifest.environment -cne 'staging' -or $manifest.poolId -cne 'us-east-1_Y9GiDA5Zy' -or @($manifest.agencies).Count -ne 2 -or @($manifest.users).Count -ne 5) { throw 'Acceptance fixture manifest failed staging scope validation.' }
+      $db = (Invoke-Aws @('rds','describe-db-instances','--db-instance-identifier','tracepoint-staging-full-aws')).DBInstances | Select-Object -First 1
+      if (!$db -or $db.DBInstanceStatus -cne 'available' -or $db.Endpoint.Address -notmatch '^tracepoint-staging-full-aws\.') { throw 'Pinned staging fixture database is not available.' }
+      $acceptanceFixtureDatabaseHost = [string]$db.Endpoint.Address
+      $acceptanceFixtureManifestText = $manifestText
+    }
   }
   $payload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-task-' + [guid]::NewGuid().ToString('N') + '.json')
   $overridesPayload = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-migration-overrides-' + [guid]::NewGuid().ToString('N') + '.json')
   try {
     [IO.File]::WriteAllText($payload, ($registration | ConvertTo-Json -Depth 100 -Compress), [Text.UTF8Encoding]::new($false))
     $definition = (Invoke-Aws @('ecs','register-task-definition','--cli-input-json',"file://$payload")).taskDefinition
-    $overrides = @{ containerOverrides = @(@{ name=$container.name; command=$container.command }) } | ConvertTo-Json -Depth 10 -Compress
+    $containerOverride = @{ name=$container.name; command=$container.command }
+    if ($Action -like 'acceptance-fixture-*') {
+      $containerOverride.environment = @(
+        @{ name='TRACEPOINT_EXPECTED_DATABASE_HOST'; value=$acceptanceFixtureDatabaseHost },
+        @{ name='TRACEPOINT_ACCEPTANCE_FIXTURE_JSON'; value=$acceptanceFixtureManifestText }
+      )
+    }
+    $overrides = @{ containerOverrides = @($containerOverride) } | ConvertTo-Json -Depth 10 -Compress
     [IO.File]::WriteAllText($overridesPayload, $overrides, [Text.UTF8Encoding]::new($false))
     $awsvpc = $service.networkConfiguration.awsvpcConfiguration
     $network = "awsvpcConfiguration={subnets=[$($awsvpc.subnets -join ',')],securityGroups=[$($awsvpc.securityGroups -join ',')],assignPublicIp=$($awsvpc.assignPublicIp)}"
