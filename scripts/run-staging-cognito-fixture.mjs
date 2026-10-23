@@ -15,6 +15,11 @@ function safeFailureCode(error) {
   return 'FIXTURE_RUNNER_FAILED';
 }
 
+function safeSchemaIdentifier(value) {
+  const identifier = String(value ?? '');
+  return /^[a-z_][a-z0-9_]{0,62}$/.test(identifier) ? identifier : undefined;
+}
+
 async function connectStaging() {
   if (environmentName !== 'staging' || process.env.CONFIGURATION_ENVIRONMENT !== 'staging' ||
       process.env.TRACEPOINT_RUNTIME_PROVIDER_MODE !== 'aws-native' || process.env.TRACEPOINT_DATA_PROVIDER !== 'postgres') {
@@ -55,7 +60,7 @@ try {
   const report = await applyStagingFixture(client, action, manifest);
   console.log(JSON.stringify(report));
 } catch (error) {
-  console.error(JSON.stringify({ stagingAcceptanceFixture: 'failed', stage: operationStage, failureCode: safeFailureCode(error), detailsSuppressed: true }));
+  console.error(JSON.stringify({ stagingAcceptanceFixture: 'failed', stage: operationStage, failureCode: safeFailureCode(error), ...(safeSchemaIdentifier(error?.column) ? { column: safeSchemaIdentifier(error.column) } : {}), ...(safeSchemaIdentifier(error?.table) ? { table: safeSchemaIdentifier(error.table) } : {}), detailsSuppressed: true }));
   process.exitCode = 1;
 } finally {
   if (client) {
