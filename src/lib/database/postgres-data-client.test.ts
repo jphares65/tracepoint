@@ -179,7 +179,7 @@ test("a refusal a TracePoint function raises on purpose is passed through; other
     ["a message too long to be a designed refusal", { code: "P0001", message: "x".repeat(201), where: "PL/pgSQL function f() line 1 at RAISE" }],
     ["an error with no function context", { code: "42501", message: "permission denied for table firearms" }],
   ] as const) {
-    assert.equal((await rpc(error)).message, "PostgreSQL data operation failed.", label);
+    assert.equal((await rpc(error))?.message, "PostgreSQL data operation failed.", label);
   }
 });
 
