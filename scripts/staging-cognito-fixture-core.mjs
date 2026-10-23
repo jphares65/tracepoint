@@ -98,8 +98,8 @@ async function createFixture(client, manifest) {
       on conflict(id) do update set full_name=excluded.full_name,email=excluded.email`, [user.id, user.fullName, user.email]);
     await client.query(`insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username)
       values('cognito',$1,$2,$3,'active',$4)`, [manifest.issuer, user.subject, user.id, user.email]);
-    await client.query(`insert into public.department_memberships(department_id,user_id,is_active,activation_status)
-      values($1,$2,true,'activated')`, [departmentId, user.id]);
+    await client.query(`insert into public.department_memberships(department_id,user_id,is_active)
+      values($1,$2,true)`, [departmentId, user.id]);
     await client.query(`insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by)
       values($1,$2,$3,$4)`, [departmentId, user.id, user.role, user.agencyIndex === 0 && user.role !== 'administrator' ? admin.id : null]);
   }
