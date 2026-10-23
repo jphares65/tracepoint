@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
   AdminCreateUserCommand, AdminDeleteUserCommand, AdminSetUserPasswordCommand,
@@ -12,6 +10,7 @@ import {
 import { DeleteObjectCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
 import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
+import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureManifest, removeFixtureRunDirectory } from './staging-acceptance-fixture-directory.mjs';
 
 const account = '559054714699';
 const region = 'us-east-1';
@@ -202,9 +201,12 @@ async function main() {
   const recoveryIndex = process.argv.indexOf('--cleanup-manifest');
   if (recoveryIndex !== -1) {
     setOperationStage('recover-fixture-cleanup');
-    const manifestPath = process.argv[recoveryIndex + 1];
-    if (!manifestPath) throw new Error('A fixture recovery manifest path is required.');
-    const manifestInput = JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8'));
+    // The manifest must be a run's own manifest in a fixture run directory, and describe exactly the agencies and
+    // identities that run's ownership marker recorded, before any AWS call: storage, database and Cognito cleanup
+    // all act on the ids it names.
+    const opened = await openFixtureManifest(process.argv[recoveryIndex + 1]);
+    const manifestPath = opened.manifestPath;
+    const manifestInput = assertManifestMatchesMarker(JSON.parse(await readFile(manifestPath, 'utf8')), opened.marker);
     setOperationStage('verify-staging-account');
     currentIdentity();
     setOperationStage('resolve-canonical-cognito-usernames');
@@ -218,7 +220,7 @@ async function main() {
         user.username = canonicalUsername ?? user.subject;
       }
     }
-    const manifest = validateStagingFixtureManifest(manifestInput, 'cleanup');
+    const manifest = assertManifestMatchesMarker(validateStagingFixtureManifest(manifestInput, 'cleanup'), opened.marker);
     await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600 });
     setOperationStage('verify-cognito-cleanup-target');
     await verifyCognitoBoundary(manifest.users.map(user => user.username), false, true);
@@ -233,8 +235,8 @@ async function main() {
     setOperationStage('remove-cognito-fixture-users');
     await deleteCognitoUsers(manifest);
     setOperationStage('verify-fixture-cleanup');
-    await rm(path.dirname(manifestPath), { recursive: true, force: true });
     console.log(JSON.stringify({ fixtureRun: manifest.run, cleanup: 'verified', secretsPersisted: false }));
+    await removeRunDirectory(opened.directory, manifest.run);
     return;
   }
   if (!process.argv.includes('--execute')) throw new Error('Run with --execute to provision disposable staging identities and data.');
@@ -245,8 +247,7 @@ async function main() {
   const run = randomUUID();
   const manifest = newManifest(run);
   const passwords = new Map(manifest.users.map(user => [user.email, `Aa1!${randomBytes(36).toString('base64url')}Zz9!`]));
-  const tempDirectory = await mkdtemp(path.join(tmpdir(), 'tracepoint-staging-acceptance-'));
-  const manifestPath = path.join(tempDirectory, `${run}.json`);
+  const { directory: runDirectory, manifestPath } = await createFixtureRunDirectory(manifest);
   let taskAttempted = false;
   let resultCode = 1;
   let cleanupError = false;
@@ -281,10 +282,22 @@ async function main() {
       resultCode = 1;
     } else {
       console.log(JSON.stringify({ fixtureRun: run, cleanup: 'verified', secretsPersisted: false }));
-      await rm(tempDirectory, { recursive: true, force: true });
+      if (!await removeRunDirectory(runDirectory, run)) resultCode = 1;
     }
   }
   process.exitCode = resultCode;
+}
+
+/** Removes the run's fixture directory only if it verifies; otherwise leaves it in place and says so. */
+async function removeRunDirectory(directory, run) {
+  try {
+    await removeFixtureRunDirectory(directory, run);
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ fixtureRun: run, fixtureDirectory: 'PRESERVED', path: directory, reason: error?.code === 'FIXTURE_DIRECTORY_REFUSED' ? error.message : 'removal failed' }));
+    process.exitCode = 1;
+    return false;
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
