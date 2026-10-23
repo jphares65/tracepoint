@@ -45,6 +45,8 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
   let totpSubmissions = 0;
   for (let step = 0; step < 5; step += 1) {
     onStep(`cognito-login-loop-${step + 1}`);
+    const currentUrl = new URL(page.url());
+    if (callbackStatus === 303 && currentUrl.origin === new URL(baseURL).origin && currentUrl.pathname !== '/api/auth/cognito/callback') return secret;
     if (new URL(page.url()).origin === new URL(baseURL).origin && new URL(page.url()).pathname === '/api/auth/cognito/callback') {
       onStep('complete-pkce-callback');
       await page.waitForURL(url => url.origin === new URL(baseURL).origin && !url.pathname.startsWith('/api/auth/cognito/callback'), { timeout: 30_000 });
