@@ -118,13 +118,19 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     const otpInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
     const passwordInput = page.locator('input[autocomplete="current-password"],input[name="password"],input[type="password"]').first();
     const current = new URL(page.url());
+    const application = new URL(baseURL);
     error.acceptanceDiagnostics = {
       onCognitoHost: current.hostname.endsWith('amazoncognito.com'),
       callbackReached: current.origin === new URL(baseURL).origin && current.pathname === '/api/auth/cognito/callback',
+      hostClass: current.hostname === application.hostname ? 'application' : current.hostname.endsWith('amazoncognito.com') ? 'cognito' : 'other',
+      pathClass: current.pathname === '/login' ? 'login' : current.pathname === '/' ? 'home' : current.pathname === '/api/auth/cognito/callback' ? 'callback' : 'other',
       mfaPromptVisible: /verification code|authenticator|one.time password|software token/i.test(text),
       otpInputVisible: await otpInput.isVisible().catch(() => false),
       passwordInputVisible: await passwordInput.isVisible().catch(() => false),
-      invalidCodeNotice: /invalid|incorrect|try again/i.test(text),
+      invalidCodeNotice: /invalid (?:verification )?code|incorrect (?:verification )?code/i.test(text),
+      expiredCodeNotice: /code (?:has )?expired|expired code/i.test(text),
+      retryNotice: /try again|please retry/i.test(text),
+      genericRequestError: /invalid request|unable to process|something went wrong/i.test(text),
       totpSubmissions,
     };
     throw error;
