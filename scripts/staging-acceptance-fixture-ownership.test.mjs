@@ -216,7 +216,9 @@ test('the runner verifies ownership in the database before its only storage dele
   const storage = await readFile(new URL('./staging-acceptance-fixture-storage.mjs', import.meta.url), 'utf8');
   const plan = storage.indexOf('planFixtureStorageDeletion(manifest, await listAll())');
   const verify = storage.indexOf('await verifyOwnership()', plan);
+  const replan = storage.indexOf('planFixtureStorageDeletion(manifest, await listAll())', verify);
   const remove = storage.indexOf('await retry(() => deleteVersion(', verify);
+  assert.ok(replan > verify && remove > replan, 'the deletion set is planned from a listing taken after the ownership check');
   assert.ok(plan > 0 && verify > plan && remove > verify);
   assert.match(body, /verifyOwnership: \(\) => runFixtureTask\('acceptance-fixture-verify'/);
   assert.match(body, /deleteVersion: params => s3\.send\(new DeleteObjectCommand\(params\)\)/);
