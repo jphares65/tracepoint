@@ -17,6 +17,21 @@ const refuse = (reason) => { throw new FixtureStorageRefused(reason); };
 export const fixtureStoragePrefix = (agencyId) => `department-assets/${agencyId}/`;
 
 /**
+ * The fixture task's last failure line (for example "Migration task failed (stop code TaskFailedToStart; ...)"), with
+ * addresses, long tokens and quoted values removed, or null. The runner prints only this, never the task's output.
+ */
+export function fixtureTaskFailureLine(output) {
+  const lines = String(output ?? '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const line = lines.reverse().find(candidate => /failed|refused|not (?:found|available|confirmed)|exception|error/i.test(candidate) && !/^\s*(?:at |\+ |~|CategoryInfo|FullyQualifiedErrorId)/.test(candidate));
+  if (!line) return null;
+  return line
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\b(?:eyJ[A-Za-z0-9_-]{20,}|(?![0-9a-f]{48,}\b)[A-Za-z0-9+/_-]{48,}={0,2})/g, '[redacted-token]')
+    .replace(/'[^']*'|"[^"]*"/g, '[redacted]')
+    .slice(0, 400);
+}
+
+/**
  * Given one ListObjectVersions listing per fixture agency ({ prefix, IsTruncated, Versions, DeleteMarkers }), returns
  * the exact { Key, VersionId } pairs to delete: every version and delete marker of each tracked object, nothing else.
  */

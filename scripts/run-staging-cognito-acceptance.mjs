@@ -10,7 +10,7 @@ import {
 import { DeleteObjectCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
 import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
-import { fixtureStoragePrefix, planFixtureStorageDeletion } from './staging-acceptance-fixture-storage.mjs';
+import { fixtureStoragePrefix, fixtureTaskFailureLine, planFixtureStorageDeletion } from './staging-acceptance-fixture-storage.mjs';
 import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureManifest, removeFixtureRunDirectory } from './staging-acceptance-fixture-directory.mjs';
 import { createAcceptanceReport, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
 
@@ -44,13 +44,14 @@ function aws(args) {
   return JSON.parse(execFileSync('aws.exe', [...args, '--profile', process.env.AWS_PROFILE, '--region', region, '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
-async function retryTransientAws(operation) {
+// ECONNABORTED is Windows aborting an idle pooled connection; the AWS SDK does not retry it, so the runner does.
+export async function retryTransientAws(operation, delay = (attempt) => 1000 * (attempt + 1)) {
   for (let attempt = 0; ; attempt += 1) {
     try { return await operation(); }
     catch (error) {
       const code = error?.code ?? error?.name;
       if (!['ECONNABORTED', 'ECONNRESET', 'ETIMEDOUT', 'TimeoutError', 'AbortError'].includes(code) || attempt >= 2) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      await new Promise(resolve => setTimeout(resolve, delay(attempt)));
     }
   }
 }
@@ -165,14 +166,18 @@ function runFixtureTask(action, manifestPath, toolingCommit) {
   const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Environment', 'staging', '-Action', action,
     '-ImageCommit', toolingCommit, '-AcceptanceFixtureManifestPath', manifestPath];
   const result = spawnSync(powershell, args, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  if (result.error || result.status !== 0) throw new Error('Staging fixture task did not complete successfully.');
+  if (result.error || result.status !== 0) {
+    // The task's own failure line (stop code, stopped reason, container reason) names what failed; nothing else is printed.
+    console.error(JSON.stringify({ fixtureTask: action, failed: true, reason: fixtureTaskFailureLine(`${result.stderr ?? ''}\n${result.stdout ?? ''}`) ?? 'not reported' }));
+    throw new Error('Staging fixture task did not complete successfully.');
+  }
 }
 
 async function listFixtureStorage(manifest, target) {
   const listings = [];
   for (const agency of manifest.agencies) {
     const prefix = fixtureStoragePrefix(agency.id);
-    listings.push({ prefix, ...(await s3.send(new ListObjectVersionsCommand({ ...target, Prefix: prefix }))) });
+    listings.push({ prefix, ...(await retryTransientAws(() => s3.send(new ListObjectVersionsCommand({ ...target, Prefix: prefix })))) });
   }
   return listings;
 }
@@ -183,10 +188,13 @@ async function listFixtureStorage(manifest, target) {
 async function cleanupStorage(manifest, manifestPath, toolingCommit) {
   currentIdentity();
   const target = { Bucket: 'tracepoint-staging-private-559054714699', ExpectedBucketOwner: account };
-  const deletions = planFixtureStorageDeletion(manifest, await listFixtureStorage(manifest, target));
-  if (!deletions.length) return;
+  if (!planFixtureStorageDeletion(manifest, await listFixtureStorage(manifest, target)).length) return;
   runFixtureTask('acceptance-fixture-verify', manifestPath, toolingCommit);
-  for (const object of deletions) await s3.send(new DeleteObjectCommand({ ...target, ...object }));
+  // The verify task blocks this process for minutes, so the S3 connection kept from the first listing is stale by
+  // now: every call below retries a dropped connection on a fresh one, and the objects are listed again and
+  // re-planned, so only what is there after the database confirmed ownership is deleted.
+  const deletions = planFixtureStorageDeletion(manifest, await listFixtureStorage(manifest, target));
+  for (const object of deletions) await retryTransientAws(() => s3.send(new DeleteObjectCommand({ ...target, ...object })));
   const remaining = await listFixtureStorage(manifest, target);
   if (remaining.some(listing => (listing.Versions?.length ?? 0) + (listing.DeleteMarkers?.length ?? 0) !== 0)) throw new Error('Staging fixture storage cleanup was incomplete.');
 }
