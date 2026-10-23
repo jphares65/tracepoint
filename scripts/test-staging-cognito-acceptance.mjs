@@ -1,11 +1,18 @@
-import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 import { loginThroughCognitoPkce } from './staging-cognito-login.mjs';
 
 const baseURL = 'https://staging.tracepointhq.com';
 const pixelPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+nm6kAAAAASUVORK5CYII=', 'base64');
 
-export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {} }) {
+function requireAcceptance(condition, check, expected, actual) {
+  if (condition) return;
+  const error = new Error('Authenticated acceptance assertion failed.');
+  error.name = 'AssertionError';
+  error.acceptanceEvidence = { check, expected, actual };
+  throw error;
+}
+
+export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {}, onResult = async () => {} }) {
   const results = [];
   const browser = await chromium.launch({ headless: true });
   let typeId;
@@ -14,7 +21,11 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
   let activePhase = 'browser-start';
   const admin = manifest.users.find(user => user.agencyIndex === 0 && user.role === 'administrator');
   let adminContext;
-  const add = (name, status, details = {}) => results.push({ name, status, ...details });
+  const add = async (name, status, details = {}) => {
+    const result = { name, status, ...details };
+    results.push(result);
+    await onResult(result);
+  };
   try {
     for (const user of manifest.users) {
       activeUser = user;
@@ -38,70 +49,113 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         if (secret) mfaSecrets.set(user.email, secret);
         activePhase = 'read-role-and-tenant-access';
         const accessResponse = await context.request.get('/api/access');
-        assert.equal(accessResponse.status(), 200);
-        const { access } = await accessResponse.json();
-        assert.equal(access.departmentId, manifest.agencies[user.agencyIndex].id);
-        assert.ok(access.roleCodes.includes(user.role));
-        add(`${user.role} authenticates through Cognito PKCE/MFA`, 'pass');
+        const accessStatus = accessResponse.status();
+        let access = null;
+        if (accessStatus === 200) access = (await accessResponse.json()).access;
+        const roleAccessEvidence = {
+          expected: { httpStatus: 200, tenantMatches: true, rolePresent: true },
+          actual: {
+            httpStatus: accessStatus,
+            tenantMatches: access?.departmentId === manifest.agencies[user.agencyIndex].id,
+            rolePresent: Array.isArray(access?.roleCodes) && access.roleCodes.includes(user.role),
+          },
+        };
+        requireAcceptance(accessStatus === 200 && roleAccessEvidence.actual.tenantMatches && roleAccessEvidence.actual.rolePresent,
+          'authenticated-role-and-tenant-access', roleAccessEvidence.expected, roleAccessEvidence.actual);
+        await add(`${user.role} authenticates through Cognito PKCE/MFA`, 'pass', { evidence: roleAccessEvidence });
         activePhase = 'reload-session-and-tenant';
         await page.reload({ waitUntil: 'domcontentloaded' });
         const persisted = await context.request.get('/api/access');
-        assert.equal(persisted.status(), 200);
-        assert.equal((await persisted.json()).access.departmentId, manifest.agencies[user.agencyIndex].id);
-        add(`${user.role} session reload preserves tenant`, 'pass');
+        const persistedStatus = persisted.status();
+        const persistedAccess = persistedStatus === 200 ? (await persisted.json()).access : null;
+        const reloadEvidence = {
+          expected: { httpStatus: 200, tenantMatches: true },
+          actual: { httpStatus: persistedStatus, tenantMatches: persistedAccess?.departmentId === manifest.agencies[user.agencyIndex].id },
+        };
+        requireAcceptance(reloadEvidence.actual.httpStatus === 200 && reloadEvidence.actual.tenantMatches,
+          'session-reload-tenant-persistence', reloadEvidence.expected, reloadEvidence.actual);
+        await add(`${user.role} session reload preserves tenant`, 'pass', { evidence: reloadEvidence });
 
         if (user.role === 'administrator' && user.agencyIndex === 0) {
           adminContext = context;
           const name = `acceptance-${manifest.run}-equipment-type`;
           activePhase = 'administrator-create-save-edit-save-reload';
           const created = await context.request.post('/api/equipment/types', { data: { name, category: 'Staging Acceptance' } });
-          assert.equal(created.status(), 201);
+          requireAcceptance(created.status() === 201, 'equipment-type-create', { httpStatus: 201 }, { httpStatus: created.status() });
           const initial = (await created.json()).item; typeId = initial.id;
-          assert.equal(initial.department_id, manifest.agencies[0].id);
+          requireAcceptance(initial.department_id === manifest.agencies[0].id, 'equipment-type-create-tenant', { tenantMatches: true }, { tenantMatches: initial.department_id === manifest.agencies[0].id });
           const editedName = `${name}-edited`;
           const edited = await context.request.patch('/api/equipment/types', { data: { id: typeId, name: editedName, category: 'Staging Acceptance' } });
-          assert.equal(edited.status(), 200);
-          assert.equal((await edited.json()).item.name, editedName);
+          requireAcceptance(edited.status() === 200, 'equipment-type-edit', { httpStatus: 200 }, { httpStatus: edited.status() });
+          const editedItem = (await edited.json()).item;
+          requireAcceptance(editedItem.name === editedName, 'equipment-type-edit-value', { editedValuePersisted: true }, { editedValuePersisted: editedItem.name === editedName });
           const listed = await context.request.get('/api/equipment/types');
-          assert.equal(listed.status(), 200);
-          assert.ok((await listed.json()).items.some(item => item.id === typeId && item.name === editedName));
+          requireAcceptance(listed.status() === 200, 'equipment-type-save-readback', { httpStatus: 200 }, { httpStatus: listed.status() });
+          const listedItems = (await listed.json()).items;
+          const listedPersisted = listedItems.some(item => item.id === typeId && item.name === editedName);
+          requireAcceptance(listedPersisted, 'equipment-type-save-readback-value', { editedValuePersisted: true }, { editedValuePersisted: listedPersisted });
           await page.reload({ waitUntil: 'domcontentloaded' });
           const reloaded = await context.request.get('/api/equipment/types');
-          assert.equal(reloaded.status(), 200);
-          assert.ok((await reloaded.json()).items.some(item => item.id === typeId && item.name === editedName));
-          add('equipment type create → save → edit → save → reload persistence', 'pass');
+          requireAcceptance(reloaded.status() === 200, 'equipment-type-reload-readback', { httpStatus: 200 }, { httpStatus: reloaded.status() });
+          const reloadedItems = (await reloaded.json()).items;
+          const reloadPersisted = reloadedItems.some(item => item.id === typeId && item.name === editedName);
+          requireAcceptance(reloadPersisted, 'equipment-type-reload-persistence', { editedValuePersisted: true }, { editedValuePersisted: reloadPersisted });
+          await add('equipment type create → save → edit → save → reload persistence', 'pass', {
+            evidence: { expected: { createStatus: 201, editStatus: 200, editedValuePersistedAfterReload: true }, actual: { createStatus: created.status(), editStatus: edited.status(), editedValuePersistedAfterReload: reloadPersisted } },
+          });
 
           activePhase = 'administrator-audit-log';
           const patch = await context.request.post('/api/settings/department-patch', { multipart: { file: { name: 'acceptance.png', mimeType: 'image/png', buffer: pixelPng } } });
-          assert.equal(patch.status(), 200);
+          requireAcceptance(patch.status() === 200, 'department-patch-audit-workflow', { httpStatus: 200 }, { httpStatus: patch.status() });
           patchCreated = true;
           // Cleanup deletes only objects recorded here; the delivery path is the object's key below department-assets/.
           await onStorageObject(`department-assets/${new URL((await patch.json()).patchUrl, baseURL).searchParams.get('path') ?? ''}`);
           const auditResponse = await context.request.get('/api/settings/audit-log?limit=100');
-          assert.equal(auditResponse.status(), 200);
-          const audit = await auditResponse.json();
-          assert.ok(audit.events.some(event => event.action === 'department_patch_upload' && event.new_values?.result === 'succeeded'));
-          add('administrator action is present in tenant audit log', 'pass');
+          const auditStatus = auditResponse.status();
+          const audit = auditStatus === 200 ? await auditResponse.json() : { events: [] };
+          const auditEvents = Array.isArray(audit.events) ? audit.events : [];
+          const matchingActionEvents = auditEvents.filter(event => event.action === 'department_patch_upload');
+          const successfulEvents = matchingActionEvents.filter(event => event.new_values?.result === 'succeeded');
+          const auditEvidence = {
+            expected: { httpStatus: 200, action: 'department_patch_upload', result: 'succeeded', atLeastOneMatch: true },
+            actual: { httpStatus: auditStatus, eventsReturned: auditEvents.length, matchingActionEvents: matchingActionEvents.length, successfulEvents: successfulEvents.length },
+          };
+          requireAcceptance(auditStatus === 200 && successfulEvents.length > 0,
+            'administrator-audit-event-in-tenant-feed', auditEvidence.expected, auditEvidence.actual);
+          await add('administrator action is present in tenant audit log', 'pass', { evidence: auditEvidence });
         } else if (user.agencyIndex === 0) {
           activePhase = `${user.role}-authorization-denial`;
           const write = await context.request.post('/api/equipment/types', { data: { name: `forbidden-${manifest.run}-${user.role}` } });
-          assert.equal(write.status(), 403);
-          add(`${user.role} cannot create administrator-only equipment types`, 'pass');
+          const refusalEvidence = { expected: { httpStatus: 403 }, actual: { httpStatus: write.status() } };
+          requireAcceptance(write.status() === 403, 'direct-api-administrator-only-write-refusal', refusalEvidence.expected, refusalEvidence.actual);
+          await add(`${user.role} cannot create administrator-only equipment types`, 'pass', { evidence: refusalEvidence });
         } else {
           activePhase = 'agency-b-cross-tenant-isolation';
           await context.addCookies([{ name: 'tracepoint_department_id', value: manifest.agencies[0].id, url: baseURL }]);
           const foreignTenant = await context.request.get('/api/access');
-          assert.ok([200, 401, 403].includes(foreignTenant.status()));
-          if (foreignTenant.status() === 200) assert.equal((await foreignTenant.json()).access.departmentId, manifest.agencies[1].id);
+          const foreignTenantStatus = foreignTenant.status();
+          const foreignTenantAccess = foreignTenantStatus === 200 ? (await foreignTenant.json()).access : null;
+          const tenantIsolationEvidence = {
+            expected: { accessStatus: '200-for-agency-B-or-401/403', tenantRemainsAgencyB: true },
+            actual: {
+              accessStatus: foreignTenantStatus,
+              tenantRemainsAgencyB: foreignTenantStatus !== 200 || foreignTenantAccess?.departmentId === manifest.agencies[1].id,
+            },
+          };
+          requireAcceptance([200, 401, 403].includes(foreignTenantStatus) && tenantIsolationEvidence.actual.tenantRemainsAgencyB,
+            'agency-b-cannot-select-agency-a', tenantIsolationEvidence.expected, tenantIsolationEvidence.actual);
           const foreignWrite = await context.request.post('/api/equipment/types', { data: { name: `foreign-${manifest.run}` } });
-          assert.notEqual(foreignWrite.status(), 201);
-          add('Agency B identity cannot select or write Agency A tenant', 'pass');
+          const writeStatus = foreignWrite.status();
+          requireAcceptance(writeStatus !== 201, 'agency-b-direct-api-write-refusal', { createStatusIsNot201: true }, { createStatusIsNot201: writeStatus !== 201, httpStatus: writeStatus });
+          await add('Agency B identity cannot select or write Agency A tenant', 'pass', {
+            evidence: { expected: { tenantRemainsAgencyB: true, crossTenantCreateRejected: true }, actual: { tenantRemainsAgencyB: tenantIsolationEvidence.actual.tenantRemainsAgencyB, accessStatus: foreignTenantStatus, crossTenantCreateRejected: writeStatus !== 201, createStatus: writeStatus } },
+          });
         }
       } finally {
         if (user === admin) {
           if (typeId) {
             const deleted = await context.request.delete('/api/equipment/types', { data: { id: typeId } }).catch(() => null);
-            if (deleted && deleted.status() !== 200) add('acceptance equipment type cleanup', 'fail');
+            if (deleted && deleted.status() !== 200) await add('acceptance equipment type cleanup', 'fail', { evidence: { expected: { httpStatus: 200 }, actual: { httpStatus: deleted.status() } } });
             else typeId = null;
           }
           if (patchCreated) {
@@ -116,7 +170,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
     const errorName = /^[A-Za-z]*Error$/.test(error?.name ?? '') ? error.name : 'UnknownError';
     const role = ['officer', 'instructor', 'supervisor', 'administrator'].includes(activeUser?.role) ? activeUser.role : 'unknown';
     const diagnostics = error?.acceptanceDiagnostics;
-    add('authenticated acceptance execution', 'fail', {
+    await add('authenticated acceptance execution', 'fail', {
       code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
       role,
       phase: activePhase,
@@ -142,6 +196,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         totpSubmissions: Number.isInteger(diagnostics.totpSubmissions) ? diagnostics.totpSubmissions : 0,
         callbackStatus: Number.isInteger(diagnostics.callbackStatus) ? diagnostics.callbackStatus : null,
       } } : {}),
+      ...(error?.acceptanceEvidence ? { evidence: error.acceptanceEvidence } : {}),
     });
   } finally {
     if (adminContext) await adminContext.close().catch(() => undefined);

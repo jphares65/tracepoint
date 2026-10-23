@@ -12,6 +12,7 @@ import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mj
 import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
 import { fixtureStoragePrefix, planFixtureStorageDeletion } from './staging-acceptance-fixture-storage.mjs';
 import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureManifest, removeFixtureRunDirectory } from './staging-acceptance-fixture-directory.mjs';
+import { createAcceptanceReport, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
 
 const account = '559054714699';
 const region = 'us-east-1';
@@ -256,20 +257,37 @@ async function main() {
   const manifest = newManifest(run);
   const passwords = new Map(manifest.users.map(user => [user.email, `Aa1!${randomBytes(36).toString('base64url')}Zz9!`]));
   const { directory: runDirectory, manifestPath } = await createFixtureRunDirectory(manifest);
+  const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
+  assert.match(toolingCommit, /^[0-9a-f]{40}$/);
+  const report = createAcceptanceReport({
+    fixtureRun: run,
+    sourceCommit: toolingCommit,
+    taskRevision: boundary.service.taskDefinition.split(':').at(-1),
+    appImageDigest: boundary.appDigest,
+    startedAt: new Date().toISOString(),
+  });
+  const reportRelativePath = `docs/staging-acceptance-evidence/${run}.json`;
+  const persistReport = async () => {
+    report.stage = operationStage;
+    await writeAcceptanceReport(report);
+  };
+  await persistReport();
   let taskAttempted = false;
   let resultCode = 1;
   let cleanupError = false;
+  let cleanupFailureCode;
   try {
     setOperationStage('create-synthetic-cognito-users');
     await provisionCognito(manifest, passwords);
     await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600, flag: 'wx' });
-    const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
-    assert.match(toolingCommit, /^[0-9a-f]{40}$/);
     taskAttempted = true;
     setOperationStage('seed-staging-database-fixtures');
     runFixtureTask('acceptance-fixture-create', manifestPath, toolingCommit);
     setOperationStage('authenticated-pkce-mfa-acceptance');
-    const acceptance = await runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets: secrets, onStorageObject: async (key) => {
+    const acceptance = await runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets: secrets, onResult: async (item) => {
+      report.checks.push(item);
+      await persistReport();
+    }, onStorageObject: async (key) => {
       // Recorded before anything else happens, so cleanup and recovery can delete exactly this object.
       const tracked = { ...manifest, storageObjects: [...(manifest.storageObjects ?? []), key] };
       validateStagingFixtureManifest(tracked, 'cleanup');
@@ -280,7 +298,9 @@ async function main() {
     for (const item of acceptance.results) console.log(JSON.stringify(item));
     resultCode = acceptance.results.every(item => item.status === 'pass') ? 0 : 1;
   } catch (error) {
-    console.error(JSON.stringify({ acceptanceHarness: 'failed', stage: operationStage, failureCode: safeFailureCode(error), sensitiveDetailsPrinted: false }));
+    report.status = 'fail';
+    report.failureCode = safeFailureCode(error);
+    console.error(JSON.stringify({ acceptanceHarness: 'failed', stage: operationStage, failureCode: report.failureCode, sensitiveDetailsPrinted: false }));
   } finally {
     try {
       setOperationStage('cleanup-staging-fixtures');
@@ -289,14 +309,33 @@ async function main() {
         await cleanupStorage(manifest, manifestPath, toolingCommit);
         runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
       }
-    } catch { cleanupError = true; }
-    try { await deleteCognitoUsers(manifest); } catch { cleanupError = true; }
+    } catch (error) { cleanupError = true; cleanupFailureCode = safeFailureCode(error); }
+    try { await deleteCognitoUsers(manifest); } catch (error) { cleanupError = true; cleanupFailureCode ??= safeFailureCode(error); }
     if (cleanupError) {
       console.error(JSON.stringify({ fixtureRun: run, cleanup: 'FAILED', recoveryManifest: manifestPath, secretsPersisted: false }));
       resultCode = 1;
+      report.cleanup = 'fail';
+      report.status = 'fail';
+      report.failureCode ??= cleanupFailureCode ?? 'FIXTURE_CLEANUP_FAILED';
     } else {
       console.log(JSON.stringify({ fixtureRun: run, cleanup: 'verified', secretsPersisted: false }));
-      if (!await removeRunDirectory(runDirectory, run)) resultCode = 1;
+      report.cleanup = 'pass';
+      if (!await removeRunDirectory(runDirectory, run)) {
+        resultCode = 1;
+        report.cleanup = 'fail';
+        report.status = 'fail';
+        report.failureCode ??= 'FIXTURE_DIRECTORY_CLEANUP_FAILED';
+      }
+    }
+    if (resultCode === 0 && !cleanupError) report.status = 'pass';
+    else report.status = 'fail';
+    report.stage = 'complete';
+    try {
+      await persistReport();
+      console.log(JSON.stringify({ evidenceReport: 'written', report: reportRelativePath, status: report.status }));
+    } catch {
+      console.error(JSON.stringify({ evidenceReport: 'write-failed', sensitiveDetailsPrinted: false }));
+      resultCode = 1;
     }
   }
   process.exitCode = resultCode;
