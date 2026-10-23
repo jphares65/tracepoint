@@ -12,7 +12,8 @@ const statuses = new Set(['running', 'pass', 'fail']);
 const evidenceKeys = new Set(['expected', 'actual']);
 const safeStrings = new Set([
   'department_patch_upload', 'succeeded', 'failed', 'application', 'cognito', 'other', 'unknown',
-  'login', 'home', 'callback', '200-for-agency-B-or-401/403',
+  'login', 'home', 'callback', '200-for-agency-B-or-401/403', 'report', 'equipment_asset',
+  'damaged', 'out_of_service', 'active', 'not_found', 'permission_denied',
 ]);
 const diagnosticKeys = new Set([
   'barcodeDetectorAvailable', 'imageCount', 'canvasCount', 'qrDecoded', 'totpPayloadFound',

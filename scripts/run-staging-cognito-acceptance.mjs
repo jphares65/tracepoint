@@ -66,6 +66,16 @@ function verifyLiveBoundary() {
   const service = aws(['ecs', 'describe-services', '--cluster', 'tracepoint-staging', '--services', 'tracepoint-staging']).services?.[0];
   assert.equal(service?.status, 'ACTIVE');
   assert.equal(service?.runningCount, service?.desiredCount);
+  assert.equal(service?.taskDefinition?.split(':').at(-1), '194', 'Acceptance is pinned to the Batch 3 staging task revision.');
+  const serviceTasks = new Set(aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--service-name', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? []);
+  const clusterTasks = aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? [];
+  assert.equal(clusterTasks.filter(taskArn => !serviceTasks.has(taskArn)).length, 0, 'No competing staging ECS task may be active.');
+  const buildIds = aws(['codebuild', 'list-builds-for-project', '--project-name', 'tracepoint-staging-image-build', '--sort-order', 'DESCENDING']).ids ?? [];
+  if (buildIds.length) {
+    const activeBuilds = aws(['codebuild', 'batch-get-builds', '--ids', ...buildIds.slice(0, 20)]).builds ?? [];
+    assert.equal(activeBuilds.some(build => ['IN_PROGRESS', 'QUEUED', 'STOPPING'].includes(build.buildStatus)), false,
+      'No staging image build may be active during acceptance.');
+  }
   const task = aws(['ecs', 'describe-task-definition', '--task-definition', service.taskDefinition]).taskDefinition;
   const env = new Map(task.containerDefinitions[0].environment.map(entry => [entry.name, entry.value]));
   assert.equal(env.get('TRACEPOINT_AUTH_PROVIDER'), 'cognito');
@@ -113,10 +123,10 @@ async function listCognitoAcceptanceUsers() {
 function newManifest(run) {
   const agencies = [0, 1].map(index => ({ id: randomUUID(), slug: `acceptance-${run}-${index}` }));
   const roles = [
+    { role: 'administrator', agencyIndex: 0, code: 'administrator' },
     { role: 'officer', agencyIndex: 0, code: 'officer' },
     { role: 'instructor', agencyIndex: 0, code: 'instructor' },
     { role: 'supervisor', agencyIndex: 0, code: 'supervisor' },
-    { role: 'administrator', agencyIndex: 0, code: 'administrator' },
     { role: 'officer', agencyIndex: 1, code: 'foreign' },
   ];
   return { environment: 'staging', run, poolId, issuer, agencies, users: roles.map((spec, index) => ({
@@ -195,6 +205,11 @@ async function deleteCognitoUsers(manifest) {
     catch (error) { if (error?.name !== 'UserNotFoundException') failed = true; }
   }
   if (failed) throw new Error('One or more staging Cognito fixture identities could not be deleted.');
+  const remaining = (await listCognitoAcceptanceUsers()).filter(user => {
+    const email = user.Attributes?.find(attribute => attribute.Name === 'email')?.Value;
+    return fixtureEmails.has(email);
+  });
+  if (remaining.length) throw new Error('Cognito fixture cleanup verification found remaining run identities.');
 }
 
 async function main() {
