@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { applyStagingFixture, isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
+import { applyStagingFixture, isStagingAcceptanceUser, sanitizeFixturePostgresDiagnostic, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
 import { totp } from './staging-cognito-login.mjs';
 
 const run = 'c30a4084-6487-4c42-9d6f-83fd1df935a8';
@@ -44,8 +44,10 @@ test('pins all fixture SQL to the configured staging database host before connec
 
 test('creates only the declared agencies, identities, memberships, roles, and equipment entitlement in one transaction', async () => {
   const statements = [];
-  const client = { async query(sql) {
+  const identityLinkUsernames = [];
+  const client = { async query(sql, parameters = []) {
     statements.push(sql);
+    if (sql.includes('insert into public.authentication_identity_links')) identityLinkUsernames.push(parameters[3]);
     if (sql.includes('select id from public.departments')) return { rows: [], rowCount: 0 };
     if (sql.includes('select 1 from public.profiles')) return { rows: [], rowCount: 0 };
     if (sql.includes('select code from public.feature_catalog')) return { rows: [{ code: 'equipment_readiness' }], rowCount: 1 };
@@ -64,7 +66,30 @@ test('creates only the declared agencies, identities, memberships, roles, and eq
   assert.equal(statements.filter(sql => sql.includes('insert into auth.users')).length, 5);
   assert.equal(statements.filter(sql => sql.includes('insert into public.department_membership_roles')).length, 5);
   assert.ok(statements.some(sql => sql.includes('select 1 from public.profiles') && sql.includes('provider_username')));
+  const authAnchor = statements.find(sql => sql.includes('insert into auth.users'));
+  assert.match(authAnchor, /auth\.users\(id,email,raw_user_meta_data\)/);
+  assert.doesNotMatch(authAnchor, /\b(?:aud|role|encrypted_password|email_confirmed_at|raw_app_meta_data|created_at|updated_at)\b/);
+  assert.deepEqual(identityLinkUsernames, manifest.users.map(user => user.username));
   assert.ok(statements.every(sql => !/^\s*(alter|create|drop)\b/i.test(sql)));
+});
+
+test('sanitizes PostgreSQL fixture diagnostics while preserving operation, SQLSTATE, position, and safe schema context', () => {
+  const error = Object.assign(new Error('column "aud" of relation "users" does not exist'), {
+    code: '42703', position: '24', column: 'aud', table: 'users',
+    detail: 'A conflicting row included acceptance-123@example.invalid.',
+    hint: 'Use id, email, and raw_user_meta_data.',
+    where: 'PL/pgSQL function public.handle_new_auth_user() line 7 at SQL statement',
+    fixtureOperation: 'identity.create_auth_user_anchor',
+  });
+  const diagnostic = sanitizeFixturePostgresDiagnostic(error, 'seed-fixture-records');
+  assert.equal(diagnostic.sqlstate, '42703');
+  assert.equal(diagnostic.position, 24);
+  assert.equal(diagnostic.operation, 'identity.create_auth_user_anchor');
+  assert.equal(diagnostic.column, 'aud');
+  assert.equal(diagnostic.table, 'users');
+  assert.match(diagnostic.message, /column "aud"/);
+  assert.doesNotMatch(JSON.stringify(diagnostic), /acceptance-123@example\.invalid/);
+  assert.match(diagnostic.executionContext, /handle_new_auth_user/);
 });
 
 test('cleanup is idempotent for the same completed run', async () => {

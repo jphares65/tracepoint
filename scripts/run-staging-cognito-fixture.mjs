@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { Client } from 'pg';
-import { applyStagingFixture } from './staging-cognito-fixture-core.mjs';
+import { applyStagingFixture, sanitizeFixturePostgresDiagnostic } from './staging-cognito-fixture-core.mjs';
 
 const action = process.argv[2];
 const environmentName = process.argv[3];
@@ -60,7 +60,7 @@ try {
   const report = await applyStagingFixture(client, action, manifest);
   console.log(JSON.stringify(report));
 } catch (error) {
-  console.error(JSON.stringify({ stagingAcceptanceFixture: 'failed', stage: operationStage, failureCode: safeFailureCode(error), ...(safeSchemaIdentifier(error?.column) ? { column: safeSchemaIdentifier(error.column) } : {}), ...(safeSchemaIdentifier(error?.table) ? { table: safeSchemaIdentifier(error.table) } : {}), detailsSuppressed: true }));
+  console.error(JSON.stringify({ stagingAcceptanceFixture: 'failed', ...sanitizeFixturePostgresDiagnostic(error, operationStage), failureCode: safeFailureCode(error), ...(safeSchemaIdentifier(error?.column) ? { column: safeSchemaIdentifier(error.column) } : {}), ...(safeSchemaIdentifier(error?.table) ? { table: safeSchemaIdentifier(error.table) } : {}), detailsSuppressed: true }));
   process.exitCode = 1;
 } finally {
   if (client) {

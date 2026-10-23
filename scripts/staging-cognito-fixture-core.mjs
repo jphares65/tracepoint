@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const roles = new Set(['officer', 'instructor', 'supervisor', 'administrator']);
 const issuer = 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Y9GiDA5Zy';
+export const stagingAuthUserAnchorSql = `insert into auth.users(id,email,raw_user_meta_data)
+  values($1,$2,jsonb_build_object('full_name',$3::text,'identity_provider','cognito'))
+  on conflict(id) do nothing`;
 
 export function validateStagingFixtureManifest(manifest, action) {
   assert.equal(action === 'create' || action === 'cleanup', true, 'Unsupported fixture action.');
@@ -49,6 +52,49 @@ export function isStagingAcceptanceUser(user) {
   return user?.Username?.startsWith('acceptance-') === true || email.toLowerCase().startsWith('acceptance-');
 }
 
+async function fixtureQuery(client, operation, sql, parameters = []) {
+  try {
+    return await client.query(sql, parameters);
+  } catch (error) {
+    if (error && typeof error === 'object') error.fixtureOperation = operation;
+    throw error;
+  }
+}
+
+function safeDiagnosticText(value) {
+  if (typeof value !== 'string' || !value) return undefined;
+  return value
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/'[^']*'/g, '[redacted]')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
+    .replace(/\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b/gi, '[redacted-id]')
+    .replace(/\b(?:eyJ[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{48,})\b/g, '[redacted-token]')
+    .replace(/(?:failing row contains|key \([^)]*\)=).*/i, '[redacted-row-values]')
+    .replace(/\b(password|secret|token|authorization)\s*[:=]\s*[^,; ]+/gi, '$1=[redacted]')
+    .slice(0, 320);
+}
+
+export function sanitizeFixturePostgresDiagnostic(error, stage) {
+  const code = String(error?.code ?? '');
+  const safeIdentifier = value => /^[a-z_][a-z0-9_]{0,62}$/.test(String(value ?? '')) ? String(value) : undefined;
+  const safeOperation = value => /^[a-z_][a-z0-9_.]{0,127}$/.test(String(value ?? '')) ? String(value) : undefined;
+  const diagnostic = {
+    stage,
+    ...(safeOperation(error?.fixtureOperation) ? { operation: safeOperation(error.fixtureOperation) } : {}),
+    sqlstate: /^[0-9A-Z]{5}$/.test(code) ? code : undefined,
+    ...(safeDiagnosticText(error?.message) ? { message: safeDiagnosticText(error.message) } : {}),
+    ...(Number.isInteger(Number(error?.position)) && Number(error.position) > 0 ? { position: Number(error.position) } : {}),
+    ...(safeDiagnosticText(error?.detail) ? { detail: safeDiagnosticText(error.detail) } : {}),
+    ...(safeDiagnosticText(error?.hint) ? { hint: safeDiagnosticText(error.hint) } : {}),
+    ...(safeDiagnosticText(error?.where) ? { executionContext: safeDiagnosticText(error.where) } : {}),
+    ...(safeIdentifier(error?.schema) ? { schema: safeIdentifier(error.schema) } : {}),
+    ...(safeIdentifier(error?.table) ? { table: safeIdentifier(error.table) } : {}),
+    ...(safeIdentifier(error?.column) ? { column: safeIdentifier(error.column) } : {}),
+    ...(safeIdentifier(error?.routine) ? { routine: safeIdentifier(error.routine) } : {}),
+  };
+  return Object.fromEntries(Object.entries(diagnostic).filter(([, value]) => value !== undefined));
+}
+
 export async function applyStagingFixture(client, action, input, environment = process.env) {
   if (environment.CONFIGURATION_ENVIRONMENT !== 'staging' || environment.TRACEPOINT_RUNTIME_PROVIDER_MODE !== 'aws-native') {
     throw new Error('Staging AWS-native runtime configuration is required.');
@@ -60,11 +106,11 @@ export async function applyStagingFixture(client, action, input, environment = p
     throw new Error('Fixture database target does not match the pinned staging instance.');
   }
 
-  await client.query('begin');
+  await fixtureQuery(client, 'transaction.begin', 'begin');
   try {
     if (action === 'create') await createFixture(client, manifest);
     else await cleanupFixture(client, manifest);
-    await client.query('commit');
+    await fixtureQuery(client, 'transaction.commit', 'commit');
   } catch (error) {
     await client.query('rollback').catch(() => undefined);
     throw error;
@@ -73,34 +119,34 @@ export async function applyStagingFixture(client, action, input, environment = p
 }
 
 async function createFixture(client, manifest) {
-  const existing = await client.query('select id from public.departments where slug = any($1::text[])', [manifest.agencies.map(agency => agency.slug)]);
+  const existing = await fixtureQuery(client, 'preflight.find_fixture_agencies', 'select id from public.departments where slug = any($1::text[])', [manifest.agencies.map(agency => agency.slug)]);
   if (existing.rowCount) throw new Error('Fixture agency slug already exists.');
-  const identityCollision = await client.query(`select 1 from public.profiles where id=any($1::uuid[]) or email=any($2::text[])
+  const identityCollision = await fixtureQuery(client, 'preflight.check_identity_collisions', `select 1 from public.profiles where id=any($1::uuid[]) or email=any($2::text[])
     union all select 1 from auth.users where id=any($1::uuid[]) or email=any($2::text[])
     union all select 1 from public.authentication_identity_links where provider='cognito' and issuer=$3 and
       (subject=any($4::text[]) or provider_username=any($5::text[])) limit 1`, [manifest.users.map(user => user.id), manifest.users.map(user => user.email), manifest.issuer, manifest.users.map(user => user.subject), manifest.users.map(user => user.username)]);
   if (identityCollision.rowCount) throw new Error('Fixture identity already exists.');
-  const activeFeature = await client.query("select code from public.feature_catalog where code='equipment_readiness' and is_active");
+  const activeFeature = await fixtureQuery(client, 'preflight.verify_equipment_feature', "select code from public.feature_catalog where code='equipment_readiness' and is_active");
   if (activeFeature.rowCount !== 1) throw new Error('Required staging acceptance module is unavailable.');
   const admin = manifest.users.find(user => user.agencyIndex === 0 && user.role === 'administrator');
 
   for (const agency of manifest.agencies) {
-    await client.query('insert into public.departments(id,name,short_name,slug,is_active) values($1,$2,$3,$4,true)', [agency.id, `Staging Acceptance ${manifest.run.slice(0, 8)}-${agency.slug.endsWith('-0') ? 'A' : 'B'}`, 'Acceptance', agency.slug]);
-    await client.query(`insert into public.department_features(department_id,feature_code,is_enabled,enabled_at,updated_at)
+    await fixtureQuery(client, 'agency.create_department', 'insert into public.departments(id,name,short_name,slug,is_active) values($1,$2,$3,$4,true)', [agency.id, `Staging Acceptance ${manifest.run.slice(0, 8)}-${agency.slug.endsWith('-0') ? 'A' : 'B'}`, 'Acceptance', agency.slug]);
+    await fixtureQuery(client, 'agency.enable_equipment_feature', `insert into public.department_features(department_id,feature_code,is_enabled,enabled_at,updated_at)
       values($1,'equipment_readiness',true,now(),now()) on conflict(department_id,feature_code) do update set is_enabled=true,enabled_at=now(),disabled_at=null,updated_at=now()`, [agency.id]);
   }
   for (const user of manifest.users) {
     const departmentId = manifest.agencies[user.agencyIndex].id;
-    await client.query(`insert into auth.users(id,aud,role,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
-      values($1,'authenticated','authenticated',$2,'',null,'{"provider":"cognito","providers":["cognito"]}'::jsonb,jsonb_build_object('full_name',$3),now(),now())
-      on conflict(id) do nothing`, [user.id, user.email, user.fullName]);
-    await client.query(`insert into public.profiles(id,full_name,email) values($1,$2,$3)
+    // AWS-native auth.users is a minimal application identity anchor. The
+    // on_auth_user_created trigger creates the profile from these fields.
+    await fixtureQuery(client, 'identity.create_auth_user_anchor', stagingAuthUserAnchorSql, [user.id, user.email, user.fullName]);
+    await fixtureQuery(client, 'identity.upsert_profile', `insert into public.profiles(id,full_name,email) values($1,$2,$3)
       on conflict(id) do update set full_name=excluded.full_name,email=excluded.email`, [user.id, user.fullName, user.email]);
-    await client.query(`insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username)
-      values('cognito',$1,$2,$3,'active',$4)`, [manifest.issuer, user.subject, user.id, user.email]);
-    await client.query(`insert into public.department_memberships(department_id,user_id,is_active)
+    await fixtureQuery(client, 'identity.link_cognito_subject', `insert into public.authentication_identity_links(provider,issuer,subject,tracepoint_user_id,state,provider_username)
+      values('cognito',$1,$2,$3,'active',$4)`, [manifest.issuer, user.subject, user.id, user.username]);
+    await fixtureQuery(client, 'membership.create', `insert into public.department_memberships(department_id,user_id,is_active)
       values($1,$2,true)`, [departmentId, user.id]);
-    await client.query(`insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by)
+    await fixtureQuery(client, 'membership.assign_role', `insert into public.department_membership_roles(department_id,user_id,role_code,assigned_by)
       values($1,$2,$3,$4)`, [departmentId, user.id, user.role, user.agencyIndex === 0 && user.role !== 'administrator' ? admin.id : null]);
   }
 }
