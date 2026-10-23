@@ -26,6 +26,11 @@ const createdUsernames = [];
 const secrets = new Map();
 let operationStage = 'startup';
 
+function setOperationStage(stage) {
+  operationStage = stage;
+  console.log(JSON.stringify({ acceptanceStage: stage }));
+}
+
 function aws(args) {
   return JSON.parse(execFileSync('aws.exe', [...args, '--profile', process.env.AWS_PROFILE, '--region', region, '--output', 'json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
@@ -139,9 +144,9 @@ async function deleteCognitoUsers() {
 
 async function main() {
   if (process.argv.includes('--preflight')) {
-    operationStage = 'verify-staging-task-and-rds';
+    setOperationStage('verify-staging-task-and-rds');
     const boundary = verifyLiveBoundary();
-    operationStage = 'verify-cognito-pool-and-client';
+    setOperationStage('verify-cognito-pool-and-client');
     await verifyCognitoBoundary();
     assert.match(boundary.appDigest ?? '', /^sha256:[0-9a-f]{64}$/);
     console.log(JSON.stringify({ stagingBoundary: 'verified', taskRevision: boundary.service.taskDefinition.split(':').at(-1), appDigest: boundary.appDigest, syntheticUsersPresent: false, mfa: 'required' }));
@@ -149,7 +154,7 @@ async function main() {
   }
   const recoveryIndex = process.argv.indexOf('--cleanup-manifest');
   if (recoveryIndex !== -1) {
-    operationStage = 'recover-fixture-cleanup';
+    setOperationStage('recover-fixture-cleanup');
     const manifestPath = process.argv[recoveryIndex + 1];
     if (!manifestPath) throw new Error('A fixture recovery manifest path is required.');
     const manifest = validateStagingFixtureManifest(JSON.parse(await (await import('node:fs/promises')).readFile(manifestPath, 'utf8')), 'cleanup');
@@ -165,9 +170,9 @@ async function main() {
     return;
   }
   if (!process.argv.includes('--execute')) throw new Error('Run with --execute to provision disposable staging identities and data.');
-  operationStage = 'verify-staging-task-and-rds';
+    setOperationStage('verify-staging-task-and-rds');
   const boundary = verifyLiveBoundary();
-  operationStage = 'verify-cognito-pool-and-client';
+    setOperationStage('verify-cognito-pool-and-client');
   await verifyCognitoBoundary();
   const run = randomUUID();
   const manifest = newManifest(run);
@@ -178,15 +183,15 @@ async function main() {
   let resultCode = 1;
   let cleanupError = false;
   try {
-    operationStage = 'create-synthetic-cognito-users';
+    setOperationStage('create-synthetic-cognito-users');
     await provisionCognito(manifest, passwords);
     await writeFile(manifestPath, JSON.stringify(manifest), { mode: 0o600, flag: 'wx' });
     const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
     assert.match(toolingCommit, /^[0-9a-f]{40}$/);
     taskAttempted = true;
-    operationStage = 'seed-staging-database-fixtures';
+    setOperationStage('seed-staging-database-fixtures');
     runFixtureTask('acceptance-fixture-create', manifestPath, toolingCommit);
-    operationStage = 'authenticated-pkce-mfa-acceptance';
+    setOperationStage('authenticated-pkce-mfa-acceptance');
     const acceptance = await runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets: secrets });
     console.log(JSON.stringify({ stagingTarget: 'verified', taskRevision: boundary.service.taskDefinition.split(':').at(-1), appDigest: boundary.appDigest }));
     for (const item of acceptance.results) console.log(JSON.stringify(item));
@@ -195,7 +200,7 @@ async function main() {
     console.error(JSON.stringify({ acceptanceHarness: 'failed', stage: taskAttempted ? 'fixture-or-authenticated-workflow' : 'provisioning', sensitiveDetailsPrinted: false }));
   } finally {
     try {
-      operationStage = 'cleanup-staging-fixtures';
+      setOperationStage('cleanup-staging-fixtures');
       if (taskAttempted) {
         await cleanupStorage(manifest);
         const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
