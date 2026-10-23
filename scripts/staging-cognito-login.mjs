@@ -21,34 +21,39 @@ const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 export async function loginThroughCognitoPkce({ page, baseURL, email, password, knownMfaSecret, onStep = () => {} }) {
   let callbackStatus;
+  let currentStep = 'start';
+  let totpSubmissions = 0;
+  const setStep = name => { currentStep = name; onStep(name); };
   page.on('response', response => {
     try {
       const url = new URL(response.url());
       if (url.origin === new URL(baseURL).origin && url.pathname === '/api/auth/cognito/callback') callbackStatus = response.status();
     } catch { /* Ignore non-URL response metadata. */ }
   });
-  onStep('open-login-page');
+  try {
+  setStep('open-login-page');
   await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' });
-  onStep('start-cognito-sign-in');
+  setStep('start-cognito-sign-in');
   await page.getByRole('button', { name: /continue with secure sign-in/i }).click();
-  onStep('wait-for-cognito-redirect');
+  setStep('wait-for-cognito-redirect');
   await page.waitForURL(url => url.hostname.endsWith('amazoncognito.com'), { timeout: 30_000 });
-  onStep('fill-cognito-username');
+  setStep('fill-cognito-username');
   const username = page.locator('input[autocomplete="username"],input[name="username"],input[name="email"],input[type="email"]').first();
   await username.waitFor({ state: 'visible', timeout: 30_000 });
   await username.fill(email);
   const pass = page.locator('input[autocomplete="current-password"],input[name="password"],input[type="password"]').first();
   if (await pass.isVisible().catch(() => false)) await pass.fill(password);
-  onStep('submit-cognito-credentials');
+  setStep('submit-cognito-credentials');
   await submit(page);
   let secret = knownMfaSecret ?? null;
-  let totpSubmissions = 0;
   for (let step = 0; step < 5; step += 1) {
-    onStep(`cognito-login-loop-${step + 1}`);
+    const loopStep = `cognito-login-loop-${step + 1}`;
+    currentStep = loopStep;
+    onStep(loopStep);
     const currentUrl = new URL(page.url());
     if (callbackStatus === 303 && currentUrl.origin === new URL(baseURL).origin && currentUrl.pathname !== '/api/auth/cognito/callback') return secret;
     if (new URL(page.url()).origin === new URL(baseURL).origin && new URL(page.url()).pathname === '/api/auth/cognito/callback') {
-      onStep('complete-pkce-callback');
+      setStep('complete-pkce-callback');
       await page.waitForURL(url => url.origin === new URL(baseURL).origin && !url.pathname.startsWith('/api/auth/cognito/callback'), { timeout: 30_000 });
       return secret;
     }
@@ -59,7 +64,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     }
     const text = await page.locator('body').innerText().catch(() => '');
     if (/select.*mfa|choose.*mfa|verification method/i.test(text)) {
-      onStep('select-cognito-mfa-factor');
+      setStep('select-cognito-mfa-factor');
       const factor = page.getByRole('button', { name: /authenticator app|software token|time-based one-time password/i }).first();
       await factor.waitFor({ state: 'visible', timeout: 15_000 });
       await factor.click();
@@ -67,7 +72,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       continue;
     }
     if (/software token|authenticator app|setup.*mfa|set up.*authenticator/i.test(text)) {
-      onStep('configure-cognito-totp');
+      setStep('configure-cognito-totp');
       let setupSecret = extractTotpSecret(text);
       let qrDiagnostics = null;
       if (!setupSecret) {
@@ -80,7 +85,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
         const manualSetup = page.getByText(/can't scan|enter.*manually|manual setup/i).first();
         const manualSetupVisible = await manualSetup.isVisible().catch(() => false);
         if (manualSetupVisible) {
-          onStep('reveal-cognito-totp-manual-key');
+          setStep('reveal-cognito-totp-manual-key');
           await manualSetup.click();
           continue;
         }
@@ -89,18 +94,18 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       if (!secret) throw new Error('Cognito software-token MFA setup did not expose an authenticator secret.');
     }
     if (/verification code|authenticator|one.time password|software token/i.test(text)) {
-      onStep('wait-for-totp-input');
+      setStep('wait-for-totp-input');
       if (!secret) throw new Error('Cognito requested MFA without an enrolled software-token secret.');
       const codeInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
       await codeInput.waitFor({ state: 'visible', timeout: 15_000 });
-      onStep('fill-totp-code');
+      setStep('fill-totp-code');
       await codeInput.fill(totp(secret));
       totpSubmissions += 1;
       const beforeUrl = page.url();
       const beforeBody = await page.locator('body').innerText().catch(() => '');
-      onStep('submit-totp-code');
+      setStep('submit-totp-code');
       await submit(page);
-      onStep('wait-for-totp-response');
+      setStep('wait-for-totp-response');
       await page.waitForFunction(({ previousUrl, previousBody }) =>
         location.href !== previousUrl || document.body?.innerText !== previousBody,
       { previousUrl: beforeUrl, previousBody: beforeBody }, { timeout: 15_000 });
@@ -109,7 +114,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
       continue;
     }
     if (/configure.*authenticator|scan.*qr|can't scan/i.test(text)) {
-      onStep('complete-cognito-totp-setup');
+      setStep('complete-cognito-totp-setup');
       if (!secret) throw new Error('Cognito MFA setup is required but no software-token secret was found.');
       continue;
     }
@@ -118,34 +123,54 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     }
     await page.waitForTimeout(300);
   }
-  onStep('cognito-login-loop-exhausted');
+  setStep('cognito-login-loop-exhausted');
   if (!secret) throw new Error('Cognito PKCE/MFA login did not complete.');
-  try {
-    await page.waitForURL(url => url.origin === new URL(baseURL).origin && url.pathname === '/', { timeout: 30_000 });
+  await page.waitForURL(url => url.origin === new URL(baseURL).origin && url.pathname === '/', { timeout: 30_000 });
+  return secret;
   } catch (error) {
-    const text = await page.locator('body').innerText().catch(() => '');
-    const otpInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
-    const passwordInput = page.locator('input[autocomplete="current-password"],input[name="password"],input[type="password"]').first();
-    const current = new URL(page.url());
-    const application = new URL(baseURL);
-    error.acceptanceDiagnostics = {
-      onCognitoHost: current.hostname.endsWith('amazoncognito.com'),
-      callbackReached: current.origin === new URL(baseURL).origin && current.pathname === '/api/auth/cognito/callback',
-      hostClass: current.hostname === application.hostname ? 'application' : current.hostname.endsWith('amazoncognito.com') ? 'cognito' : 'other',
-      pathClass: current.pathname === '/login' ? 'login' : current.pathname === '/' ? 'home' : current.pathname === '/api/auth/cognito/callback' ? 'callback' : 'other',
-      mfaPromptVisible: /verification code|authenticator|one.time password|software token/i.test(text),
-      otpInputVisible: await otpInput.isVisible().catch(() => false),
-      passwordInputVisible: await passwordInput.isVisible().catch(() => false),
-      invalidCodeNotice: /invalid (?:verification )?code|incorrect (?:verification )?code/i.test(text),
-      expiredCodeNotice: /code (?:has )?expired|expired code/i.test(text),
-      retryNotice: /try again|please retry/i.test(text),
-      genericRequestError: /invalid request|unable to process|something went wrong/i.test(text),
-      totpSubmissions,
-      callbackStatus: Number.isInteger(callbackStatus) ? callbackStatus : null,
-    };
+    if (error && typeof error === 'object') {
+      try {
+        error.acceptanceDiagnostics = {
+          ...(error.acceptanceDiagnostics && typeof error.acceptanceDiagnostics === 'object' ? error.acceptanceDiagnostics : {}),
+          ...await captureCognitoLoginDiagnostics(page, baseURL, { step: currentStep, callbackStatus, totpSubmissions }),
+        };
+      } catch {
+        error.acceptanceDiagnostics = { step: safeLoginStep(currentStep), callbackStatus: Number.isInteger(callbackStatus) ? callbackStatus : null, totpSubmissions };
+      }
+    }
     throw error;
   }
-  return secret;
+}
+
+/** Captures only enumerated browser state; never returns URL values, page text, selectors or credentials. */
+export async function captureCognitoLoginDiagnostics(page, baseURL, { step: currentStep, callbackStatus, totpSubmissions = 0 } = {}) {
+  let current;
+  let application;
+  try { current = new URL(page.url()); application = new URL(baseURL); }
+  catch { return { step: safeLoginStep(currentStep), hostClass: 'unknown', pathClass: 'unknown', callbackStatus: Number.isInteger(callbackStatus) ? callbackStatus : null, totpSubmissions }; }
+  const text = await page.locator('body').innerText().catch(() => '');
+  const otpInput = page.locator('input[autocomplete="one-time-code"],input[name*="code" i],input[type="tel"],input[inputmode="numeric"]').first();
+  const passwordInput = page.locator('input[autocomplete="current-password"],input[name="password"],input[type="password"]').first();
+  return {
+    step: safeLoginStep(currentStep),
+    onCognitoHost: current.hostname.endsWith('amazoncognito.com'),
+    callbackReached: current.origin === application.origin && current.pathname === '/api/auth/cognito/callback',
+    hostClass: current.hostname === application.hostname ? 'application' : current.hostname.endsWith('amazoncognito.com') ? 'cognito' : 'other',
+    pathClass: current.pathname === '/login' ? 'login' : current.pathname === '/' ? 'home' : current.pathname === '/api/auth/cognito/callback' ? 'callback' : 'other',
+    mfaPromptVisible: /verification code|authenticator|one.time password|software token/i.test(text),
+    otpInputVisible: await otpInput.isVisible().catch(() => false),
+    passwordInputVisible: await passwordInput.isVisible().catch(() => false),
+    invalidCodeNotice: /invalid (?:verification )?code|incorrect (?:verification )?code/i.test(text),
+    expiredCodeNotice: /code (?:has )?expired|expired code/i.test(text),
+    retryNotice: /try again|please retry/i.test(text),
+    genericRequestError: /invalid request|unable to process|something went wrong/i.test(text),
+    totpSubmissions: Number.isInteger(totpSubmissions) ? totpSubmissions : 0,
+    callbackStatus: Number.isInteger(callbackStatus) ? callbackStatus : null,
+  };
+}
+
+function safeLoginStep(value) {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value) ? value : 'unknown';
 }
 
 export function extractTotpSecret(text) {

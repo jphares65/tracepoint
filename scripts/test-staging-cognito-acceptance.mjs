@@ -362,6 +362,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
       phase: activePhase,
       errorName,
       ...(diagnostics && typeof diagnostics === 'object' ? { diagnostics: {
+        step: /^[a-z][a-z0-9-]{0,63}$/.test(diagnostics.step ?? '') ? diagnostics.step : 'unknown',
         barcodeDetectorAvailable: diagnostics.barcodeDetectorAvailable === true,
         imageCount: Number.isInteger(diagnostics.imageCount) ? diagnostics.imageCount : 0,
         canvasCount: Number.isInteger(diagnostics.canvasCount) ? diagnostics.canvasCount : 0,

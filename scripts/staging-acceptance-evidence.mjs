@@ -16,6 +16,7 @@ const safeStrings = new Set([
   'damaged', 'out_of_service', 'active', 'not_found', 'permission_denied',
 ]);
 const diagnosticKeys = new Set([
+  'step',
   'barcodeDetectorAvailable', 'imageCount', 'canvasCount', 'qrDecoded', 'totpPayloadFound',
   'manualSetupVisible', 'onCognitoHost', 'callbackReached', 'hostClass', 'pathClass',
   'mfaPromptVisible', 'otpInputVisible', 'passwordInputVisible', 'invalidCodeNotice',
@@ -109,6 +110,7 @@ export function sanitizeAcceptanceCheck(check) {
   if (check.diagnostics && typeof check.diagnostics === 'object') {
     const diagnostics = Object.fromEntries(Object.entries(check.diagnostics).filter(([key]) => diagnosticKeys.has(key))
       .flatMap(([key, value]) => {
+        if (key === 'step' && typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value)) return [[key, value]];
         const primitive = safePrimitive(value);
         return primitive !== undefined ? [[key, primitive]] : [];
       }));
