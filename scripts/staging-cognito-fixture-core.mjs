@@ -68,6 +68,11 @@ export async function applyStagingFixture(client, action, input, environment = p
 async function createFixture(client, manifest) {
   const existing = await client.query('select id from public.departments where slug = any($1::text[])', [manifest.agencies.map(agency => agency.slug)]);
   if (existing.rowCount) throw new Error('Fixture agency slug already exists.');
+  const identityCollision = await client.query(`select 1 from public.profiles where id=any($1::uuid[]) or email=any($2::text[])
+    union all select 1 from auth.users where id=any($1::uuid[]) or email=any($2::text[])
+    union all select 1 from public.authentication_identity_links where provider='cognito' and issuer=$3 and
+      (subject=any($4::text[]) or provider_username=any($5::text[])) limit 1`, [manifest.users.map(user => user.id), manifest.users.map(user => user.email), manifest.issuer, manifest.users.map(user => user.subject), manifest.users.map(user => user.username)]);
+  if (identityCollision.rowCount) throw new Error('Fixture identity already exists.');
   const activeFeature = await client.query("select code from public.feature_catalog where code='equipment_readiness' and is_active");
   if (activeFeature.rowCount !== 1) throw new Error('Required staging acceptance module is unavailable.');
   const admin = manifest.users.find(user => user.agencyIndex === 0 && user.role === 'administrator');

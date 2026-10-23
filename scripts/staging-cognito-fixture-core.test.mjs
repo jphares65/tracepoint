@@ -41,6 +41,7 @@ test('creates only the declared agencies, identities, memberships, roles, and eq
   const client = { async query(sql) {
     statements.push(sql);
     if (sql.includes('select id from public.departments')) return { rows: [], rowCount: 0 };
+    if (sql.includes('select 1 from public.profiles')) return { rows: [], rowCount: 0 };
     if (sql.includes('select code from public.feature_catalog')) return { rows: [{ code: 'equipment_readiness' }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   } };
@@ -56,6 +57,7 @@ test('creates only the declared agencies, identities, memberships, roles, and eq
   assert.equal(statements.filter(sql => sql.includes('insert into public.departments')).length, 2);
   assert.equal(statements.filter(sql => sql.includes('insert into auth.users')).length, 5);
   assert.equal(statements.filter(sql => sql.includes('insert into public.department_membership_roles')).length, 5);
+  assert.ok(statements.some(sql => sql.includes('select 1 from public.profiles') && sql.includes('provider_username')));
   assert.ok(statements.every(sql => !/^\s*(alter|create|drop)\b/i.test(sql)));
 });
 
