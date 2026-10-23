@@ -10,11 +10,15 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
   const browser = await chromium.launch({ headless: true });
   let typeId;
   let patchCreated = false;
+  let activeUser;
+  let activePhase = 'browser-start';
   const admin = manifest.users.find(user => user.agencyIndex === 0 && user.role === 'administrator');
   let adminContext;
   const add = (name, status, details = {}) => results.push({ name, status, ...details });
   try {
     for (const user of manifest.users) {
+      activeUser = user;
+      activePhase = 'open-login';
       const context = await browser.newContext({ baseURL });
       try {
         await context.route('**/*', route => {
@@ -22,14 +26,17 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           return [baseURL, 'https://tracepoint-staging-559054714699.auth.us-east-1.amazoncognito.com'].includes(origin) ? route.continue() : route.abort();
         });
         const page = await context.newPage();
+        activePhase = 'cognito-pkce-mfa-login';
         const secret = await loginThroughCognitoPkce({ page, baseURL, email: user.email, password: passwords.get(user.email), knownMfaSecret: mfaSecrets.get(user.email) });
         if (secret) mfaSecrets.set(user.email, secret);
+        activePhase = 'read-role-and-tenant-access';
         const accessResponse = await context.request.get('/api/access');
         assert.equal(accessResponse.status(), 200);
         const { access } = await accessResponse.json();
         assert.equal(access.departmentId, manifest.agencies[user.agencyIndex].id);
         assert.ok(access.roleCodes.includes(user.role));
         add(`${user.role} authenticates through Cognito PKCE/MFA`, 'pass');
+        activePhase = 'reload-session-and-tenant';
         await page.reload({ waitUntil: 'domcontentloaded' });
         const persisted = await context.request.get('/api/access');
         assert.equal(persisted.status(), 200);
@@ -39,6 +46,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         if (user.role === 'administrator' && user.agencyIndex === 0) {
           adminContext = context;
           const name = `acceptance-${manifest.run}-equipment-type`;
+          activePhase = 'administrator-create-save-edit-save-reload';
           const created = await context.request.post('/api/equipment/types', { data: { name, category: 'Staging Acceptance' } });
           assert.equal(created.status(), 201);
           const initial = (await created.json()).item; typeId = initial.id;
@@ -56,6 +64,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           assert.ok((await reloaded.json()).items.some(item => item.id === typeId && item.name === editedName));
           add('equipment type create → save → edit → save → reload persistence', 'pass');
 
+          activePhase = 'administrator-audit-log';
           const patch = await context.request.post('/api/settings/department-patch', { multipart: { file: { name: 'acceptance.png', mimeType: 'image/png', buffer: pixelPng } } });
           assert.equal(patch.status(), 200);
           patchCreated = true;
@@ -65,10 +74,12 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           assert.ok(audit.events.some(event => event.action === 'department_patch_upload' && event.details?.result === 'succeeded'));
           add('administrator action is present in tenant audit log', 'pass');
         } else if (user.agencyIndex === 0) {
+          activePhase = `${user.role}-authorization-denial`;
           const write = await context.request.post('/api/equipment/types', { data: { name: `forbidden-${manifest.run}-${user.role}` } });
           assert.equal(write.status(), 403);
           add(`${user.role} cannot create administrator-only equipment types`, 'pass');
         } else {
+          activePhase = 'agency-b-cross-tenant-isolation';
           await context.addCookies([{ name: 'tracepoint_department_id', value: manifest.agencies[0].id, url: baseURL }]);
           const foreignTenant = await context.request.get('/api/access');
           assert.ok([200, 401, 403].includes(foreignTenant.status()));
@@ -93,7 +104,14 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
       }
     }
   } catch (error) {
-    add('authenticated acceptance execution', 'fail', { code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED' });
+    const errorName = /^[A-Za-z]+Error$/.test(error?.name ?? '') ? error.name : 'UnknownError';
+    const role = ['officer', 'instructor', 'supervisor', 'administrator'].includes(activeUser?.role) ? activeUser.role : 'unknown';
+    add('authenticated acceptance execution', 'fail', {
+      code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
+      role,
+      phase: activePhase,
+      errorName,
+    });
   } finally {
     if (adminContext) await adminContext.close().catch(() => undefined);
     await browser.close();
