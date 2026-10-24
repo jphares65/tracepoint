@@ -15,6 +15,7 @@ import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureMani
 import { createAcceptanceReport, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
 import { retryTransientS3 } from './staging-acceptance-s3-retry.mjs';
 import { captureFixtureTaskFailure } from './staging-acceptance-task-diagnostics.mjs';
+import { assertStagingTaskRevision } from './staging-acceptance-revision-policy.mjs';
 
 const account = '559054714699';
 const region = 'us-east-1';
@@ -64,12 +65,13 @@ function currentIdentity() {
   assert.match(identity.Arn, new RegExp(`^arn:aws:sts::${account}:assumed-role/[^/]*TracePointMigrationStaging[^/]*/`));
 }
 
-function verifyLiveBoundary() {
+function verifyLiveBoundary({ recovery = false } = {}) {
   currentIdentity();
   const service = aws(['ecs', 'describe-services', '--cluster', 'tracepoint-staging', '--services', 'tracepoint-staging']).services?.[0];
   assert.equal(service?.status, 'ACTIVE');
   assert.equal(service?.runningCount, service?.desiredCount);
-  assert.equal(service?.taskDefinition?.split(':').at(-1), '194', 'Acceptance is pinned to the Batch 3 staging task revision.');
+  assert.ok(service?.taskDefinition, 'The staging service task definition is required.');
+  assertStagingTaskRevision(service.taskDefinition, recovery ? 'recovery' : 'acceptance');
   const serviceTasks = new Set(aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--service-name', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? []);
   const clusterTasks = aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? [];
   assert.equal(clusterTasks.filter(taskArn => !serviceTasks.has(taskArn)).length, 0, 'No competing staging ECS task may be active.');
@@ -251,7 +253,7 @@ async function main() {
     await verifyCognitoBoundary(manifest.users.map(user => user.username), false, true);
     for (const user of manifest.users ?? []) createdUsernames.push(user.username);
     setOperationStage('verify-staging-database-boundary');
-    const boundary = verifyLiveBoundary();
+    const boundary = verifyLiveBoundary({ recovery: true });
     const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
     const recoveryStartedAt = new Date().toISOString();
     const recoverySuffix = `recovery-${recoveryStartedAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${randomBytes(3).toString('hex')}`;
