@@ -70,7 +70,16 @@ export async function cleanupRecordedFixtureStorage(manifest, target, {
   // same rules, so a version added, removed or left untracked meanwhile is accounted for before anything is deleted.
   const deletions = planFixtureStorageDeletion(manifest, await listAll());
   for (const object of deletions) {
-    await retry(() => deleteVersion({ ...target, Key: object.Key, VersionId: object.VersionId }));
+    try {
+      await retry(() => deleteVersion({ ...target, Key: object.Key, VersionId: object.VersionId }));
+    } catch (error) {
+      // S3 may have deleted the version even though the response was lost. Only a fresh listing showing that exact
+      // key and version gone counts it as deleted; anything else, including a failed or mismatched listing, keeps the error.
+      const listing = await retry(() => listVersions({ ...target, Prefix: object.Key })).catch(() => undefined);
+      const stillPresent = !listing || listing.Prefix !== object.Key || listing.IsTruncated || [...(listing.Versions ?? []), ...(listing.DeleteMarkers ?? [])]
+        .some(candidate => candidate?.Key === object.Key && candidate?.VersionId === object.VersionId);
+      if (stillPresent) throw error;
+    }
   }
   const remaining = await listAll();
   if (remaining.some(listing => listing.IsTruncated || (listing.Versions?.length ?? 0) + (listing.DeleteMarkers?.length ?? 0) !== 0)) {

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import { test } from 'node:test';
+import { ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { cleanupRecordedFixtureStorage } from './staging-acceptance-fixture-storage.mjs';
-import { retryTransientS3 } from './staging-acceptance-s3-retry.mjs';
+import { boundedS3ClientConfig, retryTransientS3, transientS3FailureCode } from './staging-acceptance-s3-retry.mjs';
 
 const agencyA = '11111111-1111-4111-8111-111111111111';
 const agencyB = '22222222-2222-4222-8222-222222222222';
@@ -174,4 +176,106 @@ test('refuses cleanup when post-deletion verification cannot inspect a complete 
     verifyOwnership: async () => {},
     deleteVersion: async () => {},
   }), error => error.code === 'FIXTURE_STORAGE_INCOMPLETE');
+});
+
+// A delete can succeed on S3 while its response is lost (run 4c66f928: ECONNABORTED on a reused socket).
+const lostResponse = (versionsAfterFailure, { listingFails = false } = {}) => {
+  let deleteFailed = false;
+  const prefixes = [];
+  return {
+    prefixes,
+    ops: {
+      retry: retryWithoutDelay,
+      listVersions: async params => {
+        prefixes.push(params.Prefix);
+        if (params.Prefix === trackedKey && listingFails) throw Object.assign(new Error('still offline'), { code: 'ECONNABORTED' });
+        if (params.Prefix === trackedKey) return { ...listing(agencyA, versionsAfterFailure), Prefix: trackedKey };
+        if (params.Prefix.endsWith(`${agencyA}/`)) return listing(agencyA, deleteFailed ? versionsAfterFailure : [{ Key: trackedKey, VersionId: 'v1' }]);
+        return listing(agencyB);
+      },
+      verifyOwnership: async () => {},
+      deleteVersion: async () => { deleteFailed = true; throw Object.assign(new Error('response lost'), { code: 'ECONNABORTED' }); },
+    },
+  };
+};
+
+test('a delete whose response was lost counts as deleted only when an exact-version listing shows it gone', async () => {
+  const { ops, prefixes } = lostResponse([]);
+  assert.deepEqual(await cleanupRecordedFixtureStorage(manifest, target, ops), { planned: 1, deleted: 1 });
+  assert.equal(prefixes.filter(prefix => prefix === trackedKey).length, 1);
+});
+
+test('a delete whose response was lost is still an error when the exact version is listed', async () => {
+  const { ops } = lostResponse([{ Key: trackedKey, VersionId: 'v1' }]);
+  await assert.rejects(cleanupRecordedFixtureStorage(manifest, target, ops), error => error.code === 'ECONNABORTED' && error.s3RetryAttempts === 3);
+});
+
+test('another version of the same key does not count as the deleted version', async () => {
+  const { ops } = lostResponse([{ Key: `${trackedKey}.bak`, VersionId: 'v1' }, { Key: trackedKey, VersionId: 'v1' }]);
+  await assert.rejects(cleanupRecordedFixtureStorage(manifest, target, ops), error => error.code === 'ECONNABORTED');
+});
+
+test('a failed confirmation listing keeps the delete error and is itself bounded', async () => {
+  const { ops, prefixes } = lostResponse([], { listingFails: true });
+  await assert.rejects(cleanupRecordedFixtureStorage(manifest, target, ops), error => error.code === 'ECONNABORTED' && error.message === 'response lost');
+  assert.equal(prefixes.filter(prefix => prefix === trackedKey).length, 3);
+});
+
+test('a confirmation listing for a different prefix is not trusted', async () => {
+  const { ops } = lostResponse([]);
+  const listVersions = ops.listVersions;
+  ops.listVersions = async params => params.Prefix === trackedKey ? listing(agencyA) : listVersions(params);
+  await assert.rejects(cleanupRecordedFixtureStorage(manifest, target, ops), error => error.message === 'response lost');
+});
+
+test('the post-delete listing is retried when it fails transiently', async () => {
+  let lists = 0;
+  let deleted = false;
+  const result = await cleanupRecordedFixtureStorage(manifest, target, {
+    retry: retryWithoutDelay,
+    listVersions: async params => {
+      if (!params.Prefix.endsWith(`${agencyA}/`)) return listing(agencyB);
+      lists += 1;
+      if (deleted && lists === 3) throw Object.assign(new Error('stale socket'), { code: 'ECONNABORTED' });
+      return listing(agencyA, deleted ? [] : [{ Key: trackedKey, VersionId: 'v1' }]);
+    },
+    verifyOwnership: async () => {},
+    deleteVersion: async () => { deleted = true; },
+  });
+  assert.deepEqual(result, { planned: 1, deleted: 1 });
+  assert.equal(lists, 4);
+});
+
+test('network failures are classified by code, name or Code and the client is time-bounded', async () => {
+  for (const error of [{ code: 'ECONNREFUSED' }, { code: 'ENOTFOUND' }, { code: 'EAI_AGAIN' }, { code: 'EHOSTUNREACH' },
+    { code: 'ENETUNREACH' }, { name: 'NetworkingError' }, { name: 'Error', code: 'ECONNABORTED' }, { name: 'TimeoutError', code: 'ETIMEDOUT' }]) {
+    assert.ok(transientS3FailureCode(error), JSON.stringify(error));
+  }
+  for (const error of [{ name: 'AccessDenied' }, { name: 'NoSuchBucket' }, { $metadata: { httpStatusCode: 403 } }]) {
+    assert.equal(transientS3FailureCode(error), undefined, JSON.stringify(error));
+  }
+  assert.equal(boundedS3ClientConfig.maxAttempts, 1);
+  assert.deepEqual(boundedS3ClientConfig.requestHandler, { connectionTimeout: 5_000, requestTimeout: 30_000, throwOnRequestTimeout: true });
+});
+
+test('the real S3 client fails a hung request instead of waiting on it, and the failure is retryable', async () => {
+  const sockets = new Set();
+  const server = net.createServer(socket => { sockets.add(socket); }); // accepts and never answers
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const client = new S3Client({
+    ...boundedS3ClientConfig,
+    requestHandler: { ...boundedS3ClientConfig.requestHandler, requestTimeout: 300 },
+    region: 'us-east-1', endpoint: `http://127.0.0.1:${server.address().port}`, forcePathStyle: true,
+    credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
+  });
+  let attempts = 0;
+  try {
+    await assert.rejects(retryWithoutDelay(() => { attempts += 1; return client.send(new ListObjectVersionsCommand({ Bucket: 'b', Prefix: 'p/' })); }),
+      error => transientS3FailureCode(error) !== undefined && error.s3RetryAttempts === 3);
+    assert.equal(attempts, 3);
+  } finally {
+    client.destroy();
+    for (const socket of sockets) socket.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
 });

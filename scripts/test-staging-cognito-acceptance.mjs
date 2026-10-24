@@ -30,9 +30,11 @@ function permissionProfile(access) {
   };
 }
 
-export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {}, onResult = async () => {} }) {
+// launchBrowser and login are replaceable only so tests can count sign-ins; the staging run uses the defaults.
+export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {}, onResult = async () => {},
+  launchBrowser = () => chromium.launch({ headless: true }), login = loginThroughCognitoPkce }) {
   const results = [];
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
   let typeId;
   let equipmentAssetId;
   let firearmId;
@@ -59,7 +61,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         });
         const page = await context.newPage();
         activePhase = 'cognito-pkce-mfa-login';
-        const secret = await loginThroughCognitoPkce({
+        const secret = await login({
           page,
           baseURL,
           email: user.email,

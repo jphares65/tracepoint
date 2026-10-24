@@ -13,7 +13,7 @@ import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './stagi
 import { cleanupRecordedFixtureStorage } from './staging-acceptance-fixture-storage.mjs';
 import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureManifest, removeFixtureRunDirectory } from './staging-acceptance-fixture-directory.mjs';
 import { createAcceptanceReport, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
-import { retryTransientS3 } from './staging-acceptance-s3-retry.mjs';
+import { boundedS3ClientConfig, retryTransientS3 } from './staging-acceptance-s3-retry.mjs';
 import { captureFixtureTaskFailure } from './staging-acceptance-task-diagnostics.mjs';
 
 const account = '559054714699';
@@ -24,7 +24,7 @@ const callback = 'https://staging.tracepointhq.com/api/auth/cognito/callback';
 const issuer = `https://cognito-idp.${region}.amazonaws.com/${poolId}`;
 process.env.AWS_PROFILE ??= process.env.TRACEPOINT_STAGING_AWS_PROFILE ?? 'tracepoint-member-staging';
 const identityClient = new CognitoIdentityProviderClient({ region });
-const s3 = new S3Client({ region });
+const s3 = new S3Client({ region, ...boundedS3ClientConfig });
 const createdUsernames = [];
 const secrets = new Map();
 const fixtureTaskFailures = [];

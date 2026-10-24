@@ -1,13 +1,22 @@
 const transientS3Codes = new Set([
-  'ECONNABORTED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT', 'TimeoutError', 'AbortError',
+  'ECONNABORTED', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH',
+  'NetworkingError', 'TimeoutError', 'AbortError',
   'RequestTimeout', 'RequestTimeoutException', 'SlowDown', 'ServiceUnavailable', 'InternalError',
 ]);
+
+// Every S3 request is bounded in time and the SDK does not retry on its own, so retryTransientS3 is the only retry
+// layer: at most its maxAttempts tries of at most connectionTimeout + requestTimeout each. Without
+// throwOnRequestTimeout the SDK only logs a warning when requestTimeout passes and keeps waiting on the socket.
+export const boundedS3ClientConfig = Object.freeze({
+  maxAttempts: 1,
+  requestHandler: Object.freeze({ connectionTimeout: 5_000, requestTimeout: 30_000, throwOnRequestTimeout: true }),
+});
 const transientHttpStatuses = new Set([500, 502, 503, 504]);
 
 /** Returns a stable, non-sensitive classification only for failures safe to retry. */
 export function transientS3FailureCode(error) {
-  const code = error?.code ?? error?.name ?? error?.Code;
-  if (transientS3Codes.has(String(code ?? ''))) return String(code);
+  const code = [error?.code, error?.name, error?.Code].find(candidate => transientS3Codes.has(String(candidate ?? '')));
+  if (code) return String(code);
   const status = Number(error?.$metadata?.httpStatusCode ?? error?.statusCode ?? 0);
   return transientHttpStatuses.has(status) ? `HTTP_${status}` : undefined;
 }
