@@ -165,6 +165,8 @@ export function restrictedCustodyFailure(error: { code?: string | null; message?
     [/^firearm is not ready for this custody action$/i, 409, "This firearm is already checked in or out. Reload it to see where it is."],
     [/^secure storage location required$/i, 400, "Choose an active secure-storage location."],
     [/^custody must follow the firearm's active assignment$/i, 409, ASSIGNMENT_CHANGED],
+    // AT-5 (070): a restriction set while its assignment was being returned.
+    [/^restriction must follow the firearm's active assignment$/i, 409, ASSIGNMENT_CHANGED],
   ];
   const match = known.find(([pattern]) => pattern.test(message));
   if (match) return { status: match[1], error: match[2] };

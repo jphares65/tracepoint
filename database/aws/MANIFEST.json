@@ -1,7 +1,7 @@
 {
     "description":  "Allocated AWS-native migration numbers. Entries with status applied/pending must match database/aws byte for byte (sha256Lf over LF text, sha256Crlf over the CRLF archive staging images are built from). Reserved numbers must not have a file until promoted here. Never renumber or edit an entry whose staging or production status is applied.",
-    "authoritativeLineage":  "claude/integration-defects-rebased-20261021 @ ec027f5032a0b0f7b91c2c0d9f732491e10a085a (staging ledger 001-063 confirmed by staging-after-20261022T164959Z, 2026-10-22T16:55:37Z)",
-    "nextFree":  71,
+    "authoritativeLineage":  "claude/integration-defects-rebased-20261021 @ ec027f5032a0b0f7b91c2c0d9f732491e10a085a (staging ledger 001-063 confirmed by staging-after-20261022T164959Z, 2026-10-22T16:55:37Z; 001-068 confirmed by the read-only SCH-3 catalog capture, task 493901ae, 2026-10-24)",
+    "nextFree":  73,
     "migrations":  [
                        {
                            "version":  1,
@@ -656,8 +656,8 @@
                        {
                            "version":  66,
                            "filename":  "066_equipment_condition_report.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "new (D-2 equipment condition report, 2026-10-22)",
                            "sha256Lf":  "6bd06a697f9167732733138a5393c3a770c02123dff0940aaa4d8b4491a935d0",
@@ -666,8 +666,8 @@
                        {
                            "version":  67,
                            "filename":  "067_firearm_custody_follows_assignment.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "064 at fad53326 (claude/fix-at1-at2-20261022, staging acceptance AT-2); never applied",
                            "sha256Lf":  "89620831130f364c91c0bca275fce94a0892d07ab6eaeb0254acb5120446d209",
@@ -676,28 +676,48 @@
                        {
                            "version":  68,
                            "filename":  "068_fleet_manual_status_under_safety_hold.sql",
-                           "status":  "pending",
-                           "stagingLedger":  "pending",
+                           "status":  "applied",
+                           "stagingLedger":  "applied",
                            "lineage":  "defect-remediation",
                            "formerly":  "new (staging acceptance AT-1, 2026-10-23)",
                            "sha256Lf":  "d88c742542ebedc5bfc933c2485c48de16702f7f55014fafbe106e1015a94723",
                            "sha256Crlf":  "2ffd7c6fb0083efb30b850647309d39b1466d00f1983ff9fabc4bd88952452d8"
+                       },
+                       {
+                           "version":  69,
+                           "filename":  "069_baseline_object_reconciliation.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "new (SCH-1, SCH-2, SCH-4: staging catalog reconciliation, 2026-10-24)",
+                           "sha256Lf":  "41d885191d89cfe93075c2b41a969766b5af9918a2f5552c53ed9771a38a6526",
+                           "sha256Crlf":  "d99f7af24e171952d359ec000f6c6f6b4cbdfb3a1555eac8cf4a62c80bcff379"
+                       },
+                       {
+                           "version":  70,
+                           "filename":  "070_restriction_follows_assignment.sql",
+                           "status":  "pending",
+                           "stagingLedger":  "pending",
+                           "lineage":  "defect-remediation",
+                           "formerly":  "new (AT-5 restriction lifecycle, 2026-10-24)",
+                           "sha256Lf":  "2b98d485f8ebe171ad52537726c864ea65916219f16a0734814a96bed2f436a0",
+                           "sha256Crlf":  "a0717ea7cdcbfce80504c9d80a41df8a3d0cf8fbc68de30f789a103adea5555a"
                        }
                    ],
     "reserved":  [
                      {
-                         "version":  69,
-                         "filename":  "069_armory_history_contract.sql",
+                         "version":  71,
+                         "filename":  "071_armory_history_contract.sql",
                          "owner":  "B8a contract step (deferred; separately approved after the rollback window)",
                          "source":  "origin/claude/fix-b8a-contract-054 @ c50f73b3: database/aws/054_armory_history_contract.sql",
-                         "requires":  "068"
+                         "requires":  "070"
                      },
                      {
-                         "version":  70,
-                         "filename":  "070_notification_job_recipients.sql",
+                         "version":  72,
+                         "filename":  "072_notification_job_recipients.sql",
                          "owner":  "B6 notification delivery",
                          "source":  "origin/claude/fix-b6-notification-delivery @ 1966f132: database/aws/047_notification_job_recipients.sql",
-                         "requires":  "047 (feature catalog) and 068"
+                         "requires":  "047 (feature catalog) and 070"
                      }
                  ]
 }

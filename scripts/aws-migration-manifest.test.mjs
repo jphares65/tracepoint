@@ -37,8 +37,9 @@ test("manifest versions are contiguous, unique and never reuse a reserved number
 
 test("applied history matches the reconciled staging ledger and CRLF image checksums", () => {
   const applied = manifest.migrations.filter((entry) => entry.stagingLedger === "applied");
-  // 064-065 applied by the Batch 2 staging release of f4e8588d (2026-10-22, ledger 001-065, 0 pending).
-  assert.deepEqual(applied.map((entry) => entry.version), Array.from({ length: 65 }, (_, index) => index + 1));
-  assert.equal(applied.at(-1).filename, "065_inventory_idempotency_and_recipients.sql");
-  assert.ok(manifest.migrations.filter((entry) => entry.stagingLedger !== "applied").every((entry) => entry.version > 65));
+  // 064-065 applied by the Batch 2 staging release of f4e8588d (2026-10-22); 066-068 by the Batch 3 release of e1d5cdab
+  // (2026-10-23); the read-only SCH-3 capture read the ledger as 001-068, 0 pending (2026-10-24).
+  assert.deepEqual(applied.map((entry) => entry.version), Array.from({ length: 68 }, (_, index) => index + 1));
+  assert.equal(applied.at(-1).filename, "068_fleet_manual_status_under_safety_hold.sql");
+  assert.ok(manifest.migrations.filter((entry) => entry.stagingLedger !== "applied").every((entry) => entry.version > 68));
 });
