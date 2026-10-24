@@ -30,9 +30,24 @@ function permissionProfile(access) {
   };
 }
 
-export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {}, onResult = async () => {} }) {
+// Browser and login are replaceable only for tests; staging runs use the defaults.
+const callbackLandings = new Set(['application', 'login', 'callback', 'other']);
+const loginNotices = new Set(['none', 'authorization_rejected', 'authorization_unavailable', 'session_expired', 'logout_unconfirmed', 'other']);
+const providerErrors = new Set(['none', 'access_denied', 'invalid_request', 'unauthorized_client', 'unsupported_response_type', 'invalid_scope', 'server_error', 'temporarily_unavailable', 'other']);
+function callbackDiagnostics(value = {}) {
+  const result = {};
+  if (callbackLandings.has(value.callbackLanding)) result.callbackLanding = value.callbackLanding;
+  if (loginNotices.has(value.loginNotice)) result.loginNotice = value.loginNotice;
+  if (providerErrors.has(value.providerError)) result.providerError = value.providerError;
+  for (const key of ['callbackHadCode', 'callbackHadState', 'flowCookiePresent']) if (typeof value[key] === 'boolean') result[key] = value[key];
+  for (const key of ['callbacksSeen', 'signInStarts', 'callbackSeconds']) if (Number.isInteger(value[key]) && value[key] >= 0 && value[key] < 100_000) result[key] = value[key];
+  return result;
+}
+
+export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {}, onResult = async () => {},
+  launchBrowser = () => chromium.launch({ headless: true }), login = loginThroughCognitoPkce }) {
   const results = [];
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
   let typeId;
   let equipmentAssetId;
   let firearmId;
@@ -59,7 +74,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         });
         const page = await context.newPage();
         activePhase = 'cognito-pkce-mfa-login';
-        const secret = await loginThroughCognitoPkce({
+        const secret = await login({
           page,
           baseURL,
           email: user.email,
@@ -74,14 +89,15 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         let access = null;
         if (accessStatus === 200) access = (await accessResponse.json()).access;
         const roleAccessEvidence = {
-          expected: { httpStatus: 200, tenantMatches: true, rolePresent: true },
+          expected: { httpStatus: 200, userMatches: true, tenantMatches: true, rolePresent: true },
           actual: {
             httpStatus: accessStatus,
+            userMatches: access?.userId === user.id,
             tenantMatches: access?.departmentId === manifest.agencies[user.agencyIndex].id,
             rolePresent: Array.isArray(access?.roleCodes) && access.roleCodes.includes(user.role),
           },
         };
-        requireAcceptance(accessStatus === 200 && roleAccessEvidence.actual.tenantMatches && roleAccessEvidence.actual.rolePresent,
+        requireAcceptance(accessStatus === 200 && roleAccessEvidence.actual.userMatches && roleAccessEvidence.actual.tenantMatches && roleAccessEvidence.actual.rolePresent,
           'authenticated-role-and-tenant-access', roleAccessEvidence.expected, roleAccessEvidence.actual);
         await add(`${user.role} authenticates through Cognito PKCE/MFA`, 'pass', { evidence: roleAccessEvidence });
 
@@ -357,7 +373,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
     const role = ['officer', 'instructor', 'supervisor', 'administrator'].includes(activeUser?.role) ? activeUser.role : 'unknown';
     const diagnostics = error?.acceptanceDiagnostics;
     await add(error?.acceptanceEvidence?.check ?? 'authenticated acceptance execution', 'fail', {
-      code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
+      code: error?.name === 'CognitoCallbackRejectedError' ? 'COGNITO_CALLBACK_REJECTED' : error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
       role,
       phase: activePhase,
       errorName,
@@ -382,6 +398,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         genericRequestError: diagnostics.genericRequestError === true,
         totpSubmissions: Number.isInteger(diagnostics.totpSubmissions) ? diagnostics.totpSubmissions : 0,
         callbackStatus: Number.isInteger(diagnostics.callbackStatus) ? diagnostics.callbackStatus : null,
+        ...callbackDiagnostics(diagnostics),
       } } : {}),
       ...(error?.acceptanceEvidence ? { evidence: error.acceptanceEvidence } : {}),
     });

@@ -14,6 +14,9 @@ const safeStrings = new Set([
   'department_patch_upload', 'succeeded', 'failed', 'application', 'cognito', 'other', 'unknown',
   'login', 'home', 'callback', '200-for-agency-B-or-401/403', 'report', 'equipment_asset',
   'damaged', 'out_of_service', 'active', 'not_found', 'permission_denied',
+  // Sign-in callback outcomes (staging-cognito-login.mjs): landings, the application's fixed notices, OAuth error codes.
+  'none', 'authorization_rejected', 'authorization_unavailable', 'session_expired', 'logout_unconfirmed',
+  'access_denied', 'invalid_request', 'unauthorized_client', 'unsupported_response_type', 'invalid_scope', 'server_error', 'temporarily_unavailable',
 ]);
 const diagnosticKeys = new Set([
   'step',
@@ -21,6 +24,8 @@ const diagnosticKeys = new Set([
   'manualSetupVisible', 'onCognitoHost', 'callbackReached', 'hostClass', 'pathClass',
   'mfaPromptVisible', 'otpInputVisible', 'passwordInputVisible', 'invalidCodeNotice',
   'expiredCodeNotice', 'retryNotice', 'genericRequestError', 'totpSubmissions', 'callbackStatus',
+  'callbackLanding', 'loginNotice', 'providerError', 'callbackHadCode', 'callbackHadState', 'flowCookiePresent',
+  'callbacksSeen', 'signInStarts', 'callbackSeconds',
 ]);
 const fixtureTaskActions = new Set(['acceptance-fixture-create', 'acceptance-fixture-cleanup', 'acceptance-fixture-verify']);
 const fixtureTaskClassifications = new Set([

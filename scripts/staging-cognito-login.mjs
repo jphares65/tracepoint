@@ -19,8 +19,66 @@ export function totp(secret, now = Date.now()) {
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
+const callbackPath = '/api/auth/cognito/callback';
+const flowCookie = '__Host-tracepoint-cognito-flow';
+const oauthErrors = new Set(['access_denied', 'invalid_request', 'unauthorized_client', 'unsupported_response_type', 'invalid_scope', 'server_error', 'temporarily_unavailable']);
+const loginNotices = new Set(['authorization_rejected', 'authorization_unavailable', 'session_expired', 'logout_unconfirmed']);
+
+export function describeCallbackRequest(url, cookieHeader = '') {
+  const parameters = new URL(url).searchParams;
+  const error = parameters.get('error');
+  const cookieNames = String(cookieHeader ?? '').split(';').map(part => part.split('=')[0].trim());
+  return { callbackHadCode: parameters.getAll('code').length === 1, callbackHadState: parameters.getAll('state').length === 1,
+    providerError: error === null ? 'none' : oauthErrors.has(error) ? error : 'other',
+    flowCookiePresent: cookieNames.filter(name => name === flowCookie).length === 1 };
+}
+
+export function classifyCallbackLanding(location, baseURL) {
+  let url;
+  try { url = new URL(location ?? '', baseURL); } catch { return { landing: 'other' }; }
+  if (url.origin !== new URL(baseURL).origin) return { landing: 'other' };
+  if (url.pathname === callbackPath) return { landing: 'callback' };
+  if (url.pathname === '/login') {
+    const notice = url.searchParams.get('notice');
+    return { landing: 'login', loginNotice: notice === null ? 'none' : loginNotices.has(notice) ? notice : 'other' };
+  }
+  return { landing: 'application' };
+}
+
+export class CognitoCallbackRejectedError extends Error {
+  constructor(diagnostics) { super('The application refused the Cognito sign-in callback.'); this.name = 'CognitoCallbackRejectedError'; this.acceptanceDiagnostics = diagnostics; }
+}
+
+export function assertCallbackAuthenticated(observed, baseURL) {
+  const landing = classifyCallbackLanding(observed.location, baseURL);
+  const diagnostics = { callbackStatus: Number.isInteger(observed.status) ? observed.status : null, callbackLanding: landing.landing,
+    ...(landing.loginNotice ? { loginNotice: landing.loginNotice } : {}), ...(observed.request ?? {}),
+    callbacksSeen: observed.callbacks ?? 0, signInStarts: observed.starts ?? 0,
+    ...(Number.isFinite(observed.seconds) ? { callbackSeconds: Math.round(observed.seconds) } : {}) };
+  if (observed.status !== 303 || landing.landing !== 'application' || observed.callbacks !== 1) throw new CognitoCallbackRejectedError(diagnostics);
+  return diagnostics;
+}
+
 export async function loginThroughCognitoPkce({ page, baseURL, email, password, knownMfaSecret, onStep = () => {} }) {
   let callbackStatus;
+  const observed = { callbacks: 0, starts: 0 };
+  let startedAt;
+  let callbackRequestShape = Promise.resolve();
+  const appOrigin = new URL(baseURL).origin;
+  const isApp = (value, pathname) => { try { const url = new URL(value); return url.origin === appOrigin && url.pathname === pathname; } catch { return false; } };
+  page.on('request', request => {
+    if (isApp(request.url(), '/api/auth/cognito/login')) observed.starts += 1;
+    if (!isApp(request.url(), callbackPath)) return;
+    observed.callbacks += 1;
+    if (startedAt) observed.seconds = (Date.now() - startedAt) / 1000;
+    callbackRequestShape = request.allHeaders().then(headers => { observed.request = describeCallbackRequest(request.url(), headers.cookie); })
+      .catch(() => { observed.request = describeCallbackRequest(request.url()); });
+  });
+  page.on('response', response => {
+    if (!isApp(response.url(), callbackPath)) return;
+    callbackStatus = response.status(); observed.status = callbackStatus; observed.location = response.headers().location;
+  });
+  const authenticated = async () => { onStep('verify-pkce-callback-outcome'); await callbackRequestShape; assertCallbackAuthenticated(observed, baseURL); };
   let currentStep = 'start';
   let totpSubmissions = 0;
   const setStep = name => { currentStep = name; onStep(name); };
@@ -34,6 +92,7 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
   setStep('open-login-page');
   await page.goto(`${baseURL}/login`, { waitUntil: 'domcontentloaded' });
   setStep('start-cognito-sign-in');
+  startedAt = Date.now();
   await page.getByRole('button', { name: /continue with secure sign-in/i }).click();
   setStep('wait-for-cognito-redirect');
   await page.waitForURL(url => url.hostname.endsWith('amazoncognito.com'), { timeout: 30_000 });
@@ -51,10 +110,11 @@ export async function loginThroughCognitoPkce({ page, baseURL, email, password, 
     currentStep = loopStep;
     onStep(loopStep);
     const currentUrl = new URL(page.url());
-    if (callbackStatus === 303 && currentUrl.origin === new URL(baseURL).origin && currentUrl.pathname !== '/api/auth/cognito/callback') return secret;
+    if (observed.callbacks > 0 && currentUrl.origin === appOrigin && currentUrl.pathname !== callbackPath) { await authenticated(); return secret; }
     if (new URL(page.url()).origin === new URL(baseURL).origin && new URL(page.url()).pathname === '/api/auth/cognito/callback') {
       setStep('complete-pkce-callback');
       await page.waitForURL(url => url.origin === new URL(baseURL).origin && !url.pathname.startsWith('/api/auth/cognito/callback'), { timeout: 30_000 });
+      await authenticated();
       return secret;
     }
     if (await pass.isVisible().catch(() => false) && (await pass.inputValue().catch(() => '')) === '') {
