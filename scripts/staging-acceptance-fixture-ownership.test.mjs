@@ -213,10 +213,15 @@ test('listings outside the run\'s prefixes, truncated, incomplete or malformed a
 test('the runner verifies ownership in the database before its only storage deletion, and deletes by exact version', async () => {
   const source = await readFile(new URL('./run-staging-cognito-acceptance.mjs', import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('async function cleanupStorage('), source.indexOf('async function deleteCognitoUsers('));
-  const plan = body.indexOf('planFixtureStorageDeletion(');
-  const verify = body.indexOf("runFixtureTask('acceptance-fixture-verify'");
-  const remove = body.indexOf('new DeleteObjectCommand(');
+  const storage = await readFile(new URL('./staging-acceptance-fixture-storage.mjs', import.meta.url), 'utf8');
+  const plan = storage.indexOf('planFixtureStorageDeletion(manifest, await listAll())');
+  const verify = storage.indexOf('await verifyOwnership()', plan);
+  const replan = storage.indexOf('planFixtureStorageDeletion(manifest, await listAll())', verify);
+  const remove = storage.indexOf('await retry(() => deleteVersion(', verify);
+  assert.ok(replan > verify && remove > replan, 'the deletion set is planned from a listing taken after the ownership check');
   assert.ok(plan > 0 && verify > plan && remove > verify);
+  assert.match(body, /verifyOwnership: \(\) => runFixtureTask\('acceptance-fixture-verify'/);
+  assert.match(body, /deleteVersion: params => s3\.send\(new DeleteObjectCommand\(params\)\)/);
   assert.equal(source.split('new DeleteObjectCommand(').length, 2);
   assert.doesNotMatch(body, /Prefix: prefix[^\n]*DeleteObject/);
 });

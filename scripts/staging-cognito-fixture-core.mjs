@@ -146,14 +146,17 @@ async function createFixture(client, manifest) {
     union all select 1 from public.authentication_identity_links where provider='cognito' and issuer=$3 and
       (subject=any($4::text[]) or provider_username=any($5::text[])) limit 1`, [manifest.users.map(user => user.id), manifest.users.map(user => user.email), manifest.issuer, manifest.users.map(user => user.subject), manifest.users.map(user => user.username)]);
   if (identityCollision.rowCount) throw new Error('Fixture identity already exists.');
-  const activeFeature = await fixtureQuery(client, 'preflight.verify_equipment_feature', "select code from public.feature_catalog where code='equipment_readiness' and is_active");
-  if (activeFeature.rowCount !== 1) throw new Error('Required staging acceptance module is unavailable.');
+  const acceptanceFeatures = ['equipment_readiness', 'firearms'];
+  const activeFeatures = await fixtureQuery(client, 'preflight.verify_acceptance_features', 'select code from public.feature_catalog where code=any($1::text[]) and is_active', [acceptanceFeatures]);
+  if (activeFeatures.rowCount !== acceptanceFeatures.length) throw new Error('A required staging acceptance module is unavailable.');
   const admin = manifest.users.find(user => user.agencyIndex === 0 && user.role === 'administrator');
 
   for (const agency of manifest.agencies) {
     await fixtureQuery(client, 'agency.create_department', 'insert into public.departments(id,name,short_name,slug,is_active) values($1,$2,$3,$4,true)', [agency.id, `Staging Acceptance ${manifest.run.slice(0, 8)}-${agency.slug.endsWith('-0') ? 'A' : 'B'}`, 'Acceptance', agency.slug]);
-    await fixtureQuery(client, 'agency.enable_equipment_feature', `insert into public.department_features(department_id,feature_code,is_enabled,enabled_at,updated_at)
-      values($1,'equipment_readiness',true,now(),now()) on conflict(department_id,feature_code) do update set is_enabled=true,enabled_at=now(),disabled_at=null,updated_at=now()`, [agency.id]);
+    for (const featureCode of acceptanceFeatures) {
+      await fixtureQuery(client, 'agency.enable_acceptance_feature', `insert into public.department_features(department_id,feature_code,is_enabled,enabled_at,updated_at)
+        values($1,$2,true,now(),now()) on conflict(department_id,feature_code) do update set is_enabled=true,enabled_at=now(),disabled_at=null,updated_at=now()`, [agency.id, featureCode]);
+    }
   }
   for (const user of manifest.users) {
     const departmentId = manifest.agencies[user.agencyIndex].id;
@@ -240,6 +243,19 @@ async function cleanupFixture(client, manifest) {
   const remaining = await client.query(`select
     (select count(*) from public.departments where id=any($1::uuid[]))::int as agencies,
     (select count(*) from public.profiles where id=any($2::uuid[]))::int as profiles,
-    (select count(*) from public.authentication_identity_links where provider='cognito' and issuer=$3 and subject=any($4::text[]))::int as identities`, [agencyIds, manifest.users.map(user => user.id), manifest.issuer, manifest.users.map(user => user.subject)]);
-  if (remaining.rows[0].agencies || remaining.rows[0].profiles || remaining.rows[0].identities) throw new Error('Fixture cleanup verification failed.');
+    (select count(*) from public.authentication_identity_links where provider='cognito' and issuer=$3 and subject=any($4::text[]))::int as identities,
+    (select count(*) from public.department_memberships where department_id=any($1::uuid[]) or user_id=any($2::uuid[]))::int as memberships,
+    (select count(*) from public.department_membership_roles where department_id=any($1::uuid[]) or user_id=any($2::uuid[]))::int as roles,
+    (select count(*) from public.department_features where department_id=any($1::uuid[]))::int as features,
+    (select count(*) from public.equipment_assets where department_id=any($1::uuid[]))::int as equipment_assets,
+    (select count(*) from public.equipment_asset_assignments where department_id=any($1::uuid[]))::int as equipment_assignments,
+    (select count(*) from public.equipment_types where department_id=any($1::uuid[]))::int as equipment_types,
+    (select count(*) from public.firearms where department_id=any($1::uuid[]))::int as firearms,
+    (select count(*) from public.firearm_assignments where department_id=any($1::uuid[]))::int as firearm_assignments,
+    (select count(*) from public.firearm_possession_restrictions where department_id=any($1::uuid[]))::int as firearm_restrictions,
+    (select count(*) from public.firearm_current_custody where department_id=any($1::uuid[]))::int as firearm_current_custody,
+    (select count(*) from public.firearm_custody_events where department_id=any($1::uuid[]))::int as firearm_custody_events,
+    (select count(*) from public.audit_events where department_id=any($1::uuid[]) or actor_user_id=any($2::uuid[]))::int as audit_events`,
+  [agencyIds, manifest.users.map(user => user.id), manifest.issuer, manifest.users.map(user => user.subject)]);
+  if (Object.values(remaining.rows[0]).some(count => Number(count) !== 0)) throw new Error('Fixture cleanup verification failed.');
 }

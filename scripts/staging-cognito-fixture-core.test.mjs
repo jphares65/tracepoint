@@ -43,7 +43,7 @@ test('pins all fixture SQL to the configured staging database host before connec
   assert.equal(statements, 0);
 });
 
-test('creates only the declared agencies, identities, memberships, roles, and equipment entitlement in one transaction', async () => {
+test('creates only the declared agencies, identities, memberships, roles, and required acceptance entitlements in one transaction', async () => {
   const statements = [];
   const identityLinkUsernames = [];
   const roleAssignments = [];
@@ -53,7 +53,7 @@ test('creates only the declared agencies, identities, memberships, roles, and eq
     if (sql.includes('insert into public.department_membership_roles')) roleAssignments.push(parameters);
     if (sql.includes('select id from public.departments')) return { rows: [], rowCount: 0 };
     if (sql.includes('select 1 from public.profiles')) return { rows: [], rowCount: 0 };
-    if (sql.includes('select code from public.feature_catalog')) return { rows: [{ code: 'equipment_readiness' }], rowCount: 1 };
+    if (sql.includes('select code from public.feature_catalog')) return { rows: [{ code: 'equipment_readiness' }, { code: 'firearms' }], rowCount: 2 };
     return { rows: [], rowCount: 1 };
   } };
   const result = await applyStagingFixture(client, 'create', manifest, {
@@ -68,6 +68,8 @@ test('creates only the declared agencies, identities, memberships, roles, and eq
   assert.equal(statements.filter(sql => sql.includes('insert into public.departments')).length, 2);
   assert.equal(statements.filter(sql => sql.includes('insert into auth.users')).length, 5);
   assert.equal(statements.filter(sql => sql.includes('insert into public.department_membership_roles')).length, 5);
+  assert.equal(statements.filter(sql => sql.includes('insert into public.department_features')).length, 4);
+  assert.ok(statements.some(sql => sql.includes("code=any($1::text[])")));
   assert.ok(statements.some(sql => sql.includes('select 1 from public.profiles') && sql.includes('provider_username')));
   const authAnchor = statements.find(sql => sql.includes('insert into auth.users'));
   assert.match(authAnchor, /auth\.users\(id,email,raw_user_meta_data\)/);
@@ -104,7 +106,12 @@ test('cleanup is idempotent for the same completed run', async () => {
   const statements = [];
   const client = { async query(sql) {
     statements.push(sql);
-    if (sql.includes('select\n    (select count(*) from public.departments')) return { rows: [{ agencies: 0, profiles: 0, identities: 0 }], rowCount: 1 };
+    if (sql.includes('select\n    (select count(*) from public.departments')) return { rows: [{
+      agencies: 0, profiles: 0, identities: 0, memberships: 0, roles: 0, features: 0,
+      equipment_assets: 0, equipment_assignments: 0, equipment_types: 0, audit_events: 0,
+      firearms: 0, firearm_assignments: 0, firearm_restrictions: 0,
+      firearm_current_custody: 0, firearm_custody_events: 0,
+    }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   } };
   const result = await applyStagingFixture(client, 'cleanup', manifest, {

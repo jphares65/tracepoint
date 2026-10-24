@@ -10,9 +10,12 @@ import {
 import { DeleteObjectCommand, ListObjectVersionsCommand, S3Client } from '@aws-sdk/client-s3';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
 import { isStagingAcceptanceUser, validateStagingFixtureManifest } from './staging-cognito-fixture-core.mjs';
-import { fixtureStoragePrefix, planFixtureStorageDeletion } from './staging-acceptance-fixture-storage.mjs';
+import { cleanupRecordedFixtureStorage } from './staging-acceptance-fixture-storage.mjs';
 import { assertManifestMatchesMarker, createFixtureRunDirectory, openFixtureManifest, removeFixtureRunDirectory } from './staging-acceptance-fixture-directory.mjs';
 import { createAcceptanceReport, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
+import { retryTransientS3 } from './staging-acceptance-s3-retry.mjs';
+import { captureFixtureTaskFailure } from './staging-acceptance-task-diagnostics.mjs';
+import { assertStagingTaskRevision } from './staging-acceptance-revision-policy.mjs';
 
 const account = '559054714699';
 const region = 'us-east-1';
@@ -25,6 +28,7 @@ const identityClient = new CognitoIdentityProviderClient({ region });
 const s3 = new S3Client({ region });
 const createdUsernames = [];
 const secrets = new Map();
+const fixtureTaskFailures = [];
 let operationStage = 'startup';
 
 function setOperationStage(stage) {
@@ -61,11 +65,22 @@ function currentIdentity() {
   assert.match(identity.Arn, new RegExp(`^arn:aws:sts::${account}:assumed-role/[^/]*TracePointMigrationStaging[^/]*/`));
 }
 
-function verifyLiveBoundary() {
+function verifyLiveBoundary({ recovery = false } = {}) {
   currentIdentity();
   const service = aws(['ecs', 'describe-services', '--cluster', 'tracepoint-staging', '--services', 'tracepoint-staging']).services?.[0];
   assert.equal(service?.status, 'ACTIVE');
   assert.equal(service?.runningCount, service?.desiredCount);
+  assert.ok(service?.taskDefinition, 'The staging service task definition is required.');
+  assertStagingTaskRevision(service.taskDefinition, recovery ? 'recovery' : 'acceptance');
+  const serviceTasks = new Set(aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--service-name', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? []);
+  const clusterTasks = aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? [];
+  assert.equal(clusterTasks.filter(taskArn => !serviceTasks.has(taskArn)).length, 0, 'No competing staging ECS task may be active.');
+  const buildIds = aws(['codebuild', 'list-builds-for-project', '--project-name', 'tracepoint-staging-image-build', '--sort-order', 'DESCENDING']).ids ?? [];
+  if (buildIds.length) {
+    const activeBuilds = aws(['codebuild', 'batch-get-builds', '--ids', ...buildIds.slice(0, 20)]).builds ?? [];
+    assert.equal(activeBuilds.some(build => ['IN_PROGRESS', 'QUEUED', 'STOPPING'].includes(build.buildStatus)), false,
+      'No staging image build may be active during acceptance.');
+  }
   const task = aws(['ecs', 'describe-task-definition', '--task-definition', service.taskDefinition]).taskDefinition;
   const env = new Map(task.containerDefinitions[0].environment.map(entry => [entry.name, entry.value]));
   assert.equal(env.get('TRACEPOINT_AUTH_PROVIDER'), 'cognito');
@@ -113,10 +128,10 @@ async function listCognitoAcceptanceUsers() {
 function newManifest(run) {
   const agencies = [0, 1].map(index => ({ id: randomUUID(), slug: `acceptance-${run}-${index}` }));
   const roles = [
+    { role: 'administrator', agencyIndex: 0, code: 'administrator' },
     { role: 'officer', agencyIndex: 0, code: 'officer' },
     { role: 'instructor', agencyIndex: 0, code: 'instructor' },
     { role: 'supervisor', agencyIndex: 0, code: 'supervisor' },
-    { role: 'administrator', agencyIndex: 0, code: 'administrator' },
     { role: 'officer', agencyIndex: 1, code: 'foreign' },
   ];
   return { environment: 'staging', run, poolId, issuer, agencies, users: roles.map((spec, index) => ({
@@ -155,16 +170,14 @@ function runFixtureTask(action, manifestPath, toolingCommit) {
   const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Environment', 'staging', '-Action', action,
     '-ImageCommit', toolingCommit, '-AcceptanceFixtureManifestPath', manifestPath];
   const result = spawnSync(powershell, args, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  if (result.error || result.status !== 0) throw new Error('Staging fixture task did not complete successfully.');
-}
-
-async function listFixtureStorage(manifest, target) {
-  const listings = [];
-  for (const agency of manifest.agencies) {
-    const prefix = fixtureStoragePrefix(agency.id);
-    listings.push({ prefix, ...(await s3.send(new ListObjectVersionsCommand({ ...target, Prefix: prefix }))) });
+  if (result.error || result.status !== 0) {
+    const failure = captureFixtureTaskFailure(action, operationStage, result);
+    fixtureTaskFailures.push(failure);
+    const error = new Error('Staging fixture task did not complete successfully.');
+    error.code = failure.classification;
+    error.fixtureTaskFailure = failure;
+    throw error;
   }
-  return listings;
 }
 
 // Deletes only the objects the run recorded creating, and only after the staging database confirms the agencies are
@@ -173,12 +186,12 @@ async function listFixtureStorage(manifest, target) {
 async function cleanupStorage(manifest, manifestPath, toolingCommit) {
   currentIdentity();
   const target = { Bucket: 'tracepoint-staging-private-559054714699', ExpectedBucketOwner: account };
-  const deletions = planFixtureStorageDeletion(manifest, await listFixtureStorage(manifest, target));
-  if (!deletions.length) return;
-  runFixtureTask('acceptance-fixture-verify', manifestPath, toolingCommit);
-  for (const object of deletions) await s3.send(new DeleteObjectCommand({ ...target, ...object }));
-  const remaining = await listFixtureStorage(manifest, target);
-  if (remaining.some(listing => (listing.Versions?.length ?? 0) + (listing.DeleteMarkers?.length ?? 0) !== 0)) throw new Error('Staging fixture storage cleanup was incomplete.');
+  await cleanupRecordedFixtureStorage(manifest, target, {
+    listVersions: params => s3.send(new ListObjectVersionsCommand(params)),
+    verifyOwnership: () => runFixtureTask('acceptance-fixture-verify', manifestPath, toolingCommit),
+    deleteVersion: params => s3.send(new DeleteObjectCommand(params)),
+    retry: operation => retryTransientS3(operation),
+  });
 }
 
 async function deleteCognitoUsers(manifest) {
@@ -195,6 +208,11 @@ async function deleteCognitoUsers(manifest) {
     catch (error) { if (error?.name !== 'UserNotFoundException') failed = true; }
   }
   if (failed) throw new Error('One or more staging Cognito fixture identities could not be deleted.');
+  const remaining = (await listCognitoAcceptanceUsers()).filter(user => {
+    const email = user.Attributes?.find(attribute => attribute.Name === 'email')?.Value;
+    return fixtureEmails.has(email);
+  });
+  if (remaining.length) throw new Error('Cognito fixture cleanup verification found remaining run identities.');
 }
 
 async function main() {
@@ -235,17 +253,47 @@ async function main() {
     await verifyCognitoBoundary(manifest.users.map(user => user.username), false, true);
     for (const user of manifest.users ?? []) createdUsernames.push(user.username);
     setOperationStage('verify-staging-database-boundary');
-    verifyLiveBoundary();
+    const boundary = verifyLiveBoundary({ recovery: true });
     const toolingCommit = execFileSync('git.exe', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
-    setOperationStage('remove-staging-fixture-objects');
-    await cleanupStorage(manifest, manifestPath, toolingCommit);
-    setOperationStage('run-database-fixture-cleanup');
-    runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
-    setOperationStage('remove-cognito-fixture-users');
-    await deleteCognitoUsers(manifest);
-    setOperationStage('verify-fixture-cleanup');
-    console.log(JSON.stringify({ fixtureRun: manifest.run, cleanup: 'verified', secretsPersisted: false }));
-    await removeRunDirectory(opened.directory, manifest.run);
+    const recoveryStartedAt = new Date().toISOString();
+    const recoverySuffix = `recovery-${recoveryStartedAt.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}-${randomBytes(3).toString('hex')}`;
+    const recoveryReport = createAcceptanceReport({
+      fixtureRun: manifest.run,
+      sourceCommit: toolingCommit,
+      taskRevision: boundary.service.taskDefinition.split(':').at(-1),
+      appImageDigest: boundary.appDigest,
+      startedAt: recoveryStartedAt,
+      stage: 'recover-fixture-cleanup',
+      status: 'running',
+      cleanup: 'pending',
+    });
+    const persistRecoveryReport = async () => {
+      recoveryReport.stage = operationStage;
+      recoveryReport.fixtureTaskFailures = [...fixtureTaskFailures];
+      return writeAcceptanceReport(recoveryReport, { suffix: recoverySuffix });
+    };
+    await persistRecoveryReport();
+    try {
+      setOperationStage('remove-staging-fixture-objects');
+      await cleanupStorage(manifest, manifestPath, toolingCommit);
+      setOperationStage('run-database-fixture-cleanup');
+      runFixtureTask('acceptance-fixture-cleanup', manifestPath, toolingCommit);
+      setOperationStage('remove-cognito-fixture-users');
+      await deleteCognitoUsers(manifest);
+      setOperationStage('verify-fixture-cleanup');
+      console.log(JSON.stringify({ fixtureRun: manifest.run, cleanup: 'verified', secretsPersisted: false }));
+      if (!await removeRunDirectory(opened.directory, manifest.run)) throw Object.assign(new Error('Fixture recovery directory cleanup was incomplete.'), { code: 'FIXTURE_DIRECTORY_CLEANUP_FAILED' });
+      recoveryReport.status = 'pass';
+      recoveryReport.cleanup = 'pass';
+      recoveryReport.stage = 'complete';
+      await persistRecoveryReport();
+    } catch (error) {
+      recoveryReport.status = 'fail';
+      recoveryReport.cleanup = 'fail';
+      recoveryReport.failureCode = safeFailureCode(error);
+      try { await persistRecoveryReport(); } catch { console.error(JSON.stringify({ evidenceReport: 'write-failed', sensitiveDetailsPrinted: false })); }
+      throw error;
+    }
     return;
   }
   if (!process.argv.includes('--execute')) throw new Error('Run with --execute to provision disposable staging identities and data.');
@@ -265,10 +313,12 @@ async function main() {
     taskRevision: boundary.service.taskDefinition.split(':').at(-1),
     appImageDigest: boundary.appDigest,
     startedAt: new Date().toISOString(),
+    fixtureTaskFailures,
   });
   const reportRelativePath = `docs/staging-acceptance-evidence/${run}.json`;
   const persistReport = async () => {
     report.stage = operationStage;
+    report.fixtureTaskFailures = [...fixtureTaskFailures];
     await writeAcceptanceReport(report);
   };
   await persistReport();

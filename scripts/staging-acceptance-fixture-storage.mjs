@@ -39,3 +39,44 @@ export function planFixtureStorageDeletion(manifest, listings) {
   if (seen.size !== prefixes.size) refuse('an agency prefix was not listed');
   return deletions;
 }
+
+/**
+ * Performs one idempotent cleanup pass over only the manifest's recorded keys and their listed versions.
+ * The caller supplies retry-wrapped AWS operations; ownership is checked after a first plan is built, and the
+ * deletion set is planned again from a fresh listing before the first version is deleted. A later recovery pass replans from the current listing, so already deleted
+ * versions are not reintroduced and the manifest cannot expand the deletion scope.
+ */
+export async function cleanupRecordedFixtureStorage(manifest, target, {
+  listVersions,
+  verifyOwnership,
+  deleteVersion,
+  retry = operation => operation(),
+}) {
+  if (typeof listVersions !== 'function' || typeof verifyOwnership !== 'function' || typeof deleteVersion !== 'function' || typeof retry !== 'function') {
+    throw new TypeError('Fixture storage cleanup operations are required.');
+  }
+  const listAll = async () => {
+    const listings = [];
+    for (const agency of manifest.agencies) {
+      const prefix = fixtureStoragePrefix(agency.id);
+      listings.push({ prefix, ...(await retry(() => listVersions({ ...target, Prefix: prefix }))) });
+    }
+    return listings;
+  };
+
+  if (!planFixtureStorageDeletion(manifest, await listAll()).length) return { planned: 0, deleted: 0 };
+  await verifyOwnership();
+  // The ownership check takes minutes; what is deleted is planned again from a listing taken after it, under the
+  // same rules, so a version added, removed or left untracked meanwhile is accounted for before anything is deleted.
+  const deletions = planFixtureStorageDeletion(manifest, await listAll());
+  for (const object of deletions) {
+    await retry(() => deleteVersion({ ...target, Key: object.Key, VersionId: object.VersionId }));
+  }
+  const remaining = await listAll();
+  if (remaining.some(listing => listing.IsTruncated || (listing.Versions?.length ?? 0) + (listing.DeleteMarkers?.length ?? 0) !== 0)) {
+    const error = new Error('Staging fixture storage cleanup was incomplete.');
+    error.code = 'FIXTURE_STORAGE_INCOMPLETE';
+    throw error;
+  }
+  return { planned: deletions.length, deleted: deletions.length };
+}
