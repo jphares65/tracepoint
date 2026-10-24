@@ -11,7 +11,7 @@ import { isAwsNativeSchemaFile } from '../src/test-support/aws-native-schema-fil
 import { applyStagingFixture } from './staging-cognito-fixture-core.mjs';
 
 // Fixture cleanup on the full AWS-native schema (Supabase lineage plus database/aws), after the residue an acceptance
-// run leaves: a firearm assigned to the Supervisor with a Duty Only restriction, current custody and a custody event,
+// run leaves: a firearm assigned to the Administrator with a Duty Only restriction, current custody and a custody event,
 // plus the D-2 equipment asset and audit rows. firearm_assignments references department_memberships and
 // firearm_custody_events references firearms and profiles with ON DELETE RESTRICT, so this pins that cleanup still
 // removes everything. TRACEPOINT_FIXTURE_SCHEMA_ROOT points at another checkout's migrations (for example the commit
@@ -32,7 +32,7 @@ const users = ['administrator', 'officer', 'instructor', 'supervisor', 'foreign'
 }));
 const patchName = 'patch-1761234567890.png';
 const manifest = { environment: 'staging', run, poolId: 'us-east-1_Y9GiDA5Zy', issuer, agencies, users, storageObjects: [`department-assets/${agencies[0].id}/${patchName}`] };
-const [admin, officer, , supervisor] = users;
+const [admin, officer] = users;
 const A = agencies[0].id;
 const real = { agency: '9f000000-0000-4000-8000-000000000001', member: '9e000000-0000-4000-8000-000000000001', firearm: '9d000000-0000-4000-8000-000000000001' };
 
@@ -72,18 +72,18 @@ async function seedRealAgencyWithFirearm() {
   await client.query('insert into public.firearm_assignments(department_id,firearm_id,assigned_to_user_id) values($1,$2,$3)', [real.agency, real.firearm, real.member]);
 }
 
-// What the acceptance run's administrator, officer and supervisor steps leave behind in Agency A.
+// What the acceptance run's administrator and officer steps leave behind in Agency A.
 async function seedAcceptanceResidue() {
   const firearm = (await client.query(`insert into public.firearms(department_id,serial_number,make,model,caliber,firearm_type,created_by)
     values($1,$2,'Acceptance','Custody Authorization','TBD / Unknown','handgun',$3) returning id`, [A, `ACCEPTANCE-${run}`, admin.id])).rows[0].id;
   const assignment = (await client.query(`insert into public.firearm_assignments(department_id,firearm_id,assigned_to_user_id,assigned_by_user_id)
-    values($1,$2,$3,$4) returning id`, [A, firearm, supervisor.id, admin.id])).rows[0].id;
+    values($1,$2,$3,$4) returning id`, [A, firearm, admin.id, admin.id])).rows[0].id;
   await client.query(`insert into public.firearm_current_custody(firearm_id,department_id,assignment_id,holder_type,holder_user_id,updated_by_user_id)
-    values($1,$2,$3,'OFFICER',$4,$5) on conflict(firearm_id) do nothing`, [firearm, A, assignment, supervisor.id, admin.id]);
+    values($1,$2,$3,'OFFICER',$4,$5) on conflict(firearm_id) do nothing`, [firearm, A, assignment, admin.id, admin.id]);
   const restriction = (await client.query(`insert into public.firearm_possession_restrictions(department_id,firearm_id,assignment_id,affected_officer_user_id,reason_category,restriction_type,duty_only,created_by_user_id)
-    values($1,$2,$3,$4,'training','duty_only',true,$5) returning id`, [A, firearm, assignment, supervisor.id, admin.id])).rows[0].id;
+    values($1,$2,$3,$4,'training','duty_only',true,$5) returning id`, [A, firearm, assignment, admin.id, admin.id])).rows[0].id;
   await client.query(`insert into public.firearm_custody_events(department_id,firearm_id,assignment_id,to_holder_type,to_holder_user_id,initiating_user_id,action_type,reason,restriction_id,idempotency_key)
-    values($1,$2,$3,'OFFICER',$4,$5,'INITIALIZE','acceptance issue',$6,gen_random_uuid())`, [A, firearm, assignment, supervisor.id, admin.id, restriction]);
+    values($1,$2,$3,'OFFICER',$4,$5,'INITIALIZE','acceptance issue',$6,gen_random_uuid())`, [A, firearm, assignment, admin.id, admin.id, restriction]);
   const type = (await client.query("insert into public.equipment_types(department_id,name) values($1,'Acceptance Radio') returning id", [A])).rows[0].id;
   await client.query(`insert into public.equipment_assets(department_id,equipment_type_id,serial_number,assigned_user_id,created_by,updated_by)
     values($1,$2,$3,$4,$5,$5)`, [A, type, `D2-${run}`, officer.id, admin.id]);

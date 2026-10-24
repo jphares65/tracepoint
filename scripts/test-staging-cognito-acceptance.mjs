@@ -131,8 +131,11 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           () => context.request.post(`/api/armory/firearms/${firearmId ?? randomUUID()}/assignments`, { data: { assignedToUserId: user.userId } }));
         await denyIfUnauthorized('unauthorized-firearm-restriction-management-refused', capabilities.firearmRestrictionManager,
           () => context.request.put(`/api/armory/firearms/${randomUUID()}/custody`, { data: { restrictionType: 'duty_only', reason: 'staging acceptance authorization check' } }));
+        // In Agency A the firearm exists and the caller is not its assignee: 403. Agency B has no issued Duty Only firearm with
+        // that id, so the application refuses before any permission check with 409 (restrictedCustodyFailure).
         await denyIfUnauthorized('unauthorized-restricted-firearm-custody-refused', capabilities.restrictedCustodyManager,
-          () => context.request.post(`/api/armory/firearms/${firearmId ?? randomUUID()}/custody`, { data: { action: 'CHECK_OUT', idempotencyKey: randomUUID() } }));
+          () => context.request.post(`/api/armory/firearms/${firearmId ?? randomUUID()}/custody`, { data: { action: 'CHECK_OUT', idempotencyKey: randomUUID() } }),
+          user.agencyIndex === 0 ? 403 : 409);
         activePhase = 'reload-session-and-tenant';
         await page.reload({ waitUntil: 'domcontentloaded' });
         const persisted = await context.request.get('/api/access');
@@ -206,10 +209,11 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           await add('administrator creates, assigns, saves, and reloads the D-2 equipment asset', 'pass', { evidence: assetEvidence });
 
           activePhase = 'administrator-create-assigned-restricted-firearm-fixture';
-          const supervisor = manifest.users.find(candidate => candidate.agencyIndex === 0 && candidate.role === 'supervisor');
+          // Restricted custody is allowed for the assigned officer or a custody manager (migration 067), so the firearm is
+          // assigned to the Administrator: none of the roles whose custody refusal is checked may be its assignee.
           const createdFirearm = await context.request.post('/api/armory/firearms', { data: {
             make: 'Acceptance', model: 'Custody Authorization', serialNumber: `ACCEPTANCE-${manifest.run}`,
-            firearmType: 'handgun', caliber: 'TBD / Unknown', conditionStatus: 'In Service', assignedToUserId: supervisor.id,
+            firearmType: 'handgun', caliber: 'TBD / Unknown', conditionStatus: 'In Service', assignedToUserId: admin.id,
           } });
           const firearmCreateStatus = createdFirearm.status();
           const firearmCreateBody = firearmCreateStatus === 201 ? await createdFirearm.json() : {};
@@ -226,8 +230,8 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
           requireAcceptance(restrictionStatus === 200, 'administrator-establishes-isolated-duty-only-custody-fixture',
             { httpStatus: 200 }, { httpStatus: restrictionStatus });
           await add('Administrator provisions a temporary assigned Duty Only firearm for authorization checks', 'pass', {
-            evidence: { expected: { firearmCreated: true, assignedToSupervisor: true, restrictionCreated: true },
-              actual: { firearmCreated: firearmCreateStatus === 201, assignedToSupervisor: firearmCreateBody.assignmentCreated === true, restrictionCreated: restrictionStatus === 200 } },
+            evidence: { expected: { firearmCreated: true, assignedToAdministrator: true, restrictionCreated: true },
+              actual: { firearmCreated: firearmCreateStatus === 201, assignedToAdministrator: firearmCreateBody.assignmentCreated === true, restrictionCreated: restrictionStatus === 200 } },
           });
 
           activePhase = 'administrator-audit-log';
