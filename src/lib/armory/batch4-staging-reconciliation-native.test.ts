@@ -203,7 +203,8 @@ test("069 restores 024, 027 and 028's objects exactly and is reproducible; 070 a
   for (const [file, name] of [["024_notification_email_server_enqueue.sql", "enqueue_notification_email"], ["027_cognito_invite_retry_claim.sql", "claim_cognito_invite_retry"],
     ["028_firearm_custody_phase_a.sql", "transfer_firearm_custody"]]) {
     const source = (await readFile(path.join("database/aws", file), "utf8")).replace(/\r\n/g, "\n");
-    const body = await scalar("select prosrc v from pg_proc where proname=$1", [name]);
+    // Staging images apply the CRLF archive, so the stored body may carry CRLF; compare the text, not the line endings.
+    const body = String(await scalar("select prosrc v from pg_proc where proname=$1", [name])).replace(/\r\n/g, "\n");
     assert.ok(source.includes(body), `${name} body equals ${file}`);
   }
   assert.deepEqual((await owner.query("select department_id,role_code,permission_code from public.department_role_permissions order by 1,2,3")).rows, seeded.rolePermissions);
