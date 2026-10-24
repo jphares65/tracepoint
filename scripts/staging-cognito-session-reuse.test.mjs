@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { CognitoCallbackRejectedError } from './staging-cognito-login.mjs';
 import { runAuthenticatedAcceptance } from './test-staging-cognito-acceptance.mjs';
 
 // The authenticated run signs each synthetic user in exactly once (a second Cognito PKCE+MFA sign-in timed out in
@@ -14,7 +15,7 @@ const users = ['administrator', 'officer', 'instructor', 'supervisor', 'foreign'
 }));
 const manifest = { run, agencies, users };
 
-function fakeStaging() {
+function fakeStaging({ accessUserId = user => user.id } = {}) {
   const state = { types: [], assets: [], audit: [], signIns: new Map(), contexts: [], closedBeforeSignOut: [] };
   const reply = (status, body = {}) => ({ status: () => status, json: async () => body });
   const handle = (session, method, url, options = {}) => {
@@ -27,7 +28,7 @@ function fakeStaging() {
     const route = `${method} ${pathname.replace(/\/[0-9a-f-]{36}(?=\/|$)/g, '/:id')}`;
     switch (route) {
       case 'GET /api/access':
-        return reply(200, { access: { departmentId: agency, roleCodes: [user.role], permissions: admin ? ['administer_department'] : [] } });
+        return reply(200, { access: { userId: accessUserId(user), departmentId: agency, roleCodes: [user.role], permissions: admin ? ['administer_department'] : [] } });
       case 'POST /api/equipment/types': {
         if (!admin) return reply(403);
         const item = { id: crypto.randomUUID(), department_id: agency, name: data.name };
@@ -134,4 +135,36 @@ test('a failed sign-in is not retried with a second sign-in', async () => {
   assert.equal(state.contexts.length, 1);
   assert.equal(results.at(-1).status, 'fail');
   assert.equal(results.at(-1).code, 'BROWSER_TIMEOUT');
+});
+
+test('a sign-in passes only when the application session resolves to that exact user', async () => {
+  const { browser, login } = fakeStaging({ accessUserId: user => (user.role === 'instructor' ? users[0].id : user.id) });
+  const { results } = await runAuthenticatedAcceptance({ manifest, passwords: new Map(), launchBrowser: async () => browser, login });
+  const failure = results.at(-1);
+  assert.equal(failure.status, 'fail');
+  assert.equal(failure.role, 'instructor');
+  assert.deepEqual(failure.evidence.actual, { httpStatus: 200, userMatches: false, tenantMatches: true, rolePresent: true });
+  assert.equal(results.some(result => result.name === 'instructor authenticates through Cognito PKCE/MFA'), false);
+});
+
+test('a refused sign-in callback is reported as such, with its safe diagnostics, and is not retried', async () => {
+  const { state, browser, login } = fakeStaging();
+  let instructorAttempts = 0;
+  const { results } = await runAuthenticatedAcceptance({
+    manifest, passwords: new Map(), launchBrowser: async () => browser,
+    login: async input => {
+      if (!input.email.endsWith('-instructor@example.invalid')) return login(input);
+      instructorAttempts += 1;
+      throw new CognitoCallbackRejectedError({ callbackStatus: 303, callbackLanding: 'login', loginNotice: 'authorization_rejected', providerError: 'none',
+        callbackHadCode: true, callbackHadState: true, flowCookiePresent: true, callbacksSeen: 1, signInStarts: 1, callbackSeconds: 41 });
+    },
+  });
+  assert.equal(instructorAttempts, 1);
+  assert.deepEqual([...state.signIns.keys()], [users[0].email, users[1].email]);
+  const failure = results.at(-1);
+  assert.equal(failure.code, 'COGNITO_CALLBACK_REJECTED');
+  assert.equal(failure.role, 'instructor');
+  assert.equal(failure.diagnostics.loginNotice, 'authorization_rejected');
+  assert.equal(failure.diagnostics.callbackLanding, 'login');
+  assert.equal(failure.diagnostics.callbackSeconds, 41);
 });

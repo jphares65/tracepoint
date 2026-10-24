@@ -31,6 +31,20 @@ function permissionProfile(access) {
 }
 
 // launchBrowser and login are replaceable only so tests can count sign-ins; the staging run uses the defaults.
+const callbackLandings = new Set(['application', 'login', 'callback', 'other']);
+const loginNotices = new Set(['none', 'authorization_rejected', 'authorization_unavailable', 'session_expired', 'logout_unconfirmed', 'other']);
+const providerErrors = new Set(['none', 'access_denied', 'invalid_request', 'unauthorized_client', 'unsupported_response_type', 'invalid_scope', 'server_error', 'temporarily_unavailable', 'other']);
+// The callback facts staging-cognito-login.mjs records; fixed codes, booleans and counts only.
+function callbackDiagnostics(diagnostics) {
+  const result = {};
+  if (callbackLandings.has(diagnostics.callbackLanding)) result.callbackLanding = diagnostics.callbackLanding;
+  if (loginNotices.has(diagnostics.loginNotice)) result.loginNotice = diagnostics.loginNotice;
+  if (providerErrors.has(diagnostics.providerError)) result.providerError = diagnostics.providerError;
+  for (const key of ['callbackHadCode', 'callbackHadState', 'flowCookiePresent']) if (typeof diagnostics[key] === 'boolean') result[key] = diagnostics[key];
+  for (const key of ['callbacksSeen', 'signInStarts', 'callbackSeconds']) if (Number.isInteger(diagnostics[key]) && diagnostics[key] >= 0 && diagnostics[key] < 100_000) result[key] = diagnostics[key];
+  return result;
+}
+
 export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecrets = new Map(), onStorageObject = async () => {}, onResult = async () => {},
   launchBrowser = () => chromium.launch({ headless: true }), login = loginThroughCognitoPkce }) {
   const results = [];
@@ -76,14 +90,16 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         let access = null;
         if (accessStatus === 200) access = (await accessResponse.json()).access;
         const roleAccessEvidence = {
-          expected: { httpStatus: 200, tenantMatches: true, rolePresent: true },
+          expected: { httpStatus: 200, userMatches: true, tenantMatches: true, rolePresent: true },
           actual: {
             httpStatus: accessStatus,
+            // A sign-in passes only when the application's own session resolves to this exact user, agency and role.
+            userMatches: access?.userId === user.id,
             tenantMatches: access?.departmentId === manifest.agencies[user.agencyIndex].id,
             rolePresent: Array.isArray(access?.roleCodes) && access.roleCodes.includes(user.role),
           },
         };
-        requireAcceptance(accessStatus === 200 && roleAccessEvidence.actual.tenantMatches && roleAccessEvidence.actual.rolePresent,
+        requireAcceptance(accessStatus === 200 && roleAccessEvidence.actual.userMatches && roleAccessEvidence.actual.tenantMatches && roleAccessEvidence.actual.rolePresent,
           'authenticated-role-and-tenant-access', roleAccessEvidence.expected, roleAccessEvidence.actual);
         await add(`${user.role} authenticates through Cognito PKCE/MFA`, 'pass', { evidence: roleAccessEvidence });
 
@@ -359,7 +375,8 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
     const role = ['officer', 'instructor', 'supervisor', 'administrator'].includes(activeUser?.role) ? activeUser.role : 'unknown';
     const diagnostics = error?.acceptanceDiagnostics;
     await add(error?.acceptanceEvidence?.check ?? 'authenticated acceptance execution', 'fail', {
-      code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT' : 'AUTHENTICATED_FLOW_FAILED',
+      code: error?.name === 'AssertionError' ? 'ASSERTION_FAILED' : error?.name === 'TimeoutError' ? 'BROWSER_TIMEOUT'
+        : error?.name === 'CognitoCallbackRejectedError' ? 'COGNITO_CALLBACK_REJECTED' : 'AUTHENTICATED_FLOW_FAILED',
       role,
       phase: activePhase,
       errorName,
@@ -383,6 +400,7 @@ export async function runAuthenticatedAcceptance({ manifest, passwords, mfaSecre
         genericRequestError: diagnostics.genericRequestError === true,
         totpSubmissions: Number.isInteger(diagnostics.totpSubmissions) ? diagnostics.totpSubmissions : 0,
         callbackStatus: Number.isInteger(diagnostics.callbackStatus) ? diagnostics.callbackStatus : null,
+        ...callbackDiagnostics(diagnostics),
       } } : {}),
       ...(error?.acceptanceEvidence ? { evidence: error.acceptanceEvidence } : {}),
     });
