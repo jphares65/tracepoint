@@ -40,6 +40,8 @@ function createDb(tables: Record<string, any[]>) {
   };
   // Simulates 031's state change so both directions can be driven through the route.
   const rpc = async (name: string, args: any) => {
+    // 070 firearm_in_active_department: the custody GET's agency-scoped existence check (not a write, so not recorded).
+    if (name === "firearm_in_active_department") return { data: (tables.firearms ?? []).some((row: any) => row.id === args.p_firearm_id && row.department_id === department), error: null };
     rpcs.push({ name, args });
     const current = tables.firearm_current_custody[0];
     current.holder_type = args.p_action === "CHECK_IN" ? "SECURE_STORAGE" : "OFFICER";

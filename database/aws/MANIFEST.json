@@ -690,8 +690,8 @@
                            "stagingLedger":  "pending",
                            "lineage":  "defect-remediation",
                            "formerly":  "new (SCH-1, SCH-2, SCH-4: staging catalog reconciliation, 2026-10-24)",
-                           "sha256Lf":  "41d885191d89cfe93075c2b41a969766b5af9918a2f5552c53ed9771a38a6526",
-                           "sha256Crlf":  "d99f7af24e171952d359ec000f6c6f6b4cbdfb3a1555eac8cf4a62c80bcff379"
+                           "sha256Lf":  "61d7db552b0097cd0dc16a0f5c092a1a1d68c4ba7cdf84fdd527839cef19b69b",
+                           "sha256Crlf":  "27baa17b03291f552e43419e810c470662f91ad0d2eca2b4a49b59569b5e9f96"
                        },
                        {
                            "version":  70,
@@ -700,8 +700,8 @@
                            "stagingLedger":  "pending",
                            "lineage":  "defect-remediation",
                            "formerly":  "new (AT-5 restriction lifecycle, 2026-10-24)",
-                           "sha256Lf":  "2b98d485f8ebe171ad52537726c864ea65916219f16a0734814a96bed2f436a0",
-                           "sha256Crlf":  "a0717ea7cdcbfce80504c9d80a41df8a3d0cf8fbc68de30f789a103adea5555a"
+                           "sha256Lf":  "084e4bacd2ce4a537da89b01350703beb553039cbbaac60fcf545d0fcf3174f3",
+                           "sha256Crlf":  "f549499982313ed6a812a8943d87e508ee3980c21277eb8c5fca69aeabad43ff"
                        }
                    ],
     "reserved":  [

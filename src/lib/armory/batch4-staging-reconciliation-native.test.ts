@@ -351,16 +351,37 @@ test("an active restriction cannot name a returned assignment or another firearm
     assert.equal(restrictedCustodyFailure(error).status, 409);
   }
 
-  const raced = await firearm();
-  await issue(raced, kris);
-  const returning = await runtime.connect();
-  await returning.query("begin");
-  await returning.query("set local role authenticated");
-  await returning.query("select set_config('tracepoint.subject_id',$1,true),set_config('tracepoint.department_id',$2,true)", [armorer, A]);
-  await returning.query(returnSql, [raced, A, armorer]);
-  const restricting = restrict(raced).then(() => "applied", (error: { code?: string }) => error.code ?? "failed");
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  try { await returning.query("commit"); } finally { returning.release(); }
-  assert.equal(await restricting, "40001");
-  assert.equal(await count("select count(*) v from public.firearm_possession_restrictions where firearm_id=$1 and is_active", [raced]), 0);
+  // A restriction set, or changed (Duty Only to No Carry), while the assignment's return is in flight waits for the
+  // return (set_firearm_restriction reads the assignment FOR SHARE, the lock order a return takes) and is then refused:
+  // never a deadlock, never an active restriction on the returned assignment.
+  for (const existing of [null, "duty_only"]) {
+    const raced = await firearm();
+    await issue(raced, kris);
+    if (existing) await restrict(raced, existing);
+    const returning = await runtime.connect();
+    await returning.query("begin");
+    await returning.query("set local role authenticated");
+    await returning.query("select set_config('tracepoint.subject_id',$1,true),set_config('tracepoint.department_id',$2,true)", [armorer, A]);
+    await returning.query(returnSql, [raced, A, armorer]);
+    const restricting = restrict(raced, "no_carry").then(() => "applied", (error: { code?: string; message: string }) => error);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    try { await returning.query("commit"); } finally { returning.release(); }
+    const outcome = await restricting as { code?: string; message: string };
+    assert.equal(outcome.code, "22023", `restriction after ${existing ?? "none"}: ${outcome.message}`);
+    assert.match(outcome.message, /restricted use requires an active assignment/);
+    assert.equal(restrictedCustodyFailure(outcome).status, 409);
+    assert.equal(await count("select count(*) v from public.firearm_possession_restrictions where firearm_id=$1 and is_active", [raced]), 0);
+  }
+});
+
+test("API-2's existence check answers only for the caller's active agency, for every member including custody-only roles", async () => {
+  const gun = await firearm(), foreignGun = await firearm(B);
+  const exists = (user: string, department: string, id: string) => as(user, department, async (c) => (await c.query("select public.firearm_in_active_department($1) v", [id])).rows[0].v);
+  assert.equal(await exists(viewer, A, gun), true, "view_history only");
+  assert.equal(await exists(eli, A, gun), true, "an officer");
+  assert.equal(await exists(armorer, A, foreignGun), false, "another agency's firearm");
+  assert.equal(await exists(armorer, A, crypto.randomUUID()), false, "an unknown id");
+  assert.equal(await exists(foreignArmorer, A, gun), false, "selecting an agency one is not a member of");
+  assert.equal(await exists(dual, B, gun), false, "a member of both agencies acting in the other");
+  assert.equal(await scalar("select has_function_privilege('anon','public.firearm_in_active_department(uuid)','EXECUTE') v"), false);
 });

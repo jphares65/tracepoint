@@ -31,6 +31,11 @@ begin
   end if;
 end $$;
 
+-- The four custody tables are locked once, in a fixed order, before any change: steps 5-7 need these locks anyway,
+-- and taking them together means a concurrent reader cannot be caught between them. The runner's lock_timeout turns a
+-- long wait into a clean rollback.
+lock table public.firearm_storage_locations, public.firearm_current_custody, public.firearm_possession_restrictions, public.firearm_custody_events in access exclusive mode;
+
 -- 2. 024, exactly as written there.
 create or replace function tracepoint_auth.enqueue_notification_email(
   p_department_id uuid, p_user_id uuid, p_recipient_email text,
@@ -301,9 +306,8 @@ end $$;
 revoke all on public.firearm_storage_locations, public.firearm_current_custody, public.firearm_possession_restrictions, public.firearm_custody_events from service_role;
 grant select on public.firearm_storage_locations, public.firearm_current_custody, public.firearm_possession_restrictions, public.firearm_custody_events to authenticated;
 
--- 7. 028's four CHECK constraints. Existing rows are counted first, under a lock that keeps new rows out until commit.
---    Any violation stops the whole migration with the counts; no row is changed.
-lock table public.firearm_storage_locations, public.firearm_possession_restrictions, public.firearm_custody_events in share row exclusive mode;
+-- 7. 028's four CHECK constraints. Existing rows are counted first, under the lock taken above, which keeps new rows
+--    out until commit. Any violation stops the whole migration with the counts; no row is changed.
 do $$
 declare v_check record; v_count bigint; v_refusals text[] := '{}';
 begin
@@ -324,6 +328,35 @@ begin
   end loop;
   if cardinality(v_refusals) > 0 then
     raise exception '069 refused: % (no rows were changed; correct them under review, then apply again)', array_to_string(v_refusals, '; ') using errcode = '23514';
+  end if;
+end $$;
+
+-- 8. The end state, checked before commit: exactly 028/031's read policies, no service_role table privilege, the three
+--    restored functions, 028's transfer function and the four validated CHECKs. Anything else rolls the whole migration back.
+do $$
+declare v_policies text;
+begin
+  select string_agg(tablename || '.' || policyname, ',' order by tablename, policyname) into v_policies
+  from pg_policies where schemaname = 'public'
+    and tablename in ('firearm_storage_locations', 'firearm_current_custody', 'firearm_possession_restrictions', 'firearm_custody_events');
+  if v_policies is distinct from 'firearm_current_custody.firearm_current_custody_read,firearm_custody_events.firearm_custody_events_read,firearm_possession_restrictions.firearm_possession_restrictions_read,firearm_storage_locations.firearm_storage_locations_read' then
+    raise exception '069 refused: unexpected custody policies after reconciliation (%)', v_policies using errcode = '55000';
+  end if;
+  if exists (
+    select 1 from unnest(array['public.firearm_storage_locations', 'public.firearm_current_custody', 'public.firearm_possession_restrictions', 'public.firearm_custody_events']) t,
+      unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) p
+    where has_table_privilege('service_role', t, p)
+  ) then
+    raise exception '069 refused: service_role still holds a custody table privilege' using errcode = '55000';
+  end if;
+  if to_regprocedure('tracepoint_auth.enqueue_notification_email(uuid,uuid,text,text,text,text,text,timestamptz,text,timestamptz)') is null
+    or to_regprocedure('tracepoint_auth.inspect_cognito_invite_retry(uuid,text,text,text,text,text,text,text[],uuid[])') is null
+    or to_regprocedure('tracepoint_auth.claim_cognito_invite_retry(uuid,text,text,text,text,text,text,text[],uuid[],uuid)') is null
+    or position('v_department_id is distinct from tracepoint_auth.department_id()' in
+      (select prosrc from pg_proc where oid = 'public.transfer_firearm_custody(uuid,text,uuid,uuid,text,text,uuid,boolean)'::regprocedure)) = 0
+    or (select count(*) from pg_constraint where convalidated and conname in ('firearm_storage_locations_name_check', 'firearm_storage_locations_location_kind_check',
+      'firearm_possession_restrictions_reason_category_check', 'firearm_custody_events_reason_check')) <> 4 then
+    raise exception '069 refused: a restored definition is missing after reconciliation' using errcode = '55000';
   end if;
 end $$;
 

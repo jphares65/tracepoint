@@ -40,6 +40,8 @@ function createDb(tables: Record<string, any[]>, failure?: { code: string; messa
   };
   // Simulates 028 transfer_firearm_custody's state change and event.
   const rpc = async (name: string, args: any) => {
+    // 070 firearm_in_active_department: the custody GET's agency-scoped existence check (not a write, so not recorded).
+    if (name === "firearm_in_active_department") return { data: (tables.firearms ?? []).some((row: any) => row.id === args.p_firearm_id && row.department_id === department), error: null };
     rpcs.push({ name, args });
     if (failure) return { data: null, error: failure };
     const existing = tables.firearm_current_custody[0];
@@ -259,4 +261,21 @@ test("API-2: custody of an unknown firearm, or of another agency's, is not found
   }
   const { getResponse } = await harness(unrestricted(), ["firearm_custody.view_history"]);
   assert.equal((await getResponse()).status, 200, "the agency's own firearm still answers");
+});
+
+test("custody-only roles keep the custody card: view_history reads history; a restriction manager sees custody and restrictions, not history", async () => {
+  const tables = unrestricted();
+  tables.firearm_custody_events.push({ id: "event-0", department_id: department, firearm_id: firearm, action_type: "INITIALIZE", reason: "issue", occurred_at: "2026-10-24T00:00:00Z" });
+  const viewer = await harness(tables, ["firearm_custody.view_history"]);
+  const viewed = await viewer.getResponse();
+  assert.equal(viewed.status, 200, "view_history alone is not refused by the existence check");
+  assert.equal((await viewed.json()).events.length, 1);
+  const manager = await harness(tables, ["manage_firearm_restrictions"]);
+  const managed = await manager.getResponse();
+  assert.equal(managed.status, 200);
+  const body = await managed.json();
+  assert.deepEqual(body.events, [], "history follows 028's policy: view_history or manage_firearms");
+  assert.equal(body.current.holder_user_id, officer);
+  const outsider = await harness({ ...tables, firearms: [] }, []);
+  assert.equal((await outsider.getResponse()).status, 403, "a caller with no custody access is refused before the existence check");
 });

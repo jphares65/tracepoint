@@ -13,19 +13,23 @@ export async function GET(_: NextRequest, { params }: RouteContext) {
   const context = resolved.context;
   const { firearmId } = await params;
   if (!uuid.test(firearmId)) return NextResponse.json({ error: "Invalid firearm." }, { status: 400 });
-  // API-2: an unknown firearm, or another agency's, is not found (as on every sibling firearm route), never 200 with
-  // empty custody.
-  const { data: firearm, error: firearmError } = await context.db.from("firearms").select("id").eq("department_id", context.departmentId).eq("id", firearmId).maybeSingle();
-  if (firearmError) return NextResponse.json({ error: firearmError.message }, { status: 500 });
-  if (!firearm) return NextResponse.json({ error: "Firearm not found." }, { status: 404 });
   const { data: assignment, error: assignmentError } = await context.db.from("firearm_assignments").select("assigned_to_user_id").eq("department_id", context.departmentId).eq("firearm_id", firearmId).is("returned_at", null).maybeSingle();
   if (assignmentError) return NextResponse.json({ error: assignmentError.message }, { status: 500 });
   const canOperateOwn = assignment?.assigned_to_user_id === context.userId;
-  const canReadHistory = hasAnyServerPermission(context, ["firearm_custody.view_history", "manage_firearms", "manage_firearm_restrictions", "manage_restricted_firearm_custody"]);
+  // Custody history is readable with view_history or manage_firearms, the rule 028's policy enforces (069); restriction
+  // managers see the custody card and restrictions, not the history.
+  const canReadHistory = hasAnyServerPermission(context, ["firearm_custody.view_history", "manage_firearms"]);
+  const canViewCustody = canReadHistory || hasAnyServerPermission(context, ["manage_firearm_restrictions", "manage_restricted_firearm_custody"]);
   // SV-28: ordinary custody transfer (028) is authorized by these permissions.
   const canTransferIn = hasAnyServerPermission(context, custodyTransferPermissions("SECURE_STORAGE"));
   const canTransferOut = hasAnyServerPermission(context, custodyTransferPermissions("OFFICER"));
-  if (!canOperateOwn && !canReadHistory && !canTransferIn && !canTransferOut) return permissionDeniedResponse("Custody access is required.");
+  if (!canOperateOwn && !canViewCustody && !canTransferIn && !canTransferOut) return permissionDeniedResponse("Custody access is required.");
+  // API-2: for an authorized caller, an unknown firearm or another agency's is not found (as on every sibling firearm
+  // route), never 200 with empty custody. The firearms table's own RLS hides firearms from custody-only roles, so the
+  // check is 070's agency-scoped existence function.
+  const { data: inAgency, error: existenceError } = await context.db.rpc("firearm_in_active_department", { p_firearm_id: firearmId });
+  if (existenceError) return NextResponse.json({ error: existenceError.message }, { status: 500 });
+  if (inAgency !== true) return NextResponse.json({ error: "Firearm not found." }, { status: 404 });
   const [current, events, restrictions] = await Promise.all([
     context.db.from("firearm_current_custody").select("*").eq("department_id", context.departmentId).eq("firearm_id", firearmId).maybeSingle(),
     canReadHistory ? context.db.from("firearm_custody_events").select("*").eq("department_id", context.departmentId).eq("firearm_id", firearmId).order("occurred_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
