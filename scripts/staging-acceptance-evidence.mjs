@@ -1,9 +1,28 @@
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, realpath, rename, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const reportDirectory = path.join(repositoryRoot, 'docs', 'staging-acceptance-evidence');
+const contains = (parent, child) => {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+/**
+ * Where run reports are written (TRACEPOINT_ACCEPTANCE_EVIDENCE_DIR, default <tmpdir>/tracepoint-staging-acceptance-evidence).
+ * Never inside the checkout: apply-app-migrations.ps1 refuses an untracked file there, so a report written before
+ * fixture create stopped run 08243a2c.
+ */
+export async function acceptanceReportDirectory(environment = process.env) {
+  const configured = environment.TRACEPOINT_ACCEPTANCE_EVIDENCE_DIR || path.join(tmpdir(), 'tracepoint-staging-acceptance-evidence');
+  if (!path.isAbsolute(configured)) throw new Error('The acceptance evidence directory must be an absolute path.');
+  const directory = path.resolve(configured);
+  if (contains(repositoryRoot, directory)) throw new Error('The acceptance evidence directory must be outside the checkout.');
+  await mkdir(directory, { recursive: true });
+  if (contains(await realpath(repositoryRoot), await realpath(directory))) throw new Error('The acceptance evidence directory must be outside the checkout.');
+  return directory;
+}
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha = /^[0-9a-f]{40}$/i;
 const digest = /^sha256:[0-9a-f]{64}$/i;
@@ -142,7 +161,7 @@ export function createAcceptanceReport({ fixtureRun, sourceCommit, taskRevision,
 }
 
 /** Writes one run-specific JSON report atomically; the report includes only validated, sanitized fields. */
-export async function writeAcceptanceReport(report, { suffix = '' } = {}) {
+export async function writeAcceptanceReport(report, { suffix = '', environment = process.env } = {}) {
   if (suffix && !/^recovery-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$/.test(suffix)) throw new Error('Acceptance report suffix is invalid.');
   const safe = createAcceptanceReport({
     fixtureRun: report?.fixtureRun,
@@ -157,7 +176,7 @@ export async function writeAcceptanceReport(report, { suffix = '' } = {}) {
     cleanup: report?.cleanup,
     failureCode: report?.failureCode,
   });
-  await mkdir(reportDirectory, { recursive: true });
+  const reportDirectory = await acceptanceReportDirectory(environment);
   const reportPath = path.join(reportDirectory, `${safe.fixtureRun}${suffix ? `.${suffix}` : ''}.json`);
   const tempPath = `${reportPath}.${process.pid}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(safe, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });

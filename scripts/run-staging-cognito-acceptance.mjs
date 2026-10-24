@@ -315,11 +315,11 @@ async function main() {
     startedAt: new Date().toISOString(),
     fixtureTaskFailures,
   });
-  const reportRelativePath = `docs/staging-acceptance-evidence/${run}.json`;
+  let reportPath;
   const persistReport = async () => {
     report.stage = operationStage;
     report.fixtureTaskFailures = [...fixtureTaskFailures];
-    await writeAcceptanceReport(report);
+    reportPath = await writeAcceptanceReport(report);
   };
   await persistReport();
   let taskAttempted = false;
@@ -382,7 +382,7 @@ async function main() {
     report.stage = 'complete';
     try {
       await persistReport();
-      console.log(JSON.stringify({ evidenceReport: 'written', report: reportRelativePath, status: report.status }));
+      console.log(JSON.stringify({ evidenceReport: 'written', report: reportPath, status: report.status }));
     } catch {
       console.error(JSON.stringify({ evidenceReport: 'write-failed', sensitiveDetailsPrinted: false }));
       resultCode = 1;

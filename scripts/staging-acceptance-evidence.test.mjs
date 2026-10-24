@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFile, unlink } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, symlink, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
-import { createAcceptanceReport, sanitizeAcceptanceCheck, sanitizeFixtureTaskFailure, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
+import { fileURLToPath } from 'node:url';
+import { acceptanceReportDirectory, createAcceptanceReport, sanitizeAcceptanceCheck, sanitizeFixtureTaskFailure, writeAcceptanceReport } from './staging-acceptance-evidence.mjs';
 
 const fixtureRun = 'd92f7280-536f-4cea-99e4-1c8e08fac4da';
 const sourceCommit = '7eb69c7f19ef95ac4cb04adcb180b2c5e24b4c20';
@@ -91,5 +95,40 @@ test('acceptance report writer stores the sanitized report durably as JSON', asy
   } finally {
     await unlink(path);
     await unlink(recoveryPath);
+  }
+});
+
+// Run 08243a2c: the report was written into docs/ before fixture create, and apply-app-migrations.ps1 refused the
+// untracked file (Require-CleanCommit: git status --porcelain --untracked-files=all).
+const checkout = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
+const cleanCommitStatus = () => execFileSync('git', ['-C', checkout, 'status', '--porcelain', '--untracked-files=all'], { encoding: 'utf8' });
+
+test('writing a run report leaves the checkout exactly as clean as before', async () => {
+  const before = cleanCommitStatus();
+  const report = createAcceptanceReport({ fixtureRun, sourceCommit, taskRevision: '194', appImageDigest, startedAt: '2026-10-24T01:18:10.953Z',
+    status: 'running', stage: 'seed-staging-database-fixtures', cleanup: 'pending' });
+  const written = await writeAcceptanceReport(report, { environment: {} });
+  try {
+    assert.equal(path.relative(checkout, written).startsWith('..'), true, written);
+    assert.equal(path.dirname(written), path.join(tmpdir(), 'tracepoint-staging-acceptance-evidence'));
+    assert.equal(cleanCommitStatus(), before);
+  } finally {
+    await unlink(written);
+  }
+});
+
+test('the evidence directory is refused inside the checkout, relative, or reached through a link', async () => {
+  const refused = { message: /outside the checkout|absolute path/ };
+  for (const directory of [checkout, path.join(checkout, 'docs', 'staging-acceptance-evidence'), 'docs/staging-acceptance-evidence']) {
+    await assert.rejects(acceptanceReportDirectory({ TRACEPOINT_ACCEPTANCE_EVIDENCE_DIR: directory }), refused, directory);
+  }
+  const outside = await mkdtemp(path.join(tmpdir(), 'tp-evidence-link-'));
+  try {
+    const linked = path.join(outside, 'into-checkout');
+    await symlink(path.join(checkout, 'docs'), linked, 'junction');
+    await assert.rejects(acceptanceReportDirectory({ TRACEPOINT_ACCEPTANCE_EVIDENCE_DIR: linked }), refused);
+    assert.equal(await acceptanceReportDirectory({ TRACEPOINT_ACCEPTANCE_EVIDENCE_DIR: path.join(outside, 'reports') }), path.join(outside, 'reports'));
+  } finally {
+    await rm(outside, { recursive: true, force: true });
   }
 });
