@@ -4,12 +4,12 @@ param(
     # No default: the reviewed application commit is always named explicitly (a stale default would build an older release).
     [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ApplicationCommit,
     [ValidateRange(5,60)][int]$MaximumPitrAgeMinutes = 30,
-    # Application-only redeploy over an already migrated ledger: requires 001-068 recorded with nothing pending and
-    # the 066-068 rows written by -RecordedMigrationCommit; never applies a migration.
+    # Application-only redeploy over an already migrated ledger: requires 001-070 recorded with nothing pending and
+    # the 069-070 rows written by -RecordedMigrationCommit; never applies a migration.
     [switch]$DeployOnly,
     [ValidatePattern('^[0-9a-f]{40}$')][string]$RecordedMigrationCommit
 )
-if ($DeployOnly -and -not $RecordedMigrationCommit) { throw '-DeployOnly requires -RecordedMigrationCommit (the commit whose release applied 066-068).' }
+if ($DeployOnly -and -not $RecordedMigrationCommit) { throw '-DeployOnly requires -RecordedMigrationCommit (the commit whose release applied 069-070).' }
 if ($RecordedMigrationCommit -and -not $DeployOnly) { throw '-RecordedMigrationCommit is only valid with -DeployOnly.' }
 
 # Controlled, migration-first AWS-native staging release. The image publisher,
@@ -158,9 +158,9 @@ try {
 
     $previousService = Assert-StagingRuntimeHealth
     $previousTaskDefinition = [string]$previousService.taskDefinition
-    # Revision 193 runs f4e8588d (digest sha256:57e18514...), deployed by the Batch 2 release on 2026-10-22 ~23:20 EDT;
-    # observed read-only on 2026-10-22 23:3x EDT before this release.
-    if ($previousTaskDefinition -notmatch ':193$') { throw "Expected the reviewed pre-release staging task revision 193; found '$previousTaskDefinition'." }
+    # Revision 194 runs e1d5cdab (digest sha256:731115ad...), deployed by the Batch 3 release on 2026-10-23;
+    # observed read-only on 2026-10-24 before this release.
+    if ($previousTaskDefinition -notmatch ':194$') { throw "Expected the reviewed pre-release staging task revision 194; found '$previousTaskDefinition'." }
     $null = Assert-RdsPitr
 
     $imageTag = Get-ReviewedImageTag -Environment staging -Commit $ApplicationCommit
@@ -181,26 +181,25 @@ try {
 
     $statusOutput = Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'migrate-db.ps1') -ScriptArguments @('staging','-Action','status','-ImageCommit',$ApplicationCommit)
     if ($DeployOnly) {
-        # Every recorded row is hash-checked against this commit's files; nothing may be pending; 066-068 must be the rows
-        # the earlier release wrote (064-065 come from the Batch 2 release, 049-063 from ec027f50's,
-        # 047 and 048 from the staging lineage's). No migration is applied.
+        # Every recorded row is hash-checked against this commit's files; nothing may be pending; 069-070 must be the rows
+        # the earlier release wrote (066-068 come from the Batch 3 release, 064-065 from the Batch 2 release, 049-063 from
+        # ec027f50's, 047 and 048 from the staging lineage's). No migration is applied.
         $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'after-apply' -ExpectedDigest $imageDigest
-        if (@($status.applied).Count -ne 68 -or @($status.pending).Count -ne 0) { throw 'Deploy-only release requires exactly 001-068 applied and nothing pending.' }
-        $null = Assert-EntitlementMigrationRecord -Report $status -ApplicationCommit $RecordedMigrationCommit -Environment staging -Versions @(66, 67, 68)
-        Write-Host "Ledger verified: 001-068 applied, 0 pending; 066-068 recorded by $RecordedMigrationCommit. No migration will be applied."
+        if (@($status.applied).Count -ne 70 -or @($status.pending).Count -ne 0) { throw 'Deploy-only release requires exactly 001-070 applied and nothing pending.' }
+        $null = Assert-EntitlementMigrationRecord -Report $status -ApplicationCommit $RecordedMigrationCommit -Environment staging -Versions @(69, 70)
+        Write-Host "Ledger verified: 001-070 applied, 0 pending; 069-070 recorded by $RecordedMigrationCommit. No migration will be applied."
         $null = Assert-RdsPitr
         $currentService = Get-StagingService
         if ($currentService.taskDefinition -cne $previousTaskDefinition) { throw 'Staging application task changed during release preparation; stop for review.' }
     } else {
     $status = Get-VerifiedLedgerReport -Output $statusOutput -Expectation 'before-apply' -ExpectedDigest $imageDigest
-    # 001-065 are recorded on staging (064-065 by the Batch 2 release); this release applies the manifest-listed rest:
-    # 066 (the officer equipment condition report), 067 (custody follows the active assignment) and 068 (the manual
-    # status safety-hold guard), or the rest of them when a stopped apply of this release already recorded 066 or 067.
-    # Any other state stops here for review.
+    # 001-068 are recorded on staging (066-068 by the Batch 3 release); this release applies the manifest-listed rest:
+    # 069 (the baseline object reconciliation, SCH-1/SCH-2/SCH-4) and 070 (restrictions follow their assignment, AT-5),
+    # or 070 alone when a stopped apply of this release already recorded 069. Any other state stops here for review.
     $appliedCount = @($status.applied).Count
-    if ($appliedCount -notin @(65, 66, 67)) { throw "Pre-apply status must show 001-065 (or 001-066/001-067 after a stopped apply) applied; found $appliedCount applied. Stop for review." }
+    if ($appliedCount -notin @(68, 69)) { throw "Pre-apply status must show 001-068 (or 001-069 after a stopped apply) applied; found $appliedCount applied. Stop for review." }
     $expectedPending = @($migrationFiles | ForEach-Object { [IO.Path]::GetFileName($_) } | Where-Object { [int]$_.Substring(0,3) -gt $appliedCount })
-    if ((@($status.pending | ForEach-Object { [string]$_.filename }) -join '|') -cne ($expectedPending -join '|')) { throw "Pre-apply status must show exactly migrations $('{0:d3}' -f ($appliedCount + 1))-068 pending, after 001-$('{0:d3}' -f $appliedCount) (including the 064-065 stabilization convergence) are verified applied." }
+    if ((@($status.pending | ForEach-Object { [string]$_.filename }) -join '|') -cne ($expectedPending -join '|')) { throw "Pre-apply status must show exactly migrations $('{0:d3}' -f ($appliedCount + 1))-070 pending, after 001-$('{0:d3}' -f $appliedCount) (including the Batch 3 066-068) are verified applied." }
     $releaseVersions = @($status.pending | ForEach-Object { [int]$_.version })
     $applyPhrase = "APPLY $('{0:d3}' -f $releaseVersions[0])-$('{0:d3}' -f $releaseVersions[-1])"
     $null = Assert-RdsPitr
@@ -226,7 +225,7 @@ try {
     $deploymentStarted = $true
     Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-ImageCommit',$ApplicationCommit,'-ExpectedImageDigest',$imageDigest) | Out-Null
     $null = Assert-StagingRuntimeHealth -AfterRollout
-    $migrationSummary = if ($DeployOnly) { "migrations unchanged (001-068, 066-068 by $RecordedMigrationCommit)" } else { "migrations $('{0:d3}' -f $releaseVersions[0])-068 applied" }
+    $migrationSummary = if ($DeployOnly) { "migrations unchanged (001-070, 069-070 by $RecordedMigrationCommit)" } else { "migrations $('{0:d3}' -f $releaseVersions[0])-070 applied" }
     Write-Host "STAGING RELEASE VERIFIED: application $ApplicationCommit ($imageDigest); $migrationSummary; prior task $previousTaskDefinition."
 }
 catch {
@@ -239,7 +238,7 @@ catch {
             $serviceResult = Invoke-AwsRead @('ecs','describe-services','--cluster','tracepoint-staging','--services','tracepoint-staging')
             $service = @($serviceResult.services) | Select-Object -First 1
             if ($null -ne $service -and $service.taskDefinition -cne $previousTaskDefinition) {
-                Write-Warning 'Application release failed after migration; restoring the prior ECS task revision. Migrations 066-068 remain applied: 066 only adds report_equipment_condition, which the previous image never calls; 067 keeps the signatures of the custody functions the previous image calls; under 068 the previous image''s manual Available on a held vehicle is refused (500) instead of answered 200 with a stuck override.'
+                Write-Warning 'Application release failed after migration; restoring the prior ECS task revision. Migrations 069-070 remain applied: 069 restores 024/027 functions the previous image calls (notification enqueue starts succeeding) and 028''s transfer function with the same signature and the refusals the previous image already maps, and narrows custody-history reads to view_history/manage_firearms, which the previous image already requires; 070 ends a restriction when its assignment is returned and refuses a restriction racing a return (the previous image answers that refusal with a generic 409).'
                 Invoke-ReleaseScript -Path (Join-Path $PSScriptRoot 'deploy-app.ps1') -ScriptArguments @('staging','-RollbackTaskDefinitionArn',$previousTaskDefinition) | Out-Null
             }
         } catch { throw "Release failed: $($failure.Exception.Message). Application rollback also failed: $($_.Exception.Message). Migrations were not reversed; stop and recover forward." }

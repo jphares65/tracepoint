@@ -90,11 +90,11 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /action === "diagnose"/);
   assert.match(runner, /requestedEnvironment !== "staging"/);
   assert.match(runner, /MIGRATION_DRIFT/);
-  // Staging apply (Batch 3): contiguous 001-068, 001-065 recorded (064-065 by the Batch 2 release) or 001-066/001-067
-  // after a stopped apply, and exactly the rest of 066-068 pending; nothing pending is refused.
+  // Staging apply (Batch 4): contiguous 001-070, 001-068 recorded (066-068 by the Batch 3 release) or 001-069 after a
+  // stopped apply, and exactly the rest of 069-070 pending; nothing pending is refused.
   assert.match(runner, /versions\.length !== STAGING_RELEASE_LAST/);
-  assert.match(runner, /const STAGING_RELEASE_LAST = 68;/);
-  assert.match(runner, /const STAGING_RELEASE_FIRST_RECORDED = 65;/);
+  assert.match(runner, /const STAGING_RELEASE_LAST = 70;/);
+  assert.match(runner, /const STAGING_RELEASE_FIRST_RECORDED = 68;/);
   assert.match(runner, /report\.applied\.length < STAGING_RELEASE_FIRST_RECORDED/);
   assert.match(runner, /STAGING_RELEASE_PENDING\.slice\(report\.applied\.length - STAGING_RELEASE_FIRST_RECORDED\)/);
   assert.match(runner, /STAGING_RELEASE_NOTHING_PENDING/);
@@ -103,8 +103,8 @@ test("diagnose is staging-only and leaves normal migration drift checks in place
   assert.match(runner, /set lock_timeout = '\$\{MIGRATION_LOCK_TIMEOUT\}'/);
   assert.match(runner, /retried: false \}\)\);\s+throw error;/);
   assert.doesNotMatch(runner, /RETRYABLE_LOCK_ERRORS|MIGRATION_LOCK_ATTEMPTS|retrying:/);
-  assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"066_equipment_condition_report\.sql",\s+"067_firearm_custody_follows_assignment\.sql",\s+"068_fleet_manual_status_under_safety_hold\.sql",\s+\]\)/);
-  assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"0[0-5][0-9]_|STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"06[0-5]_/);
+  assert.match(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"069_baseline_object_reconciliation\.sql",\s+"070_restriction_follows_assignment\.sql",\s+\]\)/);
+  assert.doesNotMatch(runner, /STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"0[0-5][0-9]_|STAGING_RELEASE_PENDING = Object\.freeze\(\[\s+"06[0-8]_/);
   assert.match(runner, /await import\("\.\/aws-native-migration-diagnostics\.mjs"\)/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: database connection details suppressed/);
   assert.match(runner, /STAGING_DATABASE_DIAGNOSTIC_FAILED: query details suppressed/);

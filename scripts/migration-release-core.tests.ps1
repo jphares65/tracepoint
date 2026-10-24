@@ -30,18 +30,19 @@ $stagingRecorded = @{
     '042_default_module_entitlements.sql' = 'f24425f5370f1ab32ec7074b13dd56f5b00afa5ab757039ca431f7312c27a4b4'
 }
 foreach ($name in $stagingRecorded.Keys) { if ($archiveHashes[$name] -cne $stagingRecorded[$name]) { throw "Migration $name no longer matches the hash staging recorded." } }
-# Staging records 001-065: Agency Documents at 038-041 and module entitlements at 042 (applied by the staging line's
+# Staging records 001-068: Agency Documents at 038-041 and module entitlements at 042 (applied by the staging line's
 # release, a3fa985), 043-045 (applied by e3b06e6a on 2026-10-19), 046 (applied by 75499335 on 2026-10-20), 047 (eb637823),
-# 048 (the staging lineage's release, 22e543d8), 049-063 (ec027f50 on 2026-10-22) and 064-065 (the Batch 2 release of
-# f4e8588d on 2026-10-22).
-# This release (Batch 3) applies 066 (D-2), 067 (AT-2/AT-4) and 068 (AT-1).
+# 048 (the staging lineage's release, 22e543d8), 049-063 (ec027f50 on 2026-10-22), 064-065 (the Batch 2 release of
+# f4e8588d on 2026-10-22) and 066-068 (the Batch 3 release of e1d5cdab on 2026-10-23).
+# This release (Batch 4) applies 069 (SCH-1/SCH-2/SCH-4) and 070 (AT-5).
 $migrationCommit = 'e3b06e6ada3a7ef93f41f49831d0723dd345e7d7'
 $toggleCommit = '75499335724a828afb9796143ce993a28cf3f54c'
 $fleetCatalogCommit = 'eb637823a4a9fdd8c2979a22cbb39aa6f5c1501f'
 $catalogActivationCommit = '22e543d86dc9709c341010ac883406429b4e55c2'
 $remediationCommit = 'ec027f5032a0b0f7b91c2c0d9f732491e10a085a'
 $convergenceCommit = 'f4e8588df78189e069781e60ead69c31aa42e79c'
-$applied = @($migrationFiles | Select-Object -First 65 | ForEach-Object {
+$batch3Commit = 'e1d5cdabe9f652a20b202808e8ba552ea2eafcfb'
+$applied = @($migrationFiles | Select-Object -First 68 | ForEach-Object {
     $record = [pscustomobject]@{ version=[int]$_.Name.Substring(0,3); filename=$_.Name; content_sha256=$archiveHashes[$_.Name] }
     if ($record.version -eq 42) { $record | Add-Member -NotePropertyMembers @{ application_git_sha='a3fa9855f4c797dfb7b4dd16144cf6c85a445946'; environment='staging'; application_context='apply'; is_baseline=$false } }
     if ($record.version -ge 43 -and $record.version -le 45) { $record | Add-Member -NotePropertyMembers @{ application_git_sha=$migrationCommit; environment='staging'; application_context='apply'; is_baseline=$false } }
@@ -50,13 +51,14 @@ $applied = @($migrationFiles | Select-Object -First 65 | ForEach-Object {
     if ($record.version -eq 48) { $record | Add-Member -NotePropertyMembers @{ application_git_sha=$catalogActivationCommit; environment='staging'; application_context='apply'; is_baseline=$false } }
     if ($record.version -ge 49 -and $record.version -le 63) { $record | Add-Member -NotePropertyMembers @{ application_git_sha=$remediationCommit; environment='staging'; application_context='apply'; is_baseline=$false } }
     if ($record.version -ge 64 -and $record.version -le 65) { $record | Add-Member -NotePropertyMembers @{ application_git_sha=$convergenceCommit; environment='staging'; application_context='apply'; is_baseline=$false } }
+    if ($record.version -ge 66 -and $record.version -le 68) { $record | Add-Member -NotePropertyMembers @{ application_git_sha=$batch3Commit; environment='staging'; application_context='apply'; is_baseline=$false } }
     $record
 })
 function New-PendingRows([int]$After) { @($migrationFiles | Where-Object { [int]$_.Name.Substring(0,3) -gt $After } | ForEach-Object {
     [pscustomobject]@{ version=[int]$_.Name.Substring(0,3); filename=$_.Name; content_sha256=$archiveHashes[$_.Name] }
 }) }
-$pendingRelease = New-PendingRows 65
-if ((@($pendingRelease | ForEach-Object { $_.version }) -join ',') -cne '66,67,68') { throw 'Expected migrations 066-068 to follow the recorded 001-065.' }
+$pendingRelease = New-PendingRows 68
+if ((@($pendingRelease | ForEach-Object { $_.version }) -join ',') -cne '69,70') { throw 'Expected migrations 069-070 to follow the recorded 001-068.' }
 $before = [pscustomobject]@{ ledger='present'; applied=$applied; pending=$pendingRelease }
 $releaseRecords = @($pendingRelease | ForEach-Object { [pscustomobject]@{ version=$_.version; filename=$_.filename; content_sha256=$_.content_sha256; application_git_sha='b' * 40; environment='staging'; application_context='apply'; is_baseline=$false } })
 $firstReleaseRecord = $releaseRecords[0]
@@ -74,6 +76,7 @@ Assert-ReleaseBranch 'claude/integration-defects-rebased-20261021' | Out-Null
 Assert-ReleaseBranch 'claude/stabilization-convergence-20261022' | Out-Null
 Assert-ReleaseBranch 'claude/fix-d2-equipment-condition-report' | Out-Null
 Assert-ReleaseBranch 'claude/fix-at-acceptance-defects' | Out-Null
+Assert-ReleaseBranch 'claude/batch4-remediation' | Out-Null
 Assert-Throws { Assert-ReleaseBranch 'feature/unreviewed-release' } 'unapproved branch'
 
 $identity = [pscustomobject]@{ Account='559054714699'; Arn='arn:aws:sts::559054714699:assumed-role/AWSReservedSSO_TracePointMigrationStaging_test/operator' }
@@ -82,7 +85,7 @@ Assert-Throws { Assert-StagingIdentity ([pscustomobject]@{ Account='193644343389
 Assert-ImageDigest ('sha256:' + ('a' * 64)) ('sha256:' + ('a' * 64)) | Out-Null
 Assert-Throws { Assert-ImageDigest ('sha256:' + ('a' * 64)) ('sha256:' + ('b' * 64)) } 'does not match'
 
-$validMessages = @('{"applying":{"version":66}}',($before | ConvertTo-Json -Compress -Depth 10))
+$validMessages = @('{"applying":{"version":69}}',($before | ConvertTo-Json -Compress -Depth 10))
 $parsed = ConvertFrom-MigrationRunnerLog -Messages $validMessages
 if ($parsed.ledger -cne 'present') { throw 'Migration log report success case failed.' }
 Assert-Throws { ConvertFrom-MigrationRunnerLog -Messages @() } 'logs are missing'
@@ -93,65 +96,70 @@ Assert-MigrationLedgerReport -Report $before -MigrationFiles @($migrationFiles.F
 Assert-MigrationLedgerReport -Report $after -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation after-apply | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging | Out-Null
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('c' * 40) -Environment staging } 'does not match'
-$wrongEnvironmentRecord = [pscustomobject]@{ ledger='present'; applied=@($applied + [pscustomobject]@{ version=66; filename=$firstReleaseRecord.filename; content_sha256=$firstReleaseRecord.content_sha256; application_git_sha=$firstReleaseRecord.application_git_sha; environment='production'; application_context='apply'; is_baseline=$false }); pending=@() }
+$wrongEnvironmentRecord = [pscustomobject]@{ ledger='present'; applied=@($applied + [pscustomobject]@{ version=$firstReleaseRecord.version; filename=$firstReleaseRecord.filename; content_sha256=$firstReleaseRecord.content_sha256; application_git_sha=$firstReleaseRecord.application_git_sha; environment='production'; application_context='apply'; is_baseline=$false }); pending=@() }
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $wrongEnvironmentRecord -ApplicationCommit ('b' * 40) -Environment staging } 'does not match'
-# 043-045, 046, 047, 048, 049-063 and 064-065 keep the provenance of the releases that applied them.
+# 043-045, 046, 047, 048, 049-063, 064-065 and 066-068 keep the provenance of the releases that applied them.
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $migrationCommit -Environment staging -Versions 43,44,45 | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $toggleCommit -Environment staging -Versions 46 | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $fleetCatalogCommit -Environment staging -Versions 47 | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $catalogActivationCommit -Environment staging -Versions 48 | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $remediationCommit -Environment staging -Versions @(49..63) | Out-Null
 Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $convergenceCommit -Environment staging -Versions @(64..65) | Out-Null
+Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $batch3Commit -Environment staging -Versions @(66..68) | Out-Null
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 68 } 'Migration 068 ledger entry'
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 66 } 'Migration 066 ledger entry'
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 65 } 'Migration 065 ledger entry'
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 63 } 'Migration 063 ledger entry'
-Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $convergenceCommit -Environment staging } 'Migration 066 ledger entry'
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $convergenceCommit -Environment staging } 'Migration 069 ledger entry'
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $batch3Commit -Environment staging } 'Migration 069 ledger entry'
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 47 } 'Migration 047 ledger entry'
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit $migrationCommit -Environment staging -Versions 46 } 'Migration 046 ledger entry'
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 43,44,45 } 'Migration 043 ledger entry'
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 42 } 'minimum allowed range'
-Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 69 } 'maximum allowed range'
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 71 } 'maximum allowed range'
 # This release's own row, named explicitly as the release names it.
-Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 66 | Out-Null
-Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 66,67,68 | Out-Null
+Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 69 | Out-Null
+Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('b' * 40) -Environment staging -Versions 69,70 | Out-Null
 # The state the previous release expected (043-045 pending on top of 001-042) is no longer staging's state and must stop this release.
 $old043Pending = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -le 42); pending=(New-PendingRows 42) }
 Assert-Throws { Assert-MigrationLedgerReport -Report $old043Pending -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Migration 043 of the recorded staging lineage is not applied'
-# So must the state the 048-063 release started from (001-047 recorded) and any part of it (001-054 recorded), and the
-# state the 064-065 release started from (001-063 recorded) and its partial state (001-064 recorded).
-foreach ($recordedThrough in @(47, 54, 63, 64)) {
+# So must the state the 048-063 release started from (001-047 recorded) and any part of it (001-054 recorded), the
+# state the 064-065 release started from (001-063 recorded) and its partial state (001-064 recorded), and the state
+# the Batch 3 release started from (001-065 recorded) and its partial states (001-066, 001-067 recorded).
+foreach ($recordedThrough in @(47, 54, 63, 64, 65, 66, 67)) {
     $olderRelease = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -le $recordedThrough); pending=(New-PendingRows $recordedThrough) }
     Assert-Throws { Assert-MigrationLedgerReport -Report $olderRelease -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } "Migration $('{0:d3}' -f ($recordedThrough + 1)) of the recorded staging lineage is not applied"
 }
-# An apply of this release stopped part-way (066, or 066-067, recorded) resumes with the rest pending.
-foreach ($resumeThrough in @(66, 67)) {
+# An apply of this release stopped part-way (069 recorded) resumes with the rest pending.
+foreach ($resumeThrough in @(69)) {
     $resumed = [pscustomobject]@{ ledger='present'; applied=@($applied + @($releaseRecords | Where-Object version -le $resumeThrough)); pending=(New-PendingRows $resumeThrough) }
     Assert-MigrationLedgerReport -Report $resumed -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply | Out-Null
 }
-# A re-run after 068 committed finds nothing pending and stops (the release script then requires -DeployOnly naming
-# the commit that recorded 066-068).
+# A re-run after 070 committed finds nothing pending and stops (the release script then requires -DeployOnly naming
+# the commit that recorded 069-070).
 $completed = [pscustomobject]@{ ledger='present'; applied=@($applied + $releaseRecords); pending=@() }
-Assert-Throws { Assert-MigrationLedgerReport -Report $completed -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Apply requires pending migrations from 066-068; nothing is pending.'
-# A recorded 066 with 065 still pending is not a continuation of the recorded prefix and stops it.
-$holed = [pscustomobject]@{ ledger='present'; applied=@(@($applied | Where-Object version -ne 65) + $firstReleaseRecord); pending=@((New-PendingRows 64) | Where-Object version -ne 66) }
-Assert-Throws { Assert-MigrationLedgerReport -Report $holed -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Migration 065 of the recorded staging lineage is not applied'
+Assert-Throws { Assert-MigrationLedgerReport -Report $completed -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Apply requires pending migrations from 069-070; nothing is pending.'
+# A recorded 069 with 068 still pending is not a continuation of the recorded prefix and stops it.
+$holed = [pscustomobject]@{ ledger='present'; applied=@(@($applied | Where-Object version -ne 68) + $firstReleaseRecord); pending=@((New-PendingRows 67) | Where-Object version -ne 69) }
+Assert-Throws { Assert-MigrationLedgerReport -Report $holed -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Migration 068 of the recorded staging lineage is not applied'
 $gap = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -ne 37); pending=$pendingRelease }
 Assert-Throws { Assert-MigrationLedgerReport -Report $gap -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'gap or overlap at version 37'
 $driftApplied = @($applied | ForEach-Object { if ($_.version -eq 7) { [pscustomobject]@{ version=$_.version; filename=$_.filename; content_sha256=('0' * 64) } } else { $_ } })
 $drift = [pscustomobject]@{ ledger='present'; applied=$driftApplied; pending=$pendingRelease }
 Assert-Throws { Assert-MigrationLedgerReport -Report $drift -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'content drift at version 7'
-# A recorded 042, 045, 046, 047, 048, 063, 064 or 065 whose bytes differ from this branch's file is drift, not something to re-apply.
-foreach ($driftVersion in @(42, 45, 46, 47, 48, 63, 64, 65)) {
+# A recorded 042, 045, 046, 047, 048, 063, 064, 065, 066, 067 or 068 whose bytes differ from this branch's file is drift, not something to re-apply.
+foreach ($driftVersion in @(42, 45, 46, 47, 48, 63, 64, 65, 66, 67, 68)) {
     $driftRecorded = [pscustomobject]@{ ledger='present'; applied=@($applied | ForEach-Object { if ($_.version -eq $driftVersion) { [pscustomobject]@{ version=$driftVersion; filename=$_.filename; content_sha256=('0' * 64) } } else { $_ } }); pending=$pendingRelease }
     Assert-Throws { Assert-MigrationLedgerReport -Report $driftRecorded -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } "content drift at version $driftVersion"
 }
-$badPending = [pscustomobject]@{ ledger='present'; applied=$applied; pending=@(@([pscustomobject]@{ version=66; filename='066_equipment_condition_report.sql'; content_sha256=('0' * 64) }) + (New-PendingRows 66)) }
-Assert-Throws { Assert-MigrationLedgerReport -Report $badPending -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Pending migration hash drift at version 66.'
+$badPending = [pscustomobject]@{ ledger='present'; applied=$applied; pending=@(@([pscustomobject]@{ version=69; filename='069_baseline_object_reconciliation.sql'; content_sha256=('0' * 64) }) + (New-PendingRows 69)) }
+Assert-Throws { Assert-MigrationLedgerReport -Report $badPending -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Pending migration hash drift at version 69.'
 # 041 still pending (Agency Documents not recorded) must stop the release, as must 046 not yet recorded.
 $multiple = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -le 40); pending=(New-PendingRows 40) }
 Assert-Throws { Assert-MigrationLedgerReport -Report $multiple -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Migration 041 of the recorded staging lineage is not applied'
 $partial = [pscustomobject]@{ ledger='present'; applied=@($applied | Where-Object version -le 45); pending=(New-PendingRows 45) }
 Assert-Throws { Assert-MigrationLedgerReport -Report $partial -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation before-apply } 'Migration 046 of the recorded staging lineage is not applied'
-Assert-Throws { Assert-EntitlementMigrationRecord -Report $before -ApplicationCommit ('b' * 40) -Environment staging } 'Migration 066 ledger entry'
+Assert-Throws { Assert-EntitlementMigrationRecord -Report $before -ApplicationCommit ('b' * 40) -Environment staging } 'Migration 069 ledger entry'
 Assert-Throws { Assert-MigrationLedgerReport -Report $before -MigrationFiles @($migrationFiles.FullName + $migrationFiles[0].FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit } 'Duplicate AWS migration version 1.'
 
 $duplicateDirectory = Join-Path ([IO.Path]::GetTempPath()) ('tracepoint-duplicate-migration-test-' + [guid]::NewGuid().ToString('N'))
@@ -191,15 +199,15 @@ foreach ($name in @('ToolingCommit', 'ApplicationCommit')) {
     if ($mandatory.Count -ne 1) { throw "Release parameter -$name must be mandatory." }
     if ($null -ne $parameter.DefaultValue) { throw "Release parameter -$name must have no default commit." }
 }
-# The live pre-release revision is pinned: only 193 (Batch 2) passes, and the check runs before the image is published.
+# The live pre-release revision is pinned: only 194 (Batch 3) passes, and the check runs before the image is published.
 $revisionChecks = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -match '^\$previousTaskDefinition -notmatch ' }, $true))
 if ($revisionChecks.Count -ne 1) { throw 'Expected exactly one pre-release task revision check.' }
 $revisionCheck = $revisionChecks[0]
 $revisionComparison = @($revisionCheck.Clauses[0].Item1.FindAll({ param($node) $node -is [System.Management.Automation.Language.BinaryExpressionAst] }, $true)) | Select-Object -First 1
 $revisionPattern = [string]$revisionComparison.Right.Value
-if ($revisionPattern -cne ':193$') { throw "Pre-release revision pin is '$revisionPattern', expected ':193$'." }
-foreach ($revision in @(191, 192, 194, 1193)) { if ("arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:$revision" -match $revisionPattern) { throw "Revision $revision passed the pre-release pin." } }
-if ('arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:193' -notmatch $revisionPattern) { throw 'Revision 193 failed the pre-release pin.' }
+if ($revisionPattern -cne ':194$') { throw "Pre-release revision pin is '$revisionPattern', expected ':194$'." }
+foreach ($revision in @(192, 193, 195, 1194)) { if ("arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:$revision" -match $revisionPattern) { throw "Revision $revision passed the pre-release pin." } }
+if ('arn:aws:ecs:us-east-1:559054714699:task-definition/tracepointstagingruntimeServiceTaskDefC2B9B4C5:194' -notmatch $revisionPattern) { throw 'Revision 194 failed the pre-release pin.' }
 if ($revisionCheck.Clauses[0].Item2.Extent.Text -notmatch '^\{\s*throw ') { throw 'The pre-release revision check must stop the release.' }
 $publishCall = $releaseAst.Extent.Text.IndexOf("'publish-tracepoint-staging-image.ps1'")
 if ($publishCall -lt 0 -or $revisionCheck.Extent.StartOffset -ge $publishCall) { throw 'The pre-release revision check must run before the image is published.' }
@@ -209,15 +217,15 @@ $publishGuards = @($releaseAst.FindAll({ param($node) $node -is [System.Manageme
 if ($publishGuards.Count -ne 1 -or -not $publishGuards[0].Clauses[0].Item2.Extent.Text.Contains("'publish-tracepoint-staging-image.ps1'") -or $null -eq $publishGuards[0].ElseClause -or $publishGuards[0].ElseClause.Extent.Text.Contains('Invoke-ReleaseScript')) { throw 'The image is built only when its immutable tag does not exist yet.' }
 if (-not $releaseAst.Extent.Text.Contains("'ecr','batch-get-image','--repository-name','tracepoint-staging','--image-ids',`"imageTag=`$imageTag`"")) { throw 'The reuse check must look up the exact reviewed image tag.' }
 if ($releaseAst.Extent.Text.IndexOf("'ecr','describe-images'", [StringComparison]::Ordinal) -lt $publishGuards[0].Extent.EndOffset) { throw 'The image digest must be read after the build-or-reuse step.' }
-# Only 066-068 after a recorded 001-065 (or the rest of them after a stopped apply recorded 066 or 067) may be applied,
-# after an exact typed confirmation naming them, and the rows it applied must then carry this release.
+# Only 069-070 after a recorded 001-068 (or 070 alone after a stopped apply recorded 069) may be applied, after an
+# exact typed confirmation naming them, and the rows it applied must then carry this release.
 $releaseText = $releaseAst.Extent.Text
-if (-not $releaseText.Contains('if ($appliedCount -notin @(65, 66, 67)) { throw')) { throw 'Release must start only from a recorded 001-065, 001-066 or 001-067.' }
+if (-not $releaseText.Contains('if ($appliedCount -notin @(68, 69)) { throw')) { throw 'Release must start only from a recorded 001-068 or 001-069.' }
 if (-not $releaseText.Contains('Where-Object { [int]$_.Substring(0,3) -gt $appliedCount }')) { throw 'Release pending set must be exactly the files after the recorded prefix.' }
 if (-not $releaseText.Contains('$applyPhrase = "APPLY $(''{0:d3}'' -f $releaseVersions[0])-$(''{0:d3}'' -f $releaseVersions[-1])"')) { throw 'The apply confirmation must name the migration range.' }
 if ($releaseText -notmatch [regex]::Escape("if (`$confirmation -cne `$applyPhrase) { throw")) { throw 'Database apply must require the exact typed confirmation.' }
 if (-not $releaseText.Contains('Assert-EntitlementMigrationRecord -Report $finalStatus -ApplicationCommit $ApplicationCommit -Environment staging -Versions $releaseVersions')) { throw 'The release must verify the ledger rows it wrote.' }
-foreach ($earlier in @('042_default_module_entitlements', '043_range_workspace_authenticated_writes', '044_cognito_password_global_scope', '045_password_operation_resolution', '046_agency_documents_module_toggle', '048_activate_fleet_inventory_catalog', '063_armory_audit_and_access', '064_armorer_storage_location_permission', '065_inventory_idempotency_and_recipients')) {
+foreach ($earlier in @('042_default_module_entitlements', '043_range_workspace_authenticated_writes', '044_cognito_password_global_scope', '045_password_operation_resolution', '046_agency_documents_module_toggle', '048_activate_fleet_inventory_catalog', '063_armory_audit_and_access', '064_armorer_storage_location_permission', '065_inventory_idempotency_and_recipients', '066_equipment_condition_report', '067_firearm_custody_follows_assignment', '068_fleet_manual_status_under_safety_hold')) {
     if ($releaseText -match "$earlier\.sql'") { throw "The release must not list $earlier as a migration to apply." }
 }
 
@@ -252,14 +260,14 @@ foreach ($call in $healthCalls) {
 }
 if ($releaseText -notmatch 'Assert-StagingTargetHealth -Targets') { throw 'The release health check must use Assert-StagingTargetHealth.' }
 
-# Deploy-only redeploy over the migrated ledger: verifies 001-068 with nothing pending and never applies.
+# Deploy-only redeploy over the migrated ledger: verifies 001-070 with nothing pending and never applies.
 foreach ($name in @('DeployOnly', 'RecordedMigrationCommit')) { if (-not $releaseParameters.ContainsKey($name)) { throw "Release parameter -$name is missing." } }
 $deployOnlyBranch = @($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -ceq '$DeployOnly' -and $node.ElseClause -and $node.ElseClause.Extent.Text.Contains("'migrate-db.ps1'") }, $true))
 if ($deployOnlyBranch.Count -ne 1) { throw 'Expected one if ($DeployOnly) { ... } else { ... } around the migration steps.' }
 $deployOnlyText = $deployOnlyBranch[0].Clauses[0].Item2.Extent.Text
 $applyText = $deployOnlyBranch[0].ElseClause.Extent.Text
 if ($deployOnlyText -match "'-Action','apply'|APPLY 0|Read-Host") { throw 'The deploy-only branch must not apply or prompt for migrations.' }
-foreach ($required in @("-Expectation 'after-apply'", 'Count -ne 68','Count -ne 0', 'Assert-EntitlementMigrationRecord -Report $status -ApplicationCommit $RecordedMigrationCommit -Environment staging -Versions @(66, 67, 68)', 'Assert-RdsPitr')) {
+foreach ($required in @("-Expectation 'after-apply'", 'Count -ne 70','Count -ne 0', 'Assert-EntitlementMigrationRecord -Report $status -ApplicationCommit $RecordedMigrationCommit -Environment staging -Versions @(69, 70)', 'Assert-RdsPitr')) {
     if (-not $deployOnlyText.Contains($required)) { throw "The deploy-only branch must contain: $required" }
 }
 if (-not $applyText.Contains("'-Action','apply'") -or -not $applyText.Contains('-cne $applyPhrase')) { throw 'Migration apply must remain only in the confirmed non-deploy-only branch.' }
@@ -267,7 +275,7 @@ if (@($releaseAst.FindAll({ param($node) $node -is [System.Management.Automation
 foreach ($guard in @("if (`$DeployOnly -and -not `$RecordedMigrationCommit) { throw", "if (`$RecordedMigrationCommit -and -not `$DeployOnly) { throw", "'merge-base','--is-ancestor',`$RecordedMigrationCommit,`$ApplicationCommit")) {
     if (-not $releaseText.Contains($guard)) { throw "Missing deploy-only guard: $guard" }
 }
-# The ledger staging holds after this release: 001-068, 066-068 recorded by the release commit ('b' * 40 here). A
+# The ledger staging holds after this release: 001-070, 069-070 recorded by the release commit ('b' * 40 here). A
 # later deploy-only redeploy names that commit; the ledger then has nothing left to apply.
 Assert-MigrationLedgerReport -Report $after -MigrationFiles @($migrationFiles.FullName) -RepositoryRoot $repoRoot -MigrationCommit $testCommit -Expectation after-apply | Out-Null
 Assert-Throws { Assert-EntitlementMigrationRecord -Report $after -ApplicationCommit ('f' * 40) -Environment staging } 'does not match'
