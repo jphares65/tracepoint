@@ -8,6 +8,7 @@ import { accessFailureResponse, featureDisabledResponse, hasServerFeature, permi
 import { canReadFleet } from "@/lib/tracepoint/fleet-access";
 import { auditFleet, canConfigureFleet, canManageFleet, canPerformFleetMaintenance, canSubmitFleetInspection, canViewFleetCosts, canViewNetworkDetails, findOpenCriticalWorkOrders, findSafetyHold, findStatusBlockingSafetyHold, isSafetyHoldRefusal, nullableDate, nullableText, numeric, optionalNumeric, refreshFleetVehicle, refuseStatusUnderSafetyHold, text } from "@/lib/tracepoint/fleet-server";
 import { createFleetReadRepository } from "@/lib/fleet/read-repository";
+import { FLEET_STATUSES } from "@/lib/fleet/inventory-state";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +133,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body.clearSafetyHold === true) return clearSafetyHold(context, vehicleId, text(body.clearanceReason, 1000));
   const reason = text(body.reason, 1000);
   if (!reason) return NextResponse.json({ error: "A reason for the vehicle update is required." }, { status: 400 });
+  // API-1: an unknown status is refused before anything is read or written (the check constraint answered 500).
+  if (body.status !== undefined && !(FLEET_STATUSES as readonly unknown[]).includes(body.status)) {
+    return NextResponse.json({ error: "Vehicle status is not valid." }, { status: 400 });
+  }
 
   const { data: previous, error: loadError } = await context.admin.from("fleet_vehicles").select("*").eq("department_id", context.departmentId).eq("id", vehicleId).maybeSingle();
   if (loadError || !previous) return NextResponse.json({ error: loadError?.message ?? "Vehicle was not found." }, { status: loadError ? 500 : 404 });

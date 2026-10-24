@@ -638,3 +638,25 @@ test("UX-RB2-1 explicit answers keep their meaning: a Defect on a critical item 
   assert.equal(body.inspection.result, "Failed");
   assert.equal(body.inspection.critical_defect_count, 1);
 });
+
+test("API-1 / API-1b: an unknown vehicle status is refused with 400 on both PATCH routes; nothing is written or audited", async () => {
+  const { json, vehicleRoute, listRoute } = await load();
+  for (const status of ["Parked", "", "available", 7]) {
+    const db = createDb(fleet([vehicle({ status: "Maintenance" })]));
+    signIn(db, MANAGER);
+    const single = await vehicleRoute.PATCH(json(`/api/fleet/vehicles/${V}`, "PATCH", { status, reason: "status check" }), params({ vehicleId: V }));
+    assert.equal(single.status, 400, `single route, status ${JSON.stringify(status)}`);
+    assert.equal((await single.json()).error, "Vehicle status is not valid.");
+    const list = await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, status, reason: "status check" }));
+    assert.equal(list.status, 400, `list route, status ${JSON.stringify(status)}`);
+    assert.equal((await list.json()).error, "Vehicle status is not valid.");
+    assert.equal(db.tables.fleet_vehicles[0].status, "Maintenance", "never replaced by Available");
+    assert.equal(db.tables.fleet_vehicles[0].status_override_active, false);
+    assert.equal(db.tables.audit_events.length, 0);
+  }
+  // A valid status still saves through both routes.
+  const db = createDb(fleet([vehicle({ status: "Maintenance" })]));
+  signIn(db, MANAGER);
+  assert.equal((await listRoute.PATCH(json("/api/fleet/vehicles", "PATCH", { id: V, status: "Retired", reason: "decommissioned" }))).status, 200);
+  assert.equal(db.tables.fleet_vehicles[0].status, "Retired");
+});

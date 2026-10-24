@@ -13,6 +13,11 @@ export async function GET(_: NextRequest, { params }: RouteContext) {
   const context = resolved.context;
   const { firearmId } = await params;
   if (!uuid.test(firearmId)) return NextResponse.json({ error: "Invalid firearm." }, { status: 400 });
+  // API-2: an unknown firearm, or another agency's, is not found (as on every sibling firearm route), never 200 with
+  // empty custody.
+  const { data: firearm, error: firearmError } = await context.db.from("firearms").select("id").eq("department_id", context.departmentId).eq("id", firearmId).maybeSingle();
+  if (firearmError) return NextResponse.json({ error: firearmError.message }, { status: 500 });
+  if (!firearm) return NextResponse.json({ error: "Firearm not found." }, { status: 404 });
   const { data: assignment, error: assignmentError } = await context.db.from("firearm_assignments").select("assigned_to_user_id").eq("department_id", context.departmentId).eq("firearm_id", firearmId).is("returned_at", null).maybeSingle();
   if (assignmentError) return NextResponse.json({ error: assignmentError.message }, { status: 500 });
   const canOperateOwn = assignment?.assigned_to_user_id === context.userId;

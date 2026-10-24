@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { TenantBoundNotificationEventWriter, NotificationWriteAuthorizationError } from "./event-writer-core.ts";
-import { PostgresNotificationEventWriteDataSource, enqueueSql } from "./event-writer-postgres.ts";
+import { PostgresNotificationEventWriteDataSource, enqueueRefusalLogEntry, enqueueSql } from "./event-writer-postgres.ts";
 import type { NotificationWriteClient, NotificationWriteQuery } from "./event-writer-supabase.ts";
 
 const department = "20000000-0000-4000-8000-000000000001";
@@ -53,4 +53,27 @@ test("schema grants function execution only to runtime and never direct queue in
   assert.match(sql, /revoke all on function[\s\S]+from public, anon, authenticated, service_role/i);
   assert.match(sql, /grant execute on function[\s\S]+to tracepoint_runtime/i);
   assert.doesNotMatch(sql, /grant\s+insert\s+on\s+(?:table\s+)?public\.notification_email_queue\s+to\s+authenticated/i);
+});
+
+test("AT-3b: a refused enqueue logs its SQLSTATE and stage, never the recipient, subject, body or database message", async () => {
+  const logged: string[] = [];
+  const original = console.error;
+  console.error = (line: string) => { logged.push(line); };
+  try {
+    for (const [failure, expected] of [
+      [{ code: "42883", message: "function tracepoint_auth.enqueue_notification_email does not exist" }, { stage: "database_error", sqlstate: "42883" }],
+      [{ code: "42501", message: "notification enqueue rejected" }, { stage: "database_error", sqlstate: "42501" }],
+      [{ code: "not a sqlstate; test@example.invalid" }, { stage: "database_error", sqlstate: null }],
+    ] as const) {
+      const pool = { async query() { throw Object.assign(new Error(failure.message ?? "x"), { code: failure.code }); } };
+      const source = new PostgresNotificationEventWriteDataSource({ from() { throw new Error("unused"); } } as never, pool as never);
+      assert.deepEqual(await source.upsertEmail(row), { error: { message: "Notification enqueue was rejected." } });
+      assert.deepEqual(JSON.parse(logged.at(-1)!), { event: "notification_email_enqueue_refused", ...expected });
+    }
+    const notAccepted = new PostgresNotificationEventWriteDataSource({ from() { throw new Error("unused"); } } as never, { async query() { return { rows: [{ accepted: false }] }; } } as never);
+    await notAccepted.upsertEmail(row);
+    assert.deepEqual(JSON.parse(logged.at(-1)!), { event: "notification_email_enqueue_refused", stage: "not_accepted", sqlstate: null });
+  } finally { console.error = original; }
+  for (const line of logged) for (const secret of [row.recipient_email, row.subject, row.body_text, "does not exist", "enqueue rejected"]) assert.doesNotMatch(line, new RegExp(secret));
+  assert.deepEqual(enqueueRefusalLogEntry("database_error", null), { event: "notification_email_enqueue_refused", stage: "database_error", sqlstate: null });
 });

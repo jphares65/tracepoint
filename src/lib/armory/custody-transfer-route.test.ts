@@ -53,6 +53,7 @@ function createDb(tables: Record<string, any[]>, failure?: { code: string; messa
 }
 
 const unrestricted = (): Record<string, any[]> => ({
+  firearms: [{ id: firearm, department_id: department }],
   firearm_assignments: [{ department_id: department, firearm_id: firearm, assigned_to_user_id: officer, returned_at: null }],
   firearm_current_custody: [{ department_id: department, firearm_id: firearm, holder_type: "OFFICER", holder_user_id: officer }],
   firearm_custody_events: [],
@@ -246,4 +247,16 @@ test("Owner item 2: the page offers temporary custody explicitly and says the as
   assert.match(page, />Temporary Custody to an Officer<\/button>/);
   assert.match(page, /The assignment stays with/);
   assert.match(page, /toHolderUserId: transferDestination === "TEMPORARY" \? temporaryRecipientId : checkOutToUserId/);
+});
+
+test("API-2: custody of an unknown firearm, or of another agency's, is not found (404) and returns no custody", async () => {
+  for (const firearms of [[], [{ id: firearm, department_id: "10000000-0000-4000-8000-0000000000ff" }]]) {
+    const tables = { ...unrestricted(), firearms };
+    const { getResponse } = await harness(tables, ["firearm_custody.view_history", "manage_firearms"]);
+    const response = await getResponse();
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { error: "Firearm not found." });
+  }
+  const { getResponse } = await harness(unrestricted(), ["firearm_custody.view_history"]);
+  assert.equal((await getResponse()).status, 200, "the agency's own firearm still answers");
 });

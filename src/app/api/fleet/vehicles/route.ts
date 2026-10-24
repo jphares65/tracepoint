@@ -312,9 +312,13 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  // API-1b: an unknown status is refused, never replaced by "Available".
+  if (body.status !== undefined && !FLEET_STATUSES.includes(body.status as FleetStatus)) {
+    return NextResponse.json({ error: "Vehicle status is not valid." }, { status: 400 });
+  }
   const nextStatus = body.status === undefined
     ? existing.status as FleetStatus
-    : normalizeStatus(body.status);
+    : body.status as FleetStatus;
   // AT-1: a held vehicle is never made Available or Attention by hand; refuse before writing anything. The hold
   // clearance time is not in VEHICLE_SELECT, so it is read for the check.
   if (nextStatus !== existing.status) {

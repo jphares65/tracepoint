@@ -54,6 +54,7 @@ test("UX-RB-4: transfers in both directions through the real route with the page
   const { restrictedCustodyRequest } = await import("./restricted-custody.ts");
   const { GET, POST } = await import("../../app/api/armory/firearms/[firearmId]/custody/route.ts");
   const tables: Record<string, any[]> = {
+    firearms: [{ id: firearm, department_id: department }],
     firearm_assignments: [{ department_id: department, firearm_id: firearm, assigned_to_user_id: officer, returned_at: null }],
     firearm_current_custody: [{ department_id: department, firearm_id: firearm, holder_type: "OFFICER", holder_user_id: officer }],
     firearm_custody_events: [],
@@ -101,6 +102,7 @@ test("UX-RB-4 / SV-28: the RC record page's body is an ordinary transfer; withou
 test("UX-RB-4: another officer without custody permission sees no operations", async () => {
   const { GET } = await import("../../app/api/armory/firearms/[firearmId]/custody/route.ts");
   const tables: Record<string, any[]> = {
+    firearms: [{ id: firearm, department_id: department }],
     firearm_assignments: [{ department_id: department, firearm_id: firearm, assigned_to_user_id: officer, returned_at: null }],
     firearm_current_custody: [{ department_id: department, firearm_id: firearm, holder_type: "OFFICER", holder_user_id: officer }],
     firearm_custody_events: [],

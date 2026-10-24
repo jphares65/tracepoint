@@ -7,6 +7,18 @@ export const enqueueSql = `select tracepoint_auth.enqueue_notification_email(
   $8::timestamptz,$9::text,$10::timestamptz
 ) as accepted`;
 
+// AT-3b: a refused enqueue kept no cause. The SQLSTATE and a fixed stage are logged; the recipient, subject, body and
+// database message are not (they may carry personal data). 42883 means the function is missing (SCH-1), 42501 a refusal
+// by 024's checks.
+export function enqueueRefusalLogEntry(stage: "not_accepted" | "database_error", error: unknown) {
+  const code = (error as { code?: unknown } | null)?.code;
+  return { event: "notification_email_enqueue_refused", stage, sqlstate: typeof code === "string" && /^[0-9A-Z]{5}$/.test(code) ? code : null };
+}
+
+function logEnqueueRefusal(stage: "not_accepted" | "database_error", error: unknown) {
+  console.error(JSON.stringify(enqueueRefusalLogEntry(stage, error)));
+}
+
 export class PostgresNotificationEventWriteDataSource implements NotificationEventWriteDataSource {
   private readonly subjectWrites: SupabaseNotificationEventWriteDataSource;
   private readonly pool: Pick<Pool, "query">;
@@ -31,10 +43,11 @@ export class PostgresNotificationEventWriteDataSource implements NotificationEve
         row.fingerprint, row.subject, row.body_text, row.scheduled_for,
         row.status, row.updated_at,
       ]);
-      return result.rows[0]?.accepted === true
-        ? { error: null }
-        : { error: { message: "Notification enqueue was rejected." } };
-    } catch {
+      if (result.rows[0]?.accepted === true) return { error: null };
+      logEnqueueRefusal("not_accepted", null);
+      return { error: { message: "Notification enqueue was rejected." } };
+    } catch (error) {
+      logEnqueueRefusal("database_error", error);
       return { error: { message: "Notification enqueue was rejected." } };
     }
   }
