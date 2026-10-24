@@ -73,7 +73,9 @@ function verifyLiveBoundary() {
   const serviceTasks = new Set(aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--service-name', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? []);
   const clusterTasks = aws(['ecs', 'list-tasks', '--cluster', 'tracepoint-staging', '--desired-status', 'RUNNING']).taskArns ?? [];
   assert.equal(clusterTasks.filter(taskArn => !serviceTasks.has(taskArn)).length, 0, 'No competing staging ECS task may be active.');
-  const buildIds = aws(['codebuild', 'list-builds-for-project', '--project-name', 'tracepoint-staging-image-build', '--sort-order', 'DESCENDING']).ids ?? [];
+  // One page only: the CLI's automatic pagination resends --sort-order with nextToken, which CodeBuild rejects once the
+  // project has more than 100 builds. The newest 100 include any active build.
+  const buildIds = aws(['codebuild', 'list-builds-for-project', '--project-name', 'tracepoint-staging-image-build', '--sort-order', 'DESCENDING', '--no-paginate']).ids ?? [];
   if (buildIds.length) {
     const activeBuilds = aws(['codebuild', 'batch-get-builds', '--ids', ...buildIds.slice(0, 20)]).builds ?? [];
     assert.equal(activeBuilds.some(build => ['IN_PROGRESS', 'QUEUED', 'STOPPING'].includes(build.buildStatus)), false,

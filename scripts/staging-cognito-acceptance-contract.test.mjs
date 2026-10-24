@@ -52,3 +52,14 @@ test('authorization and tenant assertions match the current HTTP refusal contrac
   assert.match(acceptance, /agency-b-direct-api-read-of-agency-a-equipment-denied/);
   assert.match(acceptance, /agency-b-direct-api-modification-of-agency-a-equipment-denied/);
 });
+
+test('the active-build check reads one page, so it works once the project has more than 100 builds', async () => {
+  const runner = await read('scripts/run-staging-cognito-acceptance.mjs');
+  const calls = [...runner.matchAll(/aws\(\['codebuild', 'list-builds-for-project'[^\]]*\]/g)].map(match => match[0]);
+  assert.ok(calls.length > 0);
+  // The CLI's automatic pagination resends --sort-order with nextToken, which CodeBuild rejects.
+  for (const call of calls) {
+    assert.match(call, /'--sort-order', 'DESCENDING'/);
+    assert.match(call, /'--no-paginate'/);
+  }
+});
